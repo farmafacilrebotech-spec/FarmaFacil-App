@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="100" fill="#0F2A2E" />
+  <!-- Medical cross with circuit-style connectors -->
+  <g fill="#2EC4C7">
+    <!-- Vertical bar -->
+    <rect x="86" y="50" width="28" height="100" rx="6" />
+    <!-- Horizontal bar -->
+    <rect x="50" y="86" width="100" height="28" rx="6" />
+    <!-- Circuit connector dots -->
+    <circle cx="100" cy="100" r="10" fill="#0F2A2E" />
+    <circle cx="100" cy="100" r="6" fill="#2EC4C7" />
+    <!-- Corner connectors -->
+    <circle cx="64" cy="64" r="5" />
+    <circle cx="136" cy="64" r="5" />
+    <circle cx="64" cy="136" r="5" />
+    <circle cx="136" cy="136" r="5" />
+    <!-- Connector lines -->
+    <rect x="67" y="62" width="6" height="4" rx="2" />
+    <rect x="127" y="62" width="6" height="4" rx="2" />
+    <rect x="67" y="134" width="6" height="4" rx="2" />
+    <rect x="127" y="134" width="6" height="4" rx="2" />
+  </g>
+</svg>
