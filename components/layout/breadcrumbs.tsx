@@ -38,22 +38,32 @@ export function Breadcrumbs({ className }: { className?: string }) {
   return (
     <nav
       aria-label="Ruta de navegación"
-      className={cn('flex items-center text-sm', className)}
+      className={cn('flex min-w-0 items-center text-sm', className)}
     >
-      <ol className="flex items-center gap-1.5">
+      <ol className="flex min-w-0 items-center gap-1.5 overflow-hidden">
         {items.map((item, i) => (
-          <li key={item.href} className="flex items-center gap-1.5">
+          <li
+            key={item.href}
+            className={cn(
+              'flex min-w-0 items-center gap-1.5',
+              item.last ? 'min-w-0' : 'shrink-0'
+            )}
+          >
             {i > 0 && (
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
             )}
             {item.last ? (
-              <span className="font-medium text-foreground" aria-current="page">
+              <span
+                className="block truncate font-medium text-foreground"
+                aria-current="page"
+                title={item.label}
+              >
                 {item.label}
               </span>
             ) : (
               <Link
                 href={item.href}
-                className="text-muted-foreground transition-colors hover:text-foreground"
+                className="shrink-0 whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground"
               >
                 {item.label}
               </Link>

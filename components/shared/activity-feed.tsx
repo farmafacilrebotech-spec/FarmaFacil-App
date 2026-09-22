@@ -48,10 +48,11 @@ export function ActivityFeed({ items }: { items: ActivityItem[] }) {
                 <Icon className="h-[18px] w-[18px]" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-foreground">
+                <p className="text-sm font-medium leading-snug text-foreground">
                   {item.title}
                 </p>
-                <p className="truncate text-xs text-muted-foreground">
+                {/* description puede incluir nombres variables */}
+                <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                   {item.description}
                 </p>
               </div>

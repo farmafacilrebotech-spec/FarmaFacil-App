@@ -36,48 +36,56 @@ import {
 import { Breadcrumbs } from './breadcrumbs';
 import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { pharmacies } from '@/lib/mock-data';
+import { initials } from '@/lib/format';
+import { signOutAction } from '@/app/auth/actions';
+import type { ShellUser } from './app-shell';
 
 interface HeaderProps {
   onMobileMenu: () => void;
+  user: ShellUser;
 }
 
-export function Header({ onMobileMenu }: HeaderProps) {
+export function Header({ onMobileMenu, user }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   const router = useRouter();
   React.useEffect(() => setMounted(true), []);
 
   const [selectedPharmacy, setSelectedPharmacy] = React.useState(pharmacies[0]);
+  const userInitials = initials(user.name || user.email);
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur-md lg:px-6">
+    <header className="sticky top-0 z-30 flex h-16 w-full min-w-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md sm:gap-3 lg:px-6">
       <button
         onClick={onMobileMenu}
-        className="rounded-md p-2 text-muted-foreground hover:bg-accent lg:hidden"
+        className="shrink-0 rounded-md p-2 text-muted-foreground hover:bg-accent lg:hidden"
         aria-label="Abrir menú"
       >
         <Menu className="h-5 w-5" />
       </button>
 
-      <div className="lg:hidden">
+      <div className="shrink-0 lg:hidden">
         <BrandLogo variant="mark" size={32} />
       </div>
 
-      {/* Pharmacy selector — Vercel-style team switcher */}
+      {/* Selector mock: solo en xl+ para no comprimir el header en 1280–1440 */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="hidden items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent lg:flex">
+          <button
+            type="button"
+            className="hidden max-w-[148px] shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent xl:flex"
+          >
             <PharmacyLogo
               name={selectedPharmacy.name}
               logoColor={selectedPharmacy.logoColor}
               size={24}
               rounded="lg"
             />
-            <span className="max-w-[140px] truncate">{selectedPharmacy.name}</span>
-            <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="min-w-0 truncate">{selectedPharmacy.name}</span>
+            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64">
+        <DropdownMenuContent align="start" className="w-64" collisionPadding={12}>
           <DropdownMenuLabel className="text-xs text-muted-foreground">
             Farmacias
           </DropdownMenuLabel>
@@ -94,14 +102,14 @@ export function Header({ onMobileMenu }: HeaderProps) {
                 size={28}
                 rounded="lg"
               />
-              <div className="flex-1 min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{p.name}</p>
                 <p className="truncate text-xs text-muted-foreground">
                   {p.city}, {p.province}
                 </p>
               </div>
               {selectedPharmacy.id === p.id && (
-                <Check className="h-4 w-4 text-primary" />
+                <Check className="h-4 w-4 shrink-0 text-primary" />
               )}
             </DropdownMenuItem>
           ))}
@@ -115,24 +123,23 @@ export function Header({ onMobileMenu }: HeaderProps) {
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="hidden lg:block">
-        <Breadcrumbs />
+      <div className="hidden min-w-0 flex-1 overflow-hidden lg:block">
+        <Breadcrumbs className="min-w-0" />
       </div>
 
-      {/* Global search */}
-      <div className="relative ml-auto hidden w-full max-w-sm md:block">
+      {/* Buscador: crece/encoge sin empujar acciones */}
+      <div className="relative ml-auto hidden min-w-0 max-w-[220px] flex-1 md:block lg:max-w-xs xl:max-w-sm">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          placeholder="Buscar farmacias, clientes, pedidos…"
+          placeholder="Buscar…"
           className="h-9 border-border bg-muted/40 pl-9 text-sm focus-visible:bg-background"
         />
-        <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 select-none rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground lg:inline-block">
+        <kbd className="pointer-events-none absolute right-2.5 top-1/2 hidden -translate-y-1/2 select-none rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground xl:inline-block">
           ⌘K
         </kbd>
       </div>
 
-      <div className="ml-auto flex items-center gap-1 md:ml-3">
-        {/* Theme toggle */}
+      <div className="flex shrink-0 items-center gap-0.5 sm:gap-1 md:ml-1">
         <Button
           variant="ghost"
           size="icon"
@@ -150,7 +157,7 @@ export function Header({ onMobileMenu }: HeaderProps) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-9 w-9 text-muted-foreground"
+          className="hidden h-9 w-9 text-muted-foreground sm:inline-flex"
           aria-label="Ayuda"
           onClick={() => router.push('/ayuda')}
         >
@@ -167,28 +174,35 @@ export function Header({ onMobileMenu }: HeaderProps) {
           <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary ring-2 ring-background" />
         </Button>
 
-        <div className="mx-1 h-6 w-px bg-border" />
+        <div className="mx-1 hidden h-6 w-px bg-border sm:block" />
 
-        {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              className="flex items-center gap-2 rounded-full p-0.5 transition-colors hover:bg-accent"
+              type="button"
+              className="flex shrink-0 items-center gap-2 rounded-full p-0.5 transition-colors hover:bg-accent"
               aria-label="Menú de usuario"
             >
               <Avatar className="h-8 w-8 border border-border">
                 <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-                  AF
+                  {userInitials}
                 </AvatarFallback>
               </Avatar>
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <div className="flex flex-col">
-                <span className="text-sm font-semibold">Admin FarmaFácil</span>
-                <span className="text-xs font-normal text-muted-foreground">
-                  admin@farmafacil.es
+          <DropdownMenuContent
+            align="end"
+            sideOffset={8}
+            collisionPadding={12}
+            className="w-56 max-w-[calc(100vw-1.5rem)]"
+          >
+            <DropdownMenuLabel className="font-normal">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="truncate text-sm font-semibold text-foreground">
+                  {user.name}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {user.email}
                 </span>
               </div>
             </DropdownMenuLabel>
@@ -205,7 +219,10 @@ export function Header({ onMobileMenu }: HeaderProps) {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="text-destructive focus:text-destructive"
-              onClick={() => router.push('/login')}
+              onSelect={(e) => {
+                e.preventDefault();
+                void signOutAction();
+              }}
             >
               <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
             </DropdownMenuItem>

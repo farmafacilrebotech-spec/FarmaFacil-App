@@ -104,6 +104,13 @@
   * {
     @apply border-border;
   }
+  /* Garantiza escala tipográfica estable (Safari/iOS text autosizing).
+     Tailwind preflight ya pone -webkit-text-size-adjust: 100%; reforzamos
+     el estándar text-size-adjust para ambos motores. No cambia tamaños. */
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: 'cv11', 'ss01';

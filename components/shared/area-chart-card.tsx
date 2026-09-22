@@ -33,7 +33,7 @@ export function AreaChartCard({
   className?: string;
 }) {
   return (
-    <div className={cn('w-full', className)}>
+    <div className={cn('min-w-0 w-full overflow-hidden', className)}>
       <ResponsiveContainer width="100%" height={height}>
         <AreaChart data={data} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
           <defs>

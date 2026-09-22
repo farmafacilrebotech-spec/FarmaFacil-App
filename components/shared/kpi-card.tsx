@@ -59,12 +59,12 @@ export function KpiCard({
   return (
     <div
       className={cn(
-        'group relative overflow-hidden rounded-xl border border-border bg-card p-5 shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-soft-md',
+        'group relative min-w-0 overflow-hidden rounded-xl border border-border bg-card p-5 shadow-soft transition-all duration-300 hover:-translate-y-0.5 hover:shadow-soft-md',
         className
       )}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <svg
             viewBox="0 0 24 24"
             fill="none"
@@ -80,14 +80,22 @@ export function KpiCard({
         </div>
         <DeltaBadge delta={delta} />
       </div>
-      <div className="mt-4 flex items-end justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-muted-foreground">{label}</p>
+      <div className="mt-4 flex min-w-0 items-end justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium leading-snug text-muted-foreground">
+            {label}
+          </p>
           <p className="mt-1 text-2xl font-semibold tracking-tight text-foreground">
             {value}
           </p>
         </div>
-        <Sparkline data={trend} width={96} height={32} />
+        {/* Sparkline solo cuando hay ancho de tarjeta suficiente (modo 3/6 cols) */}
+        <Sparkline
+          data={trend}
+          width={80}
+          height={32}
+          className="hidden shrink-0 xl:block"
+        />
       </div>
     </div>
   );

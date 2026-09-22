@@ -29,10 +29,34 @@ export function formatDateTime(iso: string): string {
 }
 
 export function initials(name: string): string {
-  return name
-    .split(' ')
+  const value = name.trim();
+  if (!value) return '?';
+
+  // Email → iniciales del local-part (antes de @)
+  if (value.includes('@')) {
+    const local = value.split('@')[0] ?? value;
+    return local.slice(0, 2).toUpperCase();
+  }
+
+  return value
+    .split(/\s+/)
     .map((p) => p[0])
+    .filter(Boolean)
     .slice(0, 2)
     .join('')
     .toUpperCase();
+}
+
+/** Nombre visible: full_name, o local-part del email si no hay nombre. */
+export function displayNameFromIdentity(
+  fullName: string | null | undefined,
+  email: string
+): string {
+  const name = fullName?.trim();
+  if (name) return name;
+  if (email.includes('@')) {
+    const local = email.split('@')[0]?.trim();
+    if (local) return local;
+  }
+  return email || 'Usuario';
 }

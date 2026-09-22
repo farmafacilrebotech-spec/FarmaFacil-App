@@ -10,12 +10,16 @@ import { navItems, helpItems } from '@/lib/navigation';
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { initials } from '@/lib/format';
+import { signOutAction } from '@/app/auth/actions';
+import type { ShellUser } from './app-shell';
 
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
   mobileOpen: boolean;
   onMobileClose: () => void;
+  user: ShellUser;
 }
 
 export function Sidebar({
@@ -23,8 +27,10 @@ export function Sidebar({
   onToggle,
   mobileOpen,
   onMobileClose,
+  user,
 }: SidebarProps) {
   const pathname = usePathname();
+  const userInitials = initials(user.name || user.email);
 
   return (
     <>
@@ -77,7 +83,7 @@ export function Sidebar({
                       href={item.href}
                       title={collapsed ? item.label : undefined}
                       className={cn(
-                        'group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
+                        'group relative flex min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all',
                         collapsed && 'lg:justify-center lg:px-0',
                         active
                           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
@@ -114,12 +120,12 @@ export function Sidebar({
                     href={item.href}
                     title={collapsed ? item.label : undefined}
                     className={cn(
-                      'flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-muted transition-colors hover:bg-accent/60 hover:text-sidebar-foreground',
+                      'flex min-w-0 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-sidebar-muted transition-colors hover:bg-accent/60 hover:text-sidebar-foreground',
                       collapsed && 'lg:justify-center lg:px-0'
                     )}
                   >
                     <LifeBuoy className="h-[18px] w-[18px] shrink-0" />
-                    <span className={cn(collapsed && 'lg:hidden')}>
+                    <span className={cn('whitespace-nowrap', collapsed && 'lg:hidden')}>
                       {item.label}
                     </span>
                   </Link>
@@ -137,18 +143,20 @@ export function Sidebar({
           >
             <Avatar className="h-8 w-8 border border-border">
               <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-                AR
+                {userInitials}
               </AvatarFallback>
             </Avatar>
             <div className={cn('min-w-0 flex-1', collapsed && 'lg:hidden')}>
               <p className="truncate text-sm font-medium text-foreground">
-                Admin FarmaFácil
+                {user.name}
               </p>
               <p className="truncate text-xs text-muted-foreground">
-                admin@farmafacil.es
+                {user.email}
               </p>
             </div>
             <button
+              type="button"
+              onClick={() => void signOutAction()}
               className={cn(
                 'rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground',
                 collapsed && 'lg:hidden'
