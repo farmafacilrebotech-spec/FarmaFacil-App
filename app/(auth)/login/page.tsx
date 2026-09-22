@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { createClient } from '@/lib/supabase/client';
+import { resolvePostLoginDestinationAction } from '@/app/auth/continue/actions';
 
 function mapAuthError(message: string): string {
   const m = message.toLowerCase();
@@ -39,7 +40,15 @@ function LoginForm() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
-  const forbidden = searchParams.get('error') === 'forbidden';
+  const errorParam = searchParams.get('error');
+  const callbackErrorMessage =
+    errorParam === 'missing_code'
+      ? 'El enlace de invitación no es válido o está incompleto. Solicita una nueva invitación.'
+      : errorParam === 'auth_callback'
+        ? 'No se ha podido validar el enlace de acceso. Solicita una nueva invitación o inténtalo de nuevo.'
+        : errorParam === 'forbidden'
+          ? 'Tu cuenta no tiene acceso autorizado a FarmaFácil.'
+          : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -67,13 +76,33 @@ function LoginForm() {
         return;
       }
 
+      // Destino según resolveAppAccess (no hardcodear /dashboard).
+      // Solo respetamos ?next= hacia rutas internas de farmacia o continue.
       const next = searchParams.get('next');
-      const destination =
-        next && next.startsWith('/') && !next.startsWith('//')
+      const safeNext =
+        next &&
+        next.startsWith('/') &&
+        !next.startsWith('//') &&
+        (next.startsWith('/f/') ||
+          next === '/first-access' ||
+          next === '/auth/continue' ||
+          next === '/auth/select-pharmacy')
           ? next
-          : '/dashboard';
+          : null;
 
-      router.replace(destination);
+      if (safeNext) {
+        router.replace(safeNext);
+        router.refresh();
+        return;
+      }
+
+      const destination = await resolvePostLoginDestinationAction();
+      if (!destination.ok) {
+        setError(destination.error);
+        return;
+      }
+
+      router.replace(destination.path);
       router.refresh();
     } catch (err) {
       // Diagnóstico temporal (solo desarrollo).
@@ -107,14 +136,12 @@ function LoginForm() {
           </p>
         </div>
 
-        {(forbidden || error) && (
+        {(callbackErrorMessage || error) && (
           <div
             role="alert"
             className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
-            {forbidden && !error
-              ? 'Tu cuenta no tiene permiso de SuperAdmin de plataforma.'
-              : error}
+            {error ?? callbackErrorMessage}
           </div>
         )}
 

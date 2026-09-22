@@ -1,4 +1,10 @@
+import { redirect } from 'next/navigation';
+
 import { createClient } from '@/lib/supabase/server';
+import {
+  destinationForAppAccess,
+  resolveAppAccess,
+} from '@/lib/auth/access';
 import {
   FirstAccessForm,
   FirstAccessNoSession,
@@ -10,6 +16,7 @@ export const dynamic = 'force-dynamic';
  * Primer acceso del usuario invitado.
  * Requiere sesión (establecida vía /auth/callback con el ?code= PKCE).
  * No pide email; no usa metadata para autorizar.
+ * Si ya tiene membership active, redirige al destino resuelto (no a /dashboard fijo).
  */
 export default async function FirstAccessPage() {
   const supabase = createClient();
@@ -20,6 +27,12 @@ export default async function FirstAccessPage() {
 
   if (!user) {
     return <FirstAccessNoSession />;
+  }
+
+  // Si ya no está en estado invited, no forzar el formulario.
+  const access = await resolveAppAccess();
+  if (access.status !== 'invited' && access.status !== 'unauthenticated') {
+    redirect(destinationForAppAccess(access));
   }
 
   const { data: profile } = await supabase

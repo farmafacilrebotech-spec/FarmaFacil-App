@@ -5,6 +5,8 @@ import {
   type CurrentProfile,
 } from '@/lib/auth/platform';
 
+export type { CurrentProfile };
+
 export type PharmacyRoleKey =
   | 'PHARMACY_OWNER'
   | 'PHARMACY_ADMIN'
@@ -32,12 +34,18 @@ export type AppAccessResult =
       profile: CurrentProfile;
       memberships: PharmacyMembershipSummary[];
     }
+  | {
+      /** Sesión válida con membership invited y ninguna active. */
+      status: 'invited';
+      profile: CurrentProfile;
+    }
   | { status: 'forbidden'; profile: CurrentProfile }
   | { status: 'error'; message: string; email?: string };
 
 type MembershipRow = {
   id: string;
   pharmacy_id: string;
+  status?: string;
   roles:
     | { key: string; name: string }
     | { key: string; name: string }[]
@@ -61,7 +69,7 @@ function mapMembership(row: MembershipRow): PharmacyMembershipSummary | null {
 /**
  * Carga memberships active del usuario autenticado.
  * Autorización: RLS (profile_id = auth.uid() u otras reglas de 012).
- * No usa last_pharmacy_id ni pharmacy_id del cliente.
+ * No usa last_pharmacy_id ni pharmacy_id del cliente como autorización.
  */
 async function listActiveMemberships(
   profileId: string
@@ -95,6 +103,25 @@ async function listActiveMemberships(
   return { memberships };
 }
 
+async function hasInvitedMembership(
+  profileId: string
+): Promise<{ invited: boolean; error?: string }> {
+  const supabase = createClient();
+
+  const { count, error } = await supabase
+    .from('pharmacy_memberships')
+    .select('id', { count: 'exact', head: true })
+    .eq('profile_id', profileId)
+    .eq('status', 'invited');
+
+  if (error) {
+    console.error('invited memberships check failed:', error.code, error.message);
+    return { invited: false, error: error.message };
+  }
+
+  return { invited: (count ?? 0) > 0 };
+}
+
 /**
  * Resolución de acceso de aplicación (plataforma vs tenant).
  * Independiente de resolvePlatformAccess: no altera el gate SuperAdmin existente.
@@ -104,7 +131,8 @@ async function listActiveMemberships(
  * 2) PLATFORM_SUPERADMIN → platform
  * 3) 1 membership active → pharmacy
  * 4) >1 memberships active → multiple_pharmacies
- * 5) ninguna → forbidden
+ * 5) membership invited (sin active) → invited
+ * 6) ninguna → forbidden
  */
 export async function resolveAppAccess(): Promise<AppAccessResult> {
   const { profile, authenticated, error } = await getCurrentProfile();
@@ -163,5 +191,98 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
     };
   }
 
+  const invited = await hasInvitedMembership(profile.id);
+  if (invited.error) {
+    return {
+      status: 'error',
+      message: invited.error,
+      email: profile.email,
+    };
+  }
+  if (invited.invited) {
+    return { status: 'invited', profile };
+  }
+
   return { status: 'forbidden', profile };
+}
+
+/**
+ * Destino interno tras autenticación (login, continue, post first-access).
+ * Nunca usa pharmacy_id del cliente ni last_pharmacy_id como autorización.
+ */
+export function destinationForAppAccess(access: AppAccessResult): string {
+  switch (access.status) {
+    case 'unauthenticated':
+      return '/login';
+    case 'platform':
+      return '/dashboard';
+    case 'pharmacy':
+      return `/f/${access.membership.pharmacyId}/dashboard`;
+    case 'multiple_pharmacies':
+      return '/auth/select-pharmacy';
+    case 'invited':
+      return '/first-access';
+    case 'forbidden':
+      return '/access-denied';
+    case 'error':
+      return '/access-denied';
+    default:
+      return '/login';
+  }
+}
+
+/**
+ * Comprueba membership active del usuario actual para una farmacia concreta.
+ * Usado por el layout tenant. Sin confiar en el pharmacyId más allá de filtrar
+ * contra memberships ya autorizadas por RLS + auth.uid().
+ */
+export async function requireActivePharmacyMembership(pharmacyId: string): Promise<
+  | {
+      ok: true;
+      profile: CurrentProfile;
+      membership: PharmacyMembershipSummary;
+    }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'error'; message?: string }
+> {
+  if (!pharmacyId || !/^[0-9a-f-]{36}$/i.test(pharmacyId)) {
+    return { ok: false, reason: 'forbidden' };
+  }
+
+  const access = await resolveAppAccess();
+
+  if (access.status === 'unauthenticated') {
+    return { ok: false, reason: 'unauthenticated' };
+  }
+
+  if (access.status === 'error') {
+    return { ok: false, reason: 'error', message: access.message };
+  }
+
+  if (access.status === 'pharmacy') {
+    if (access.membership.pharmacyId !== pharmacyId) {
+      return { ok: false, reason: 'forbidden' };
+    }
+    return {
+      ok: true,
+      profile: access.profile,
+      membership: access.membership,
+    };
+  }
+
+  if (access.status === 'multiple_pharmacies') {
+    const membership = access.memberships.find(
+      (m) => m.pharmacyId === pharmacyId
+    );
+    if (!membership) {
+      return { ok: false, reason: 'forbidden' };
+    }
+    return {
+      ok: true,
+      profile: access.profile,
+      membership,
+    };
+  }
+
+  // platform / invited / forbidden → no acceso tenant por membership
+  return { ok: false, reason: 'forbidden' };
 }

@@ -2,10 +2,10 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Lock, Eye, EyeOff, Check, Loader2, ShieldCheck } from 'lucide-react';
 
 import { completeFirstAccessAction } from '@/app/(auth)/first-access/actions';
-import { signOutAction } from '@/app/auth/actions';
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,6 +19,7 @@ export function FirstAccessForm({
   displayName: string | null;
   email: string;
 }) {
+  const router = useRouter();
   const [showPassword, setShowPassword] = React.useState(false);
   const [password, setPassword] = React.useState('');
   const [confirm, setConfirm] = React.useState('');
@@ -26,7 +27,6 @@ export function FirstAccessForm({
   const [acceptPrivacy, setAcceptPrivacy] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [done, setDone] = React.useState(false);
 
   const match = confirm.length > 0 && password === confirm;
   const canSubmit =
@@ -54,41 +54,13 @@ export function FirstAccessForm({
         return;
       }
 
-      setDone(true);
-      setSubmitting(false);
+      // Sesión intacta → entorno de la farmacia (sin signOut).
+      router.replace(result.redirectTo);
+      router.refresh();
     } catch {
       setError('No se ha podido completar el acceso. Inténtalo de nuevo.');
       setSubmitting(false);
     }
-  }
-
-  if (done) {
-    return (
-      <div className="animate-slide-up">
-        <div className="mb-8 flex justify-center">
-          <BrandLogo size={44} showTagline />
-        </div>
-
-        <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-soft-lg">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success">
-            <Check className="h-6 w-6" />
-          </div>
-          <h1 className="mt-4 text-2xl font-semibold tracking-tight text-foreground">
-            Acceso completado
-          </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Tu contraseña está configurada y tu acceso a la farmacia está
-            activo. El panel de farmacia se habilitará en el siguiente paso de
-            FarmaFácil.
-          </p>
-          <form action={signOutAction} className="mt-6">
-            <Button type="submit" variant="outline" className="w-full">
-              Cerrar sesión
-            </Button>
-          </form>
-        </div>
-      </div>
-    );
   }
 
   return (

@@ -1,9 +1,10 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { destinationForAppAccess, resolveAppAccess } from '@/lib/auth/access';
 
 export type CompleteFirstAccessResult =
-  | { ok: true }
+  | { ok: true; redirectTo: string }
   | {
       ok: false;
       error: string;
@@ -16,10 +17,10 @@ export type CompleteFirstAccessResult =
         | 'rpc';
     };
 
-function mapAcceptStatus(status: string | undefined): CompleteFirstAccessResult {
+function mapAcceptFailure(
+  status: string | undefined
+): Extract<CompleteFirstAccessResult, { ok: false }> {
   switch (status) {
-    case 'ok':
-      return { ok: true };
     case 'unauthenticated':
       return {
         ok: false,
@@ -54,6 +55,7 @@ function mapAcceptStatus(status: string | undefined): CompleteFirstAccessResult 
  * Establece la contraseña del usuario invitado (sesión propia) y acepta
  * su única membership invited → active vía ff_accept_pharmacy_invitation_v1.
  * Sin service_role. Sin pharmacy_id del cliente.
+ * No cierra sesión: redirige al dashboard de la farmacia.
  */
 export async function completeFirstAccessAction(input: {
   password: string;
@@ -136,10 +138,29 @@ export async function completeFirstAccessAction(input: {
     };
   }
 
+  const payload =
+    data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
   const status =
-    data && typeof data === 'object' && 'status' in data
-      ? String((data as { status: string }).status)
-      : undefined;
+    payload && 'status' in payload ? String(payload.status) : undefined;
 
-  return mapAcceptStatus(status);
+  if (status !== 'ok') {
+    return mapAcceptFailure(status);
+  }
+
+  const pharmacyIdFromRpc =
+    payload && typeof payload.pharmacy_id === 'string'
+      ? payload.pharmacy_id
+      : null;
+
+  if (pharmacyIdFromRpc && /^[0-9a-f-]{36}$/i.test(pharmacyIdFromRpc)) {
+    // Sesión intacta; destino de la farmacia aceptada (no confiar en cliente).
+    return {
+      ok: true,
+      redirectTo: `/f/${pharmacyIdFromRpc}/dashboard`,
+    };
+  }
+
+  // Fallback: resolver de nuevo (membership ya active).
+  const access = await resolveAppAccess();
+  return { ok: true, redirectTo: destinationForAppAccess(access) };
 }
