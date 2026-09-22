@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import {
   getPharmacyById,
   listActivePlans,
+  listPharmacyMembers,
+  listPharmacyRoles,
 } from '@/lib/pharmacies/queries';
 import { PharmacyDetailClient } from '@/components/pharmacies/pharmacy-detail-client';
 
@@ -13,14 +15,23 @@ export default async function PharmacyDetailPage({
 }: {
   params: { id: string };
 }) {
-  const [pharmacy, plans] = await Promise.all([
+  const [pharmacy, plans, members, roles] = await Promise.all([
     getPharmacyById(params.id),
     listActivePlans(),
+    listPharmacyMembers(params.id),
+    listPharmacyRoles(),
   ]);
 
   if (!pharmacy) {
     notFound();
   }
 
-  return <PharmacyDetailClient pharmacy={pharmacy} plans={plans} />;
+  return (
+    <PharmacyDetailClient
+      pharmacy={pharmacy}
+      plans={plans}
+      members={members}
+      roles={roles}
+    />
+  );
 }

@@ -152,3 +152,44 @@ export interface UpdatePharmacySettingsInput {
   whatsapp?: string | null;
   email?: string | null;
 }
+
+export type MembershipStatus =
+  | 'invited'
+  | 'active'
+  | 'suspended'
+  | 'revoked';
+
+export type PharmacyRoleKey =
+  | 'PHARMACY_OWNER'
+  | 'PHARMACY_ADMIN'
+  | 'PHARMACIST'
+  | 'STAFF';
+
+export interface PharmacyRoleOption {
+  id: string;
+  key: PharmacyRoleKey;
+  name: string;
+}
+
+export interface PharmacyMember {
+  id: string;
+  status: MembershipStatus;
+  invited_at: string | null;
+  created_at: string;
+  profile: {
+    id: string;
+    email: string;
+    full_name: string | null;
+  };
+  role: {
+    key: PharmacyRoleKey;
+    name: string;
+  };
+}
+
+export interface InvitePharmacyUserInput {
+  pharmacyId: string;
+  fullName: string;
+  email: string;
+  roleKey: PharmacyRoleKey;
+}

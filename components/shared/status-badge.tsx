@@ -117,12 +117,14 @@ export function toneForUserStatus(status: string): Tone {
     case 'active':
     case 'invite_accepted':
       return 'success';
+    case 'invited':
     case 'invite_sent':
       return 'primary';
     case 'pending':
       return 'warning';
     case 'suspended':
     case 'disabled':
+    case 'revoked':
       return 'danger';
     default:
       return 'neutral';

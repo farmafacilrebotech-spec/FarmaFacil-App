@@ -7,7 +7,18 @@ import type {
   PharmacySettings,
   PharmacySubscription,
   PharmacyStatus,
+  PharmacyMember,
+  PharmacyRoleOption,
+  PharmacyRoleKey,
+  MembershipStatus,
 } from './types';
+
+const PHARMACY_ROLE_KEYS: PharmacyRoleKey[] = [
+  'PHARMACY_OWNER',
+  'PHARMACY_ADMIN',
+  'PHARMACIST',
+  'STAFF',
+];
 
 type PlanRow = {
   id: string;
@@ -217,4 +228,119 @@ export async function getPharmacyById(
     settings: settings ?? null,
     subscription,
   };
+}
+
+type MemberRow = {
+  id: string;
+  status: string;
+  invited_at: string | null;
+  created_at: string;
+  profiles:
+    | { id: string; email: string; full_name: string | null }
+    | { id: string; email: string; full_name: string | null }[]
+    | null;
+  roles:
+    | { key: string; name: string }
+    | { key: string; name: string }[]
+    | null;
+};
+
+function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
+/**
+ * Miembros de una farmacia (RLS: SuperAdmin con platform.users.read/write).
+ */
+export async function listPharmacyMembers(
+  pharmacyId: string
+): Promise<PharmacyMember[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('pharmacy_memberships')
+    .select(
+      `
+      id,
+      status,
+      invited_at,
+      created_at,
+      profiles!pharmacy_memberships_profile_id_fkey (
+        id,
+        email,
+        full_name
+      ),
+      roles!pharmacy_memberships_role_id_fkey (
+        key,
+        name
+      )
+    `
+    )
+    .eq('pharmacy_id', pharmacyId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[pharmacies] listPharmacyMembers', error.message, error.code);
+    }
+    throw new Error('No se han podido cargar los usuarios de la farmacia.');
+  }
+
+  const members: PharmacyMember[] = [];
+  for (const row of (data as MemberRow[] | null) ?? []) {
+    const profile = unwrapOne(row.profiles);
+    const role = unwrapOne(row.roles);
+    if (!profile || !role) continue;
+    members.push({
+      id: row.id,
+      status: row.status as MembershipStatus,
+      invited_at: row.invited_at,
+      created_at: row.created_at,
+      profile: {
+        id: profile.id,
+        email: profile.email,
+        full_name: profile.full_name,
+      },
+      role: {
+        key: role.key as PharmacyRoleKey,
+        name: role.name,
+      },
+    });
+  }
+
+  return members;
+}
+
+/**
+ * Roles de farmacia del seed (solo keys conocidas).
+ */
+export async function listPharmacyRoles(): Promise<PharmacyRoleOption[]> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase
+    .from('roles')
+    .select('id, key, name')
+    .in('key', PHARMACY_ROLE_KEYS)
+    .order('key', { ascending: true });
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[pharmacies] listPharmacyRoles', error.message, error.code);
+    }
+    throw new Error('No se han podido cargar los roles de farmacia.');
+  }
+
+  const byKey = new Map(
+    ((data as { id: string; key: string; name: string }[] | null) ?? []).map(
+      (r) => [r.key, r] as const
+    )
+  );
+
+  // Orden estable: Propietario primero.
+  return PHARMACY_ROLE_KEYS.flatMap((key) => {
+    const row = byKey.get(key);
+    if (!row) return [];
+    return [{ id: row.id, key: key, name: row.name }];
+  });
 }

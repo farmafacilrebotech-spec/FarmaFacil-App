@@ -25,7 +25,12 @@ import {
   Loader2,
 } from 'lucide-react';
 
-import type { PharmacyDetail, PlanSummary } from '@/lib/pharmacies/types';
+import type {
+  PharmacyDetail,
+  PlanSummary,
+  PharmacyMember,
+  PharmacyRoleOption,
+} from '@/lib/pharmacies/types';
 import {
   PHARMACY_STATUS_LABELS,
   SUBSCRIPTION_STATUS_LABELS,
@@ -48,13 +53,14 @@ import {
 } from '@/components/shared/status-badge';
 import { PharmacyLogo } from '@/components/brand';
 import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
+import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
 
 const tabs = [
   { id: 'general', label: 'General', icon: LayoutDashboard, ready: true },
   { id: 'personalizacion', label: 'Personalización', icon: Palette, ready: true },
   { id: 'contrato', label: 'Contrato', icon: FileText, ready: false },
   { id: 'qr', label: 'QR', icon: QrCode, ready: false },
-  { id: 'usuarios', label: 'Usuarios', icon: Users, ready: false },
+  { id: 'usuarios', label: 'Usuarios', icon: Users, ready: true },
   { id: 'clientes', label: 'Clientes', icon: User, ready: false },
   { id: 'catalogo', label: 'Catálogo', icon: Pill, ready: false },
   { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, ready: false },
@@ -165,9 +171,13 @@ type PersonalizationForm = {
 export function PharmacyDetailClient({
   pharmacy: initialPharmacy,
   plans,
+  members,
+  roles,
 }: {
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
+  members: PharmacyMember[];
+  roles: PharmacyRoleOption[];
 }) {
   const router = useRouter();
   const [pharmacy, setPharmacy] = React.useState(initialPharmacy);
@@ -1037,7 +1047,21 @@ export function PharmacyDetailClient({
           </div>
         )}
 
-        {activeTab !== 'general' && activeTab !== 'personalizacion' && (
+        {activeTab === 'usuarios' && (
+          <PharmacyUsersPanel
+            pharmacyId={pharmacy.id}
+            members={members}
+            roles={roles}
+            onSuccessMessage={(message) => {
+              setSuccess(message);
+              setError(null);
+            }}
+          />
+        )}
+
+        {activeTab !== 'general' &&
+          activeTab !== 'personalizacion' &&
+          activeTab !== 'usuarios' && (
           <PendingPanel
             title={tabs.find((t) => t.id === activeTab)?.label ?? 'Sección'}
           />

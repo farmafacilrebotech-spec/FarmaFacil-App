@@ -44,6 +44,31 @@ export async function hasPlatformSuperAdminRole(
   return { ok: data != null };
 }
 
+/**
+ * Comprueba un permiso de plataforma vía helper SQL ff_has_platform_permission.
+ * Usa la sesión del usuario (JWT); no service_role.
+ */
+export async function hasPlatformPermission(
+  permissionKey: string
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = createClient();
+
+  const { data, error } = await supabase.rpc('ff_has_platform_permission', {
+    p_permission_key: permissionKey,
+  });
+
+  if (error) {
+    console.error(
+      'platform permission check failed:',
+      error.code,
+      error.message
+    );
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: data === true };
+}
+
 export async function getCurrentProfile(): Promise<{
   profile: CurrentProfile | null;
   error?: string;

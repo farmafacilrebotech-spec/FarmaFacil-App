@@ -7,6 +7,8 @@ const AUTH_ROUTES = new Set([
   '/reset-password',
   '/first-access',
   '/invite',
+  // PKCE: intercambio de ?code= sin sesión previa (invite / recovery).
+  '/auth/callback',
 ]);
 
 /**
