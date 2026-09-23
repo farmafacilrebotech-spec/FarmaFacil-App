@@ -14,6 +14,8 @@ export type PharmacyProduct = {
   minStock: number;
   isActive: boolean;
   isFeatured: boolean;
+  source: 'manual' | 'import' | 'demo';
+  sourceRef: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -32,6 +34,8 @@ export type PharmacyProductRow = {
   min_stock: number;
   is_active: boolean;
   is_featured: boolean;
+  source?: string | null;
+  source_ref?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -51,6 +55,10 @@ export function mapPharmacyProduct(row: PharmacyProductRow): PharmacyProduct {
     minStock: row.min_stock,
     isActive: row.is_active,
     isFeatured: row.is_featured,
+    source: row.source === 'demo' || row.source === 'import' || row.source === 'manual'
+      ? row.source
+      : 'manual',
+    sourceRef: row.source_ref ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

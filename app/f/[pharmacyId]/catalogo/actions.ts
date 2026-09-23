@@ -17,7 +17,7 @@ import {
 import { parseSpreadsheetFile } from '@/lib/import/parse-file';
 import type { ColumnMapping } from '@/lib/import/spreadsheet';
 import { createClient } from '@/lib/supabase/server';
-import { requireActivePharmacyMembership } from '@/lib/auth/access';
+import { requirePharmacyCatalogAccess } from '@/lib/auth/access';
 import { revalidatePath } from 'next/cache';
 
 export type ActionResult =
@@ -48,7 +48,7 @@ export async function createPharmacyProductAction(
   pharmacyId: string,
   raw: PharmacyProductInput
 ): Promise<CreateProductResult> {
-  const access = await requireActivePharmacyMembership(pharmacyId);
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const parsed = pharmacyProductInputSchema.safeParse(raw);
@@ -78,6 +78,7 @@ export async function createPharmacyProductAction(
   }
 
   revalidatePath(`/f/${pharmacyId}/catalogo`);
+  revalidatePath(`/farmacias/${pharmacyId}`);
   return { ok: true, productId: data.id as string };
 }
 
@@ -86,7 +87,7 @@ export async function updatePharmacyProductAction(
   productId: string,
   raw: PharmacyProductInput
 ): Promise<ActionResult> {
-  const access = await requireActivePharmacyMembership(pharmacyId);
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const parsed = pharmacyProductInputSchema.safeParse(raw);
@@ -110,6 +111,7 @@ export async function updatePharmacyProductAction(
   }
 
   revalidatePath(`/f/${pharmacyId}/catalogo`);
+  revalidatePath(`/farmacias/${pharmacyId}`);
   return { ok: true };
 }
 
@@ -118,7 +120,7 @@ export async function setPharmacyProductActiveAction(
   productId: string,
   isActive: boolean
 ): Promise<ActionResult> {
-  const access = await requireActivePharmacyMembership(pharmacyId);
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const supabase = createClient();
@@ -137,6 +139,7 @@ export async function setPharmacyProductActiveAction(
   }
 
   revalidatePath(`/f/${pharmacyId}/catalogo`);
+  revalidatePath(`/farmacias/${pharmacyId}`);
   return { ok: true };
 }
 
@@ -157,7 +160,7 @@ export async function previewProductImportAction(
   pharmacyId: string,
   formData: FormData
 ): Promise<PreviewImportResult> {
-  const access = await requireActivePharmacyMembership(pharmacyId);
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const file = formData.get('file');
@@ -226,7 +229,7 @@ export async function confirmProductImportAction(
     }>;
   }
 ): Promise<ConfirmImportResult> {
-  const access = await requireActivePharmacyMembership(pharmacyId);
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const rows = payload.rows ?? [];
@@ -311,5 +314,6 @@ export async function confirmProductImportAction(
   }
 
   revalidatePath(`/f/${pharmacyId}/catalogo`);
+  revalidatePath(`/farmacias/${pharmacyId}`);
   return { ok: true, created, updated, skipped };
 }

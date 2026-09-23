@@ -10,6 +10,11 @@ const AUTH_ROUTES = new Set([
   '/auth/callback',
 ]);
 
+/** Documentos legales públicos (sin sesión). */
+function isPublicLegalRoute(pathname: string): boolean {
+  return pathname === '/legal' || pathname.startsWith('/legal/');
+}
+
 /**
  * Cualquier redirect debe preservar las cookies que updateSession
  * acaba de refrescar. Si se pierden, el Server Component no ve sesión
@@ -39,8 +44,9 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isAuthRoute = AUTH_ROUTES.has(pathname);
+  const isPublicRoute = isAuthRoute || isPublicLegalRoute(pathname);
 
-  if (!user && !isAuthRoute) {
+  if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     url.searchParams.set('next', pathname);

@@ -46,12 +46,17 @@ export function PharmacyCatalogView({
   products,
   categories,
   loadError,
+  variant = 'page',
+  toolbarExtra,
 }: {
   pharmacyId: string;
   pharmacyName: string;
   products: PharmacyProduct[];
   categories: string[];
   loadError?: string | null;
+  /** page = cabecera completa tenant; embedded = pestaña SuperAdmin */
+  variant?: 'page' | 'embedded';
+  toolbarExtra?: React.ReactNode;
 }) {
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('all');
@@ -107,45 +112,69 @@ export function PharmacyCatalogView({
     );
   }
 
+  const actions = (
+    <>
+      {toolbarExtra}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        onClick={downloadTemplate}
+      >
+        <Download className="h-4 w-4" /> Plantilla
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="gap-1.5"
+        onClick={() => setImportOpen(true)}
+      >
+        <Upload className="h-4 w-4" /> Importar Excel/CSV
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        className="gap-1.5"
+        onClick={() => {
+          setEditing(null);
+          setFormOpen(true);
+        }}
+      >
+        <Plus className="h-4 w-4" /> Añadir producto
+      </Button>
+    </>
+  );
+
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
-      <PageHeader
-        title="Catálogo"
-        description={`Productos de ${pharmacyName}`}
-        actions={
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={downloadTemplate}
-            >
-              <Download className="h-4 w-4" /> Plantilla
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setImportOpen(true)}
-            >
-              <Upload className="h-4 w-4" /> Importar Excel/CSV
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => {
-                setEditing(null);
-                setFormOpen(true);
-              }}
-            >
-              <Plus className="h-4 w-4" /> Añadir producto
-            </Button>
-          </>
-        }
-      />
+    <div
+      className={
+        variant === 'page'
+          ? 'mx-auto w-full max-w-7xl space-y-6'
+          : 'w-full space-y-4'
+      }
+    >
+      {variant === 'page' ? (
+        <PageHeader
+          title="Catálogo"
+          description={`Productos de ${pharmacyName}`}
+          actions={actions}
+        />
+      ) : (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div>
+            <h3 className="text-base font-semibold text-foreground">
+              Catálogo de productos
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {products.length} producto{products.length === 1 ? '' : 's'} ·{' '}
+              {pharmacyName}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">{actions}</div>
+        </div>
+      )}
 
       {loadError ? (
         <div className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">

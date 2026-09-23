@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import {
   getCurrentProfile,
+  hasPlatformPermission,
   hasPlatformSuperAdminRole,
   type CurrentProfile,
 } from '@/lib/auth/platform';
@@ -286,3 +287,60 @@ export async function requireActivePharmacyMembership(pharmacyId: string): Promi
   // platform / invited / forbidden → no acceso tenant por membership
   return { ok: false, reason: 'forbidden' };
 }
+
+/**
+ * Acceso a catálogo de una farmacia:
+ * - membership active de esa farmacia, o
+ * - permiso platform.pharmacies.read (lectura) / platform.pharmacies.write (escritura).
+ * No debilita RLS: la BD sigue filtrando por ff_can_read_pharmacy / membership|platform write.
+ */
+export async function requirePharmacyCatalogAccess(
+  pharmacyId: string,
+  mode: 'read' | 'write' = 'read'
+): Promise<
+  | {
+      ok: true;
+      profile: CurrentProfile;
+      via: 'membership' | 'platform';
+    }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'error'; message?: string }
+> {
+  const membership = await requireActivePharmacyMembership(pharmacyId);
+  if (membership.ok) {
+    return {
+      ok: true,
+      profile: membership.profile,
+      via: 'membership',
+    };
+  }
+
+  if (membership.reason === 'unauthenticated' || membership.reason === 'error') {
+    return membership;
+  }
+
+  if (mode === 'write') {
+    const write = await hasPlatformPermission('platform.pharmacies.write');
+    if (!write.ok) {
+      return { ok: false, reason: 'forbidden' };
+    }
+  } else {
+    const write = await hasPlatformPermission('platform.pharmacies.write');
+    if (!write.ok) {
+      const read = await hasPlatformPermission('platform.pharmacies.read');
+      if (!read.ok) {
+        return { ok: false, reason: 'forbidden' };
+      }
+    }
+  }
+
+  const { profile, authenticated, error } = await getCurrentProfile();
+  if (!authenticated) {
+    return { ok: false, reason: 'unauthenticated' };
+  }
+  if (error || !profile) {
+    return { ok: false, reason: 'error', message: error };
+  }
+
+  return { ok: true, profile, via: 'platform' };
+}
+

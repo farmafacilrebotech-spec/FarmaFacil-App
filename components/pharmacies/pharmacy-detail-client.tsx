@@ -54,6 +54,8 @@ import {
 import { PharmacyLogo } from '@/components/brand';
 import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
+import { CatalogoTab } from '@/components/pharmacies/tabs/catalogo-tab';
+import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
 
 const tabs = [
   { id: 'general', label: 'General', icon: LayoutDashboard, ready: true },
@@ -62,7 +64,7 @@ const tabs = [
   { id: 'qr', label: 'QR', icon: QrCode, ready: false },
   { id: 'usuarios', label: 'Usuarios', icon: Users, ready: true },
   { id: 'clientes', label: 'Clientes', icon: User, ready: false },
-  { id: 'catalogo', label: 'Catálogo', icon: Pill, ready: false },
+  { id: 'catalogo', label: 'Catálogo', icon: Pill, ready: true },
   { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, ready: false },
   { id: 'actividad', label: 'Actividad', icon: Activity, ready: false },
 ] as const;
@@ -173,11 +175,17 @@ export function PharmacyDetailClient({
   plans,
   members,
   roles,
+  catalogProducts = [],
+  catalogCategories = [],
+  catalogLoadError = null,
 }: {
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
+  catalogProducts?: PharmacyProduct[];
+  catalogCategories?: string[];
+  catalogLoadError?: string | null;
 }) {
   const router = useRouter();
   const [pharmacy, setPharmacy] = React.useState(initialPharmacy);
@@ -1059,9 +1067,20 @@ export function PharmacyDetailClient({
           />
         )}
 
+        {activeTab === 'catalogo' && (
+          <CatalogoTab
+            pharmacyId={pharmacy.id}
+            pharmacyName={pharmacy.name}
+            products={catalogProducts}
+            categories={catalogCategories}
+            loadError={catalogLoadError}
+          />
+        )}
+
         {activeTab !== 'general' &&
           activeTab !== 'personalizacion' &&
-          activeTab !== 'usuarios' && (
+          activeTab !== 'usuarios' &&
+          activeTab !== 'catalogo' && (
           <PendingPanel
             title={tabs.find((t) => t.id === activeTab)?.label ?? 'Sección'}
           />

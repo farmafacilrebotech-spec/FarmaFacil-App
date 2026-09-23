@@ -1,7 +1,11 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
-import { destinationForAppAccess, resolveAppAccess } from '@/lib/auth/access';
+import {
+  destinationForAppAccess,
+  resolveAppAccess,
+} from '@/lib/auth/access';
+import { PRIVACY_VERSION, TERMS_VERSION } from '@/lib/legal/versions';
 
 export type CompleteFirstAccessResult =
   | { ok: true; redirectTo: string }
@@ -12,6 +16,7 @@ export type CompleteFirstAccessResult =
         | 'unauthenticated'
         | 'validation'
         | 'password'
+        | 'legal'
         | 'no_pending'
         | 'multiple_pending'
         | 'rpc';
@@ -52,17 +57,30 @@ function mapAcceptFailure(
 }
 
 /**
- * Establece la contraseña del usuario invitado (sesión propia) y acepta
- * su única membership invited → active vía ff_accept_pharmacy_invitation_v1.
- * Sin service_role. Sin pharmacy_id del cliente.
- * No cierra sesión: redirige al dashboard de la farmacia.
+ * Primer acceso: valida casillas → contraseña (Auth) →
+ * ff_complete_pharmacy_first_access_v1(TERMS_VERSION, PRIVACY_VERSION)
+ * (evidencia legal + membership invited→active en una sola transacción PG).
+ *
+ * Versiones legales solo desde constantes server-side.
+ * Sin service_role. Sin user_id/pharmacy_id del cliente como autoridad.
  */
 export async function completeFirstAccessAction(input: {
   password: string;
   confirmPassword: string;
+  acceptTerms: boolean;
+  acceptPrivacy: boolean;
 }): Promise<CompleteFirstAccessResult> {
   const password = input.password ?? '';
   const confirmPassword = input.confirmPassword ?? '';
+
+  if (!input.acceptTerms || !input.acceptPrivacy) {
+    return {
+      ok: false,
+      error:
+        'Debes aceptar los Términos y Condiciones y confirmar que has leído la Política de Privacidad.',
+      code: 'validation',
+    };
+  }
 
   if (password.length < 8) {
     return {
@@ -102,9 +120,7 @@ export async function completeFirstAccessAction(input: {
   if (passwordError) {
     console.error('[first-access] updateUser', passwordError.message);
     const msg = passwordError.message.toLowerCase();
-    if (msg.includes('same') || msg.includes('identical')) {
-      // Contraseña ya establecida (reintento): seguimos a aceptar membership.
-    } else {
+    if (!(msg.includes('same') || msg.includes('identical'))) {
       return {
         ok: false,
         error: 'No se ha podido guardar la contraseña. Inténtalo de nuevo.',
@@ -114,20 +130,39 @@ export async function completeFirstAccessAction(input: {
   }
 
   const { data, error: rpcError } = await supabase.rpc(
-    'ff_accept_pharmacy_invitation_v1'
+    'ff_complete_pharmacy_first_access_v1',
+    {
+      p_terms_version: TERMS_VERSION,
+      p_privacy_version: PRIVACY_VERSION,
+    }
   );
 
   if (rpcError) {
     console.error(
-      '[first-access] ff_accept_pharmacy_invitation_v1',
+      '[first-access] ff_complete_pharmacy_first_access_v1',
       rpcError.message,
       rpcError.code
     );
-    if (rpcError.code === '42883' || rpcError.message.includes('does not exist')) {
+    if (
+      rpcError.code === '42883' ||
+      rpcError.message.includes('does not exist')
+    ) {
       return {
         ok: false,
         error:
-          'La aceptación de invitaciones aún no está disponible en la base de datos. Contacta con FarmaFácil.',
+          'La aceptación de primer acceso aún no está disponible en la base de datos. Contacta con FarmaFácil.',
+        code: 'rpc',
+      };
+    }
+    if (
+      rpcError.message.includes('profile_not_found') ||
+      rpcError.message.includes('membership_activation_failed') ||
+      rpcError.message.includes('terms_version_required') ||
+      rpcError.message.includes('privacy_version_required')
+    ) {
+      return {
+        ok: false,
+        error: 'No se ha podido completar el primer acceso. Inténtalo de nuevo.',
         code: 'rpc',
       };
     }
@@ -153,14 +188,12 @@ export async function completeFirstAccessAction(input: {
       : null;
 
   if (pharmacyIdFromRpc && /^[0-9a-f-]{36}$/i.test(pharmacyIdFromRpc)) {
-    // Sesión intacta; destino de la farmacia aceptada (no confiar en cliente).
     return {
       ok: true,
       redirectTo: `/f/${pharmacyIdFromRpc}/dashboard`,
     };
   }
 
-  // Fallback: resolver de nuevo (membership ya active).
   const access = await resolveAppAccess();
   return { ok: true, redirectTo: destinationForAppAccess(access) };
 }

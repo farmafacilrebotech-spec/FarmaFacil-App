@@ -1,5 +1,5 @@
 import { createClient } from '@/lib/supabase/server';
-import { requireActivePharmacyMembership } from '@/lib/auth/access';
+import { requirePharmacyCatalogAccess } from '@/lib/auth/access';
 import {
   mapPharmacyProduct,
   type PharmacyProduct,
@@ -20,7 +20,7 @@ export async function listPharmacyProducts(
   pharmacyId: string,
   filters: ProductListFilters = {}
 ): Promise<ProductsResult> {
-  const access = await requireActivePharmacyMembership(pharmacyId);
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'read');
   if (!access.ok) {
     return { ok: false, error: 'No autorizado.' };
   }
@@ -29,7 +29,7 @@ export async function listPharmacyProducts(
   let query = supabase
     .from('pharmacy_products')
     .select(
-      'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, created_at, updated_at'
+      'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, source, source_ref, created_at, updated_at'
     )
     .eq('pharmacy_id', pharmacyId)
     .order('name', { ascending: true });
@@ -50,7 +50,35 @@ export async function listPharmacyProducts(
     );
   }
 
-  const { data, error } = await query;
+  let { data, error } = await query;
+
+  // Compatibilidad: si 022 aún no está aplicada, reintenta sin source/source_ref.
+  if (
+    error &&
+    (error.message.includes('source') || error.code === '42703' || error.code === 'PGRST204')
+  ) {
+    let fallback = supabase
+      .from('pharmacy_products')
+      .select(
+        'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, created_at, updated_at'
+      )
+      .eq('pharmacy_id', pharmacyId)
+      .order('name', { ascending: true });
+    if (status === 'active') fallback = fallback.eq('is_active', true);
+    if (status === 'inactive') fallback = fallback.eq('is_active', false);
+    if (filters.category && filters.category !== 'all') {
+      fallback = fallback.eq('category', filters.category);
+    }
+    if (q) {
+      const escaped = q.replace(/[%_,]/g, '');
+      fallback = fallback.or(
+        `name.ilike.%${escaped}%,sku.ilike.%${escaped}%,ean.ilike.%${escaped}%,brand.ilike.%${escaped}%`
+      );
+    }
+    const retried = await fallback;
+    data = retried.data as typeof data;
+    error = retried.error;
+  }
 
   if (error) {
     console.error('[products] list', error.code, error.message);
@@ -82,7 +110,7 @@ export async function getPharmacyProduct(
   pharmacyId: string,
   productId: string
 ): Promise<{ ok: true; product: PharmacyProduct } | { ok: false; error: string }> {
-  const access = await requireActivePharmacyMembership(pharmacyId);
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'read');
   if (!access.ok) {
     return { ok: false, error: 'No autorizado.' };
   }
@@ -91,7 +119,7 @@ export async function getPharmacyProduct(
   const { data, error } = await supabase
     .from('pharmacy_products')
     .select(
-      'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, created_at, updated_at'
+      'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, source, source_ref, created_at, updated_at'
     )
     .eq('pharmacy_id', pharmacyId)
     .eq('id', productId)
@@ -107,9 +135,10 @@ export async function getPharmacyProduct(
 export function toProductInsert(
   pharmacyId: string,
   profileId: string,
-  input: PharmacyProductInput
+  input: PharmacyProductInput,
+  meta?: { source?: 'manual' | 'import' | 'demo'; sourceRef?: string | null }
 ) {
-  return {
+  const payload: Record<string, unknown> = {
     pharmacy_id: pharmacyId,
     sku: input.sku,
     ean: input.ean,
@@ -125,6 +154,12 @@ export function toProductInsert(
     created_by: profileId,
     updated_by: profileId,
   };
+  // Solo incluir source si se pide explícitamente (requiere migración 022).
+  if (meta?.source) {
+    payload.source = meta.source;
+    payload.source_ref = meta.sourceRef ?? null;
+  }
+  return payload;
 }
 
 export function toProductUpdate(

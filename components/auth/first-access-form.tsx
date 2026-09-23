@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { PRIVACY_PATH, TERMS_PATH } from '@/lib/legal/versions';
 
 export function FirstAccessForm({
   displayName,
@@ -46,6 +47,8 @@ export function FirstAccessForm({
       const result = await completeFirstAccessAction({
         password,
         confirmPassword: confirm,
+        acceptTerms,
+        acceptPrivacy,
       });
 
       if (!result.ok) {
@@ -54,7 +57,6 @@ export function FirstAccessForm({
         return;
       }
 
-      // Sesión intacta → entorno de la farmacia (sin signOut).
       router.replace(result.redirectTo);
       router.refresh();
     } catch {
@@ -156,12 +158,20 @@ export function FirstAccessForm({
                 className="mt-0.5"
                 disabled={submitting}
               />
-              <Label htmlFor="terms" className="text-sm text-muted-foreground">
-                Acepto los{' '}
-                <span className="font-medium text-primary">
-                  términos y condiciones
-                </span>{' '}
-                del servicio
+              <Label
+                htmlFor="terms"
+                className="text-sm leading-snug text-muted-foreground"
+              >
+                He leído y acepto los{' '}
+                <Link
+                  href={TERMS_PATH}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Términos y Condiciones de uso de FarmaFácil
+                </Link>
               </Label>
             </div>
             <div className="flex items-start gap-2.5">
@@ -172,24 +182,32 @@ export function FirstAccessForm({
                 className="mt-0.5"
                 disabled={submitting}
               />
-              <Label htmlFor="privacy" className="text-sm text-muted-foreground">
-                Acepto la{' '}
-                <span className="font-medium text-primary">
-                  política de privacidad
-                </span>{' '}
-                y el tratamiento de datos
+              <Label
+                htmlFor="privacy"
+                className="text-sm leading-snug text-muted-foreground"
+              >
+                He leído la{' '}
+                <Link
+                  href={PRIVACY_PATH}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  Política de Privacidad
+                </Link>
               </Label>
             </div>
           </div>
 
-          {error && (
+          {error ? (
             <p
               role="alert"
               className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive"
             >
               {error}
             </p>
-          )}
+          ) : null}
 
           <Button
             type="submit"
