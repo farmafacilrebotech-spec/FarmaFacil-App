@@ -1,17 +1,40 @@
-import { Pill } from 'lucide-react';
-
-import { PharmacyTenantModulePage } from '@/components/pharmacy-tenant/pharmacy-tenant-module-page';
+import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
+import { listPharmacyProducts } from '@/lib/pharmacies/products';
+import { PharmacyCatalogView } from '@/components/pharmacy-catalog/pharmacy-catalog-view';
 
 export const dynamic = 'force-dynamic';
 
-export default function PharmacyCatalogoPage() {
+export default async function PharmacyCatalogPage({
+  params,
+  searchParams,
+}: {
+  params: { pharmacyId: string };
+  searchParams?: { q?: string; category?: string; status?: string };
+}) {
+  const ctx = await loadPharmacyTenantContext(params.pharmacyId);
+  if (!ctx.ok) {
+    return null;
+  }
+
+  const statusParam = searchParams?.status;
+  const status =
+    statusParam === 'active' || statusParam === 'inactive'
+      ? statusParam
+      : 'all';
+
+  const list = await listPharmacyProducts(params.pharmacyId, {
+    q: searchParams?.q,
+    category: searchParams?.category,
+    status,
+  });
+
   return (
-    <PharmacyTenantModulePage
-      title="Catálogo"
-      description="Productos, categorías y stock de tu farmacia"
-      icon={Pill}
-      moduleTitle="Módulo de Catálogo"
-      moduleDescription="Listado de productos, categorías, destacados y control de stock. Se conectará al catálogo real de esta farmacia en una fase posterior."
+    <PharmacyCatalogView
+      pharmacyId={params.pharmacyId}
+      pharmacyName={ctx.context.pharmacy.name}
+      products={list.ok ? list.products : []}
+      categories={list.ok ? list.categories : []}
+      loadError={list.ok ? null : list.error}
     />
   );
 }
