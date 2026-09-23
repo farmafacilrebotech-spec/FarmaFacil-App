@@ -255,23 +255,35 @@ async function transitionMembershipViaRpc(params: {
 
     if (
       error.code === '42883' ||
-      error.message.toLowerCase().includes('does not exist')
+      error.code === 'PGRST202' ||
+      error.message.toLowerCase().includes('does not exist') ||
+      error.message.toLowerCase().includes('could not find the function')
     ) {
       return {
         ok: false,
         error:
-          'Las transiciones de membresía aún no están disponibles en la base de datos. Aplica la migración 023.',
+          'Las transiciones de membresía aún no están disponibles en la API. Recarga el schema PostgREST o contacta con FarmaFácil.',
       };
     }
 
     const msg = error.message || '';
-    if (error.code === '42501' || msg.includes('forbidden')) {
+    const msgLower = msg.toLowerCase();
+    if (
+      error.code === '42501' ||
+      msgLower.includes('forbidden') ||
+      msgLower.includes('permission denied') ||
+      msgLower.includes('no tienes permiso')
+    ) {
       return {
         ok: false,
         error: 'No tienes permiso para gestionar usuarios de farmacia.',
       };
     }
-    if (msg.includes('last_active_owner')) {
+    if (
+      msgLower.includes('last_active_owner') ||
+      msgLower.includes('último propietario') ||
+      msgLower.includes('ultimo propietario')
+    ) {
       return {
         ok: false,
         error:
@@ -279,29 +291,53 @@ async function transitionMembershipViaRpc(params: {
         code: 'last_active_owner',
       };
     }
-    if (msg.includes('invalid_state')) {
+    if (
+      msgLower.includes('invalid_state') ||
+      msgLower.includes('solo se puede cancelar') ||
+      msgLower.includes('solo se puede suspender') ||
+      msgLower.includes('solo se puede reactivar') ||
+      msgLower.includes('ha cambiado')
+    ) {
       return {
         ok: false,
-        error: msg.replace(/^.*invalid_state:?\s*/i, '').trim() ||
+        error:
+          msg.replace(/^.*invalid_state:?\s*/i, '').trim() ||
           'El estado de la membresía ha cambiado. Recarga e inténtalo de nuevo.',
         code: 'invalid_state',
       };
     }
-    if (msg.includes('not_found')) {
+    if (msgLower.includes('not_found') || msgLower.includes('no pertenece')) {
       return {
         ok: false,
         error: 'La membresía no pertenece a esta farmacia o no existe.',
       };
     }
+    if (
+      msgLower.includes('unauthenticated') ||
+      msgLower.includes('iniciar sesión')
+    ) {
+      return {
+        ok: false,
+        error: 'Debes iniciar sesión para gestionar usuarios.',
+      };
+    }
 
     return {
       ok: false,
-      error: 'No se ha podido actualizar el acceso del usuario.',
+      error: msg.trim() || 'No se ha podido actualizar el acceso del usuario.',
     };
   }
 
-  const payload =
-    data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  let payload: Record<string, unknown> | null = null;
+  try {
+    if (typeof data === 'string') {
+      payload = JSON.parse(data) as Record<string, unknown>;
+    } else if (data && typeof data === 'object') {
+      payload = data as Record<string, unknown>;
+    }
+  } catch {
+    payload = null;
+  }
   const status =
     payload && 'status' in payload ? String(payload.status) : undefined;
 
@@ -314,6 +350,8 @@ async function transitionMembershipViaRpc(params: {
   }
 
   revalidatePath(`/farmacias/${params.pharmacyId}`);
+  revalidatePath('/auth/invitations');
+  revalidatePath('/auth/select-pharmacy');
   return { ok: true, message: params.successMessage };
 }
 

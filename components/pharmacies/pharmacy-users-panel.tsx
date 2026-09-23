@@ -192,7 +192,11 @@ function MemberActionsCell({
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onSelect={() => setConfirm('cancel_invitation')}
+                onSelect={(e) => {
+                  // Evita la carrera Radix Dropdown→AlertDialog que cerraba el confirm.
+                  e.preventDefault();
+                  window.setTimeout(() => setConfirm('cancel_invitation'), 0);
+                }}
               >
                 <Ban className="mr-2 h-4 w-4" />
                 Cancelar invitación

@@ -34,11 +34,19 @@ function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [showPassword, setShowPassword] = React.useState(false);
-  const [email, setEmail] = React.useState('');
+  const hintParam = searchParams.get('hint');
+  const emailParam = searchParams.get('email');
+  const [email, setEmail] = React.useState(emailParam?.trim() ?? '');
   const [password, setPassword] = React.useState('');
   const [remember, setRemember] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (emailParam?.trim()) {
+      setEmail(emailParam.trim());
+    }
+  }, [emailParam]);
 
   const errorParam = searchParams.get('error');
   const callbackErrorMessage =
@@ -49,6 +57,13 @@ function LoginForm() {
         : errorParam === 'forbidden'
           ? 'Tu cuenta no tiene acceso autorizado a FarmaFácil.'
           : null;
+
+  const inviteHint =
+    hintParam === 'invite'
+      ? emailParam?.trim()
+        ? `Esta invitación es para ${emailParam.trim()}. Inicia sesión con esa cuenta para verla y aceptarla. No es un restablecimiento de contraseña.`
+        : 'Inicia sesión con la cuenta a la que se envió la invitación para verla y aceptarla. No es un restablecimiento de contraseña.'
+      : null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -136,6 +151,15 @@ function LoginForm() {
             Accede a tu panel de gestión de FarmaFácil
           </p>
         </div>
+
+        {inviteHint ? (
+          <div
+            role="status"
+            className="mb-4 rounded-lg border border-primary/25 bg-primary/5 px-3 py-2 text-sm text-foreground"
+          >
+            {inviteHint}
+          </div>
+        ) : null}
 
         {(callbackErrorMessage || error) && (
           <div

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
+import type { EmailOtpType } from '@supabase/supabase-js';
 
 /**
  * Destinos internos permitidos tras el callback de Auth (allowlist).
@@ -7,11 +8,14 @@ import { createServerClient } from '@supabase/ssr';
  */
 const ALLOWED_NEXT = new Set(['/first-access', '/auth/invitations']);
 
+/**
+ * Devuelve path allowlisted. Para /auth/invitations permite ?for=email
+ * solo como ayuda UX (no autoriza).
+ */
 function safeNextPath(raw: string | null): string {
   const fallback = '/first-access';
   if (!raw) return fallback;
 
-  // Solo rutas relativas de la app.
   if (!raw.startsWith('/') || raw.startsWith('//') || raw.includes('\\')) {
     return fallback;
   }
@@ -19,6 +23,17 @@ function safeNextPath(raw: string | null): string {
   const pathOnly = raw.split('?')[0]?.split('#')[0] ?? fallback;
   if (!ALLOWED_NEXT.has(pathOnly)) {
     return fallback;
+  }
+
+  if (pathOnly === '/auth/invitations') {
+    const qIndex = raw.indexOf('?');
+    if (qIndex !== -1) {
+      const params = new URLSearchParams(raw.slice(qIndex + 1).split('#')[0]);
+      const forEmail = (params.get('for') ?? '').trim().toLowerCase();
+      if (forEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forEmail)) {
+        return `/auth/invitations?for=${encodeURIComponent(forEmail)}`;
+      }
+    }
   }
 
   return pathOnly;
@@ -59,17 +74,21 @@ function createCallbackClient(request: NextRequest, nextPath: string) {
   return { supabase, getResponse: () => response };
 }
 
+const ALLOWED_OTP: EmailOtpType[] = ['invite', 'magiclink', 'email'];
+
 /**
  * Callback Auth SSR.
  *
- * Flujo invitación usuario NUEVO (Admin inviteUserByEmail):
- *   ?token_hash=...&type=invite&next=/first-access → verifyOtp → /first-access
+ * Usuario NUEVO (inviteUserByEmail):
+ *   ?token_hash=...&type=invite&next=/first-access
  *
- * Flujo usuario EXISTENTE (magic link FarmaFácil):
- *   ?token_hash=...&type=magiclink|email&next=/auth/invitations → verifyOtp → /auth/invitations
+ * Usuario EXISTENTE (magic link FarmaFácil, token_hash SSR):
+ *   ?token_hash=...&type=magiclink|email&next=/auth/invitations?for=email
  *
- * Flujo opcional PKCE:
- *   ?code=... → exchangeCodeForSession → next allowlisted
+ * PKCE:
+ *   ?code=... → exchangeCodeForSession
+ *
+ * No trata recovery aquí: recovery no está en la allowlist de OTP.
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -78,20 +97,19 @@ export async function GET(request: NextRequest) {
   const code = url.searchParams.get('code');
   const nextPath = safeNextPath(url.searchParams.get('next'));
 
-  // 1) OTP por token_hash (invite Auth o magiclink).
   if (tokenHash && otpType) {
-    const allowedOtp =
-      otpType === 'invite' ||
-      otpType === 'magiclink' ||
-      otpType === 'email';
-    if (!allowedOtp) {
+    if (!ALLOWED_OTP.includes(otpType as EmailOtpType)) {
+      // p.ej. type=recovery no debe entrar por este callback de invitaciones.
       return redirectToLogin(request, 'auth_callback');
     }
 
     const { supabase, getResponse } = createCallbackClient(request, nextPath);
+    // Asegura que la nueva sesión sustituya cualquier sesión previa del navegador.
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+
     const { error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
-      type: otpType,
+      type: otpType as EmailOtpType,
     });
 
     if (error) {
@@ -102,9 +120,10 @@ export async function GET(request: NextRequest) {
     return getResponse();
   }
 
-  // 2) PKCE code exchange (otros flujos Auth que sí envían ?code=).
   if (code) {
     const { supabase, getResponse } = createCallbackClient(request, nextPath);
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
@@ -115,6 +134,5 @@ export async function GET(request: NextRequest) {
     return getResponse();
   }
 
-  // Sin token_hash ni code: enlace incompleto / plantilla incorrecta / ya consumido sin params.
   return redirectToLogin(request, 'missing_code');
 }
