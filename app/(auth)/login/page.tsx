@@ -86,7 +86,8 @@ function LoginForm() {
         (next.startsWith('/f/') ||
           next === '/first-access' ||
           next === '/auth/continue' ||
-          next === '/auth/select-pharmacy')
+          next === '/auth/select-pharmacy' ||
+          next === '/auth/invitations')
           ? next
           : null;
 

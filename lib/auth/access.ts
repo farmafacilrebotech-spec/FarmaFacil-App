@@ -5,8 +5,13 @@ import {
   hasPlatformSuperAdminRole,
   type CurrentProfile,
 } from '@/lib/auth/platform';
+import {
+  hasCurrentLegalAcceptance,
+  listPendingPharmacyInvitations,
+  type PendingPharmacyInvitation,
+} from '@/lib/pharmacies/invitations';
 
-export type { CurrentProfile };
+export type { CurrentProfile, PendingPharmacyInvitation };
 
 export type PharmacyRoleKey =
   | 'PHARMACY_OWNER'
@@ -29,16 +34,21 @@ export type AppAccessResult =
       status: 'pharmacy';
       profile: CurrentProfile;
       membership: PharmacyMembershipSummary;
+      pendingInvitations: PendingPharmacyInvitation[];
     }
   | {
       status: 'multiple_pharmacies';
       profile: CurrentProfile;
       memberships: PharmacyMembershipSummary[];
+      pendingInvitations: PendingPharmacyInvitation[];
     }
   | {
       /** Sesión válida con membership invited y ninguna active. */
       status: 'invited';
       profile: CurrentProfile;
+      pendingInvitations: PendingPharmacyInvitation[];
+      /** true = alta incompleta (first-access); false = usuario FarmaFácil establecido */
+      needsFirstAccess: boolean;
     }
   | { status: 'forbidden'; profile: CurrentProfile }
   | { status: 'error'; message: string; email?: string };
@@ -104,25 +114,6 @@ async function listActiveMemberships(
   return { memberships };
 }
 
-async function hasInvitedMembership(
-  profileId: string
-): Promise<{ invited: boolean; error?: string }> {
-  const supabase = createClient();
-
-  const { count, error } = await supabase
-    .from('pharmacy_memberships')
-    .select('id', { count: 'exact', head: true })
-    .eq('profile_id', profileId)
-    .eq('status', 'invited');
-
-  if (error) {
-    console.error('invited memberships check failed:', error.code, error.message);
-    return { invited: false, error: error.message };
-  }
-
-  return { invited: (count ?? 0) > 0 };
-}
-
 /**
  * Resolución de acceso de aplicación (plataforma vs tenant).
  * Independiente de resolvePlatformAccess: no altera el gate SuperAdmin existente.
@@ -130,9 +121,9 @@ async function hasInvitedMembership(
  * Orden:
  * 1) sin sesión
  * 2) PLATFORM_SUPERADMIN → platform
- * 3) 1 membership active → pharmacy
- * 4) >1 memberships active → multiple_pharmacies
- * 5) membership invited (sin active) → invited
+ * 3) 1 membership active (+ pending invitations opcionales) → pharmacy
+ * 4) >1 memberships active (+ pending invitations opcionales) → multiple_pharmacies
+ * 5) solo invited → invited (needsFirstAccess según legal vigente)
  * 6) ninguna → forbidden
  */
 export async function resolveAppAccess(): Promise<AppAccessResult> {
@@ -176,11 +167,15 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
     };
   }
 
+  const { invitations: pendingInvitations } =
+    await listPendingPharmacyInvitations(profile.id);
+
   if (memberships.length === 1) {
     return {
       status: 'pharmacy',
       profile,
       membership: memberships[0],
+      pendingInvitations,
     };
   }
 
@@ -189,19 +184,19 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
       status: 'multiple_pharmacies',
       profile,
       memberships,
+      pendingInvitations,
     };
   }
 
-  const invited = await hasInvitedMembership(profile.id);
-  if (invited.error) {
+  if (pendingInvitations.length > 0) {
+    // Usuario establecido (legal vigente) → aceptar invitaciones sin first-access.
+    const hasLegal = await hasCurrentLegalAcceptance(profile.id);
     return {
-      status: 'error',
-      message: invited.error,
-      email: profile.email,
+      status: 'invited',
+      profile,
+      pendingInvitations,
+      needsFirstAccess: !hasLegal,
     };
-  }
-  if (invited.invited) {
-    return { status: 'invited', profile };
   }
 
   return { status: 'forbidden', profile };
@@ -222,7 +217,7 @@ export function destinationForAppAccess(access: AppAccessResult): string {
     case 'multiple_pharmacies':
       return '/auth/select-pharmacy';
     case 'invited':
-      return '/first-access';
+      return access.needsFirstAccess ? '/first-access' : '/auth/invitations';
     case 'forbidden':
       return '/access-denied';
     case 'error':

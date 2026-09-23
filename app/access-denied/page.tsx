@@ -2,7 +2,10 @@ import Link from 'next/link';
 import { ShieldAlert } from 'lucide-react';
 import { redirect } from 'next/navigation';
 
-import { resolveAppAccess } from '@/lib/auth/access';
+import {
+  destinationForAppAccess,
+  resolveAppAccess,
+} from '@/lib/auth/access';
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { signOutAction } from '@/app/auth/actions';
@@ -26,7 +29,7 @@ export default async function AccessDeniedPage() {
     redirect(`/f/${access.membership.pharmacyId}/dashboard`);
   }
   if (access.status === 'invited') {
-    redirect('/first-access');
+    redirect(destinationForAppAccess(access));
   }
   if (access.status === 'multiple_pharmacies') {
     redirect('/auth/select-pharmacy');

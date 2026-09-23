@@ -1,12 +1,29 @@
 'use client';
 
 import * as React from 'react';
-import { Plus, Mail } from 'lucide-react';
+import {
+  Plus,
+  Mail,
+  MoreHorizontal,
+  Ban,
+  RotateCcw,
+  UserX,
+  Send,
+  Pencil,
+} from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { toast } from 'sonner';
 
 import type { PharmacyMember, PharmacyRoleOption } from '@/lib/pharmacies/types';
 import { MEMBERSHIP_STATUS_LABELS } from '@/lib/pharmacies/labels';
 import { formatDateTime, initials } from '@/lib/format';
+import {
+  cancelPharmacyInvitationAction,
+  reactivatePharmacyMembershipAction,
+  resendPharmacyInvitationAction,
+  revokePharmacyMembershipAction,
+  suspendPharmacyMembershipAction,
+} from '@/app/(app)/farmacias/membership-actions';
 import { Button } from '@/components/ui/button';
 import {
   StatusBadge,
@@ -14,6 +31,260 @@ import {
 } from '@/components/shared/status-badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { InviteUserDialog } from '@/components/pharmacies/invite-user-dialog';
+import { EditPharmacyUserDialog } from '@/components/pharmacies/edit-pharmacy-user-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+
+type ConfirmAction =
+  | 'suspend'
+  | 'reactivate'
+  | 'revoke'
+  | 'cancel_invitation';
+
+const CONFIRM_COPY: Record<
+  ConfirmAction,
+  {
+    title: string;
+    description: string;
+    confirmLabel: string;
+    destructive?: boolean;
+  }
+> = {
+  suspend: {
+    title: '¿Suspender acceso?',
+    description:
+      'El usuario perderá de inmediato el acceso a esta farmacia. Podrás reactivarlo más adelante.',
+    confirmLabel: 'Suspender acceso',
+    destructive: true,
+  },
+  reactivate: {
+    title: '¿Reactivar acceso?',
+    description:
+      'El usuario recuperará el acceso a esta farmacia de inmediato.',
+    confirmLabel: 'Reactivar acceso',
+  },
+  revoke: {
+    title: '¿Revocar acceso?',
+    description:
+      'El usuario dejará de pertenecer a esta farmacia. No se borrará su cuenta, pero de momento no se podrá reactivar automáticamente.',
+    confirmLabel: 'Revocar acceso',
+    destructive: true,
+  },
+  cancel_invitation: {
+    title: '¿Cancelar invitación?',
+    description:
+      'La invitación dejará de ser válida para completar el acceso a esta farmacia.',
+    confirmLabel: 'Cancelar invitación',
+    destructive: true,
+  },
+};
+
+function MemberActionsCell({
+  pharmacyId,
+  member,
+  roles,
+  onDone,
+}: {
+  pharmacyId: string;
+  member: PharmacyMember;
+  roles: PharmacyRoleOption[];
+  onDone: (message: string) => void;
+}) {
+  const [confirm, setConfirm] = React.useState<ConfirmAction | null>(null);
+  const [pending, setPending] = React.useState(false);
+  const [resending, setResending] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+
+  async function runConfirmed() {
+    if (!confirm || pending) return;
+    setPending(true);
+
+    const input = { pharmacyId, membershipId: member.id };
+    let result;
+    switch (confirm) {
+      case 'suspend':
+        result = await suspendPharmacyMembershipAction(input);
+        break;
+      case 'reactivate':
+        result = await reactivatePharmacyMembershipAction(input);
+        break;
+      case 'revoke':
+        result = await revokePharmacyMembershipAction(input);
+        break;
+      case 'cancel_invitation':
+        result = await cancelPharmacyInvitationAction(input);
+        break;
+    }
+
+    setPending(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    setConfirm(null);
+    onDone(result.message);
+  }
+
+  async function handleResend() {
+    if (resending) return;
+    setResending(true);
+    const result = await resendPharmacyInvitationAction({
+      pharmacyId,
+      membershipId: member.id,
+    });
+    setResending(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    onDone(result.message);
+  }
+
+  const copy = confirm ? CONFIRM_COPY[confirm] : null;
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground"
+            aria-label="Acciones"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-52">
+          <DropdownMenuItem onSelect={() => setEditOpen(true)}>
+            <Pencil className="mr-2 h-4 w-4" />
+            Editar usuario
+          </DropdownMenuItem>
+          {member.status !== 'revoked' ? <DropdownMenuSeparator /> : null}
+
+          {member.status === 'invited' ? (
+            <>
+              <DropdownMenuItem
+                disabled={resending}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  void handleResend();
+                }}
+              >
+                <Send className="mr-2 h-4 w-4" />
+                {resending ? 'Reenviando…' : 'Reenviar invitación'}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setConfirm('cancel_invitation')}
+              >
+                <Ban className="mr-2 h-4 w-4" />
+                Cancelar invitación
+              </DropdownMenuItem>
+            </>
+          ) : null}
+
+          {member.status === 'active' ? (
+            <>
+              <DropdownMenuItem onSelect={() => setConfirm('suspend')}>
+                <Ban className="mr-2 h-4 w-4" />
+                Suspender acceso
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setConfirm('revoke')}
+              >
+                <UserX className="mr-2 h-4 w-4" />
+                Revocar acceso
+              </DropdownMenuItem>
+            </>
+          ) : null}
+
+          {member.status === 'suspended' ? (
+            <>
+              <DropdownMenuItem onSelect={() => setConfirm('reactivate')}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reactivar acceso
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onSelect={() => setConfirm('revoke')}
+              >
+                <UserX className="mr-2 h-4 w-4" />
+                Revocar acceso
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <AlertDialog
+        open={confirm != null}
+        onOpenChange={(open) => {
+          if (!open && !pending) setConfirm(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{copy?.title}</AlertDialogTitle>
+            <AlertDialogDescription>{copy?.description}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Volver</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={pending}
+              className={
+                copy?.destructive
+                  ? 'bg-destructive text-destructive-foreground hover:bg-destructive/90'
+                  : undefined
+              }
+              onClick={(e) => {
+                e.preventDefault();
+                void runConfirmed();
+              }}
+            >
+              {pending ? 'Aplicando…' : copy?.confirmLabel}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <EditPharmacyUserDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        pharmacyId={pharmacyId}
+        member={member}
+        roles={roles}
+        onSuccess={(message, meta) => {
+          onDone(message);
+          if (meta?.suggestResendInvitation) {
+            toast.message('Reenvía la invitación al email corregido.', {
+              description: 'Usa «Reenviar invitación» en Acciones.',
+            });
+          }
+        }}
+      />
+    </>
+  );
+}
 
 export function PharmacyUsersPanel({
   pharmacyId,
@@ -36,6 +307,12 @@ export function PharmacyUsersPanel({
 
   const invitedCount = members.filter((m) => m.status === 'invited').length;
   const activeCount = members.filter((m) => m.status === 'active').length;
+
+  function handleActionDone(message: string) {
+    onSuccessMessage(message);
+    toast.success(message);
+    router.refresh();
+  }
 
   return (
     <div className="space-y-4">
@@ -90,6 +367,9 @@ export function PharmacyUsersPanel({
                   <th className="hidden px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground lg:table-cell">
                     Invitación
                   </th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Acciones
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -128,6 +408,14 @@ export function PharmacyUsersPanel({
                       </td>
                       <td className="hidden px-4 py-3.5 text-muted-foreground lg:table-cell">
                         {m.invited_at ? formatDateTime(m.invited_at) : '—'}
+                      </td>
+                      <td className="px-4 py-3.5 text-right">
+                        <MemberActionsCell
+                          pharmacyId={pharmacyId}
+                          member={m}
+                          roles={roles}
+                          onDone={handleActionDone}
+                        />
                       </td>
                     </tr>
                   );

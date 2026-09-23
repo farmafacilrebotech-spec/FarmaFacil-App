@@ -29,6 +29,9 @@ export default async function FirstAccessPage() {
   }
 
   const access = await resolveAppAccess();
+  if (access.status === 'invited' && !access.needsFirstAccess) {
+    redirect('/auth/invitations');
+  }
   if (access.status !== 'invited' && access.status !== 'unauthenticated') {
     redirect(destinationForAppAccess(access));
   }

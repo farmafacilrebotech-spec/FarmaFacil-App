@@ -3,8 +3,8 @@
 import * as React from 'react';
 import { Loader2 } from 'lucide-react';
 
-import type { PharmacyRoleOption, PharmacyRoleKey } from '@/lib/pharmacies/types';
-import { invitePharmacyUserAction } from '@/app/(app)/farmacias/invite-actions';
+import type { PharmacyMember, PharmacyRoleOption, PharmacyRoleKey } from '@/lib/pharmacies/types';
+import { editPharmacyUserAction } from '@/app/(app)/farmacias/membership-actions';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -24,37 +24,36 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 
-export function InviteUserDialog({
+export function EditPharmacyUserDialog({
   open,
   onOpenChange,
   pharmacyId,
+  member,
   roles,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pharmacyId: string;
+  member: PharmacyMember;
   roles: PharmacyRoleOption[];
-  onSuccess: (message: string) => void;
+  onSuccess: (message: string, meta?: { suggestResendInvitation: boolean }) => void;
 }) {
-  const defaultRole =
-    roles.find((r) => r.key === 'PHARMACY_OWNER')?.key ?? roles[0]?.key ?? '';
-
-  const [fullName, setFullName] = React.useState('');
-  const [email, setEmail] = React.useState('');
-  const [roleKey, setRoleKey] = React.useState<string>(defaultRole);
+  const [fullName, setFullName] = React.useState(member.profile.full_name ?? '');
+  const [email, setEmail] = React.useState(member.profile.email);
+  const [roleKey, setRoleKey] = React.useState<string>(member.role.key);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (open) {
-      setFullName('');
-      setEmail('');
-      setRoleKey(defaultRole);
+      setFullName(member.profile.full_name ?? '');
+      setEmail(member.profile.email);
+      setRoleKey(member.role.key);
       setError(null);
       setSubmitting(false);
     }
-  }, [open, defaultRole]);
+  }, [open, member]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -63,8 +62,9 @@ export function InviteUserDialog({
     setSubmitting(true);
 
     try {
-      const result = await invitePharmacyUserAction({
+      const result = await editPharmacyUserAction({
         pharmacyId,
+        membershipId: member.id,
         fullName,
         email,
         roleKey,
@@ -76,21 +76,12 @@ export function InviteUserDialog({
         return;
       }
 
-      let message: string;
-      if (result.inviteKind === 'existing') {
-        message = result.invitationEmailSent
-          ? 'Usuario FarmaFácil invitado a esta farmacia. Se le ha enviado un email para acceder y aceptar la invitación.'
-          : 'Usuario FarmaFácil registrado como Invitado en esta farmacia. No se pudo enviar el email; usa «Reenviar invitación».';
-      } else {
-        message = result.invitationEmailSent
-          ? 'Invitación enviada. El usuario aparece como Invitado.'
-          : 'Acceso registrado. El usuario aparece como Invitado.';
-      }
-
-      onSuccess(message);
+      onSuccess(result.message, {
+        suggestResendInvitation: result.suggestResendInvitation,
+      });
       onOpenChange(false);
     } catch {
-      setError('No se ha podido completar la invitación. Inténtalo de nuevo.');
+      setError('No se ha podido guardar. Inténtalo de nuevo.');
       setSubmitting(false);
     }
   }
@@ -105,82 +96,84 @@ export function InviteUserDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Invitar usuario</DialogTitle>
+          <DialogTitle>Editar usuario</DialogTitle>
           <DialogDescription>
-            Se enviará un email de invitación (si el usuario es nuevo) y se
-            creará el acceso a esta farmacia con estado Invitado.
+            Corrige nombre, email o rol de esta farmacia. El email de acceso se
+            actualiza en Auth sin crear un usuario nuevo ni afectar otras
+            farmacias.
+            {member.status === 'invited'
+              ? ' Si cambias el email, reenvía la invitación después.'
+              : null}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="invite-name">Nombre</Label>
+            <Label htmlFor="edit-user-name">Nombre completo</Label>
             <Input
-              id="invite-name"
+              id="edit-user-name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
-              placeholder="Nombre y apellidos"
               autoComplete="name"
-              disabled={submitting}
               required
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="invite-email">Email</Label>
+            <Label htmlFor="edit-user-email">Email</Label>
             <Input
-              id="invite-email"
+              id="edit-user-email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="usuario@farmacia.es"
               autoComplete="email"
-              disabled={submitting}
               required
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="invite-role">Rol</Label>
+            <Label htmlFor="edit-user-role">Rol en esta farmacia</Label>
             <Select
               value={roleKey}
               onValueChange={(v) => setRoleKey(v as PharmacyRoleKey)}
-              disabled={submitting || roles.length === 0}
             >
-              <SelectTrigger id="invite-role">
+              <SelectTrigger id="edit-user-role">
                 <SelectValue placeholder="Selecciona un rol" />
               </SelectTrigger>
               <SelectContent>
-                {roles.map((role) => (
-                  <SelectItem key={role.id} value={role.key}>
-                    {role.name}
+                {roles.map((r) => (
+                  <SelectItem key={r.id} value={r.key}>
+                    {r.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {error && (
-            <p
-              role="alert"
-              className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive"
-            >
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
               {error}
             </p>
-          )}
+          ) : null}
 
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter>
             <Button
               type="button"
               variant="outline"
-              onClick={() => onOpenChange(false)}
               disabled={submitting}
+              onClick={() => onOpenChange(false)}
             >
               Cancelar
             </Button>
             <Button type="submit" disabled={!canSubmit}>
-              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Enviar invitación
+              {submitting ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Guardando…
+                </>
+              ) : (
+                'Guardar cambios'
+              )}
             </Button>
           </DialogFooter>
         </form>

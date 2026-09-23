@@ -1,9 +1,13 @@
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 
-import { resolveAppAccess } from '@/lib/auth/access';
+import {
+  destinationForAppAccess,
+  resolveAppAccess,
+} from '@/lib/auth/access';
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
+import { PendingInvitationsList } from '@/components/auth/pending-invitations-list';
 import { signOutAction } from '@/app/auth/actions';
 
 export const dynamic = 'force-dynamic';
@@ -25,7 +29,7 @@ export default async function SelectPharmacyPage() {
     redirect(`/f/${access.membership.pharmacyId}/dashboard`);
   }
   if (access.status === 'invited') {
-    redirect('/first-access');
+    redirect(destinationForAppAccess(access));
   }
   if (access.status !== 'multiple_pharmacies') {
     redirect('/access-denied');
@@ -56,6 +60,14 @@ export default async function SelectPharmacyPage() {
             </li>
           ))}
         </ul>
+        {access.pendingInvitations.length > 0 ? (
+          <div className="mt-8 border-t border-border pt-6">
+            <h2 className="text-sm font-medium text-foreground">
+              Invitaciones pendientes
+            </h2>
+            <PendingInvitationsList invitations={access.pendingInvitations} />
+          </div>
+        ) : null}
         <form action={signOutAction} className="mt-6">
           <Button type="submit" variant="ghost" className="w-full">
             Cerrar sesión

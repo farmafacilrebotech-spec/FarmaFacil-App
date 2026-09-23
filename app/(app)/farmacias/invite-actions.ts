@@ -9,13 +9,16 @@ import {
   hasPlatformPermission,
 } from '@/lib/auth/platform';
 import type { PharmacyRoleKey } from '@/lib/pharmacies/types';
+import { sendExistingUserPharmacyInviteEmail } from '@/lib/email/pharmacy-invitation';
 
 export type InvitePharmacyUserResult =
   | {
       ok: true;
       membershipId: string;
-      /** true si se envió inviteUserByEmail; false si solo membership */
+      /** true si se envió email (Auth invite o FarmaFácil) */
       invitationEmailSent: boolean;
+      /** new = inviteUserByEmail; existing = email propio FarmaFácil */
+      inviteKind: 'new' | 'existing';
     }
   | {
       ok: false;
@@ -222,13 +225,18 @@ export async function invitePharmacyUserAction(input: {
 
   const { data: pharmacy, error: pharmacyError } = await supabase
     .from('pharmacies')
-    .select('id')
+    .select('id, name')
     .eq('id', pharmacyId)
     .maybeSingle();
 
   if (pharmacyError || !pharmacy) {
     return { ok: false, error: 'No se ha encontrado la farmacia.' };
   }
+
+  const pharmacyName =
+    typeof pharmacy.name === 'string' && pharmacy.name.trim()
+      ? pharmacy.name.trim()
+      : 'tu farmacia';
 
   const { data: role, error: roleError } = await supabase
     .from('roles')
@@ -303,11 +311,32 @@ export async function invitePharmacyUserAction(input: {
       return { ok: false, error: inserted.error };
     }
 
+    // Usuario FarmaFácil existente: email propio (no inviteUserByEmail / no password).
+    const appBaseUrl = getAppBaseUrl();
+    let invitationEmailSent = false;
+    if (appBaseUrl) {
+      const sent = await sendExistingUserPharmacyInviteEmail({
+        to: email,
+        pharmacyName,
+        appBaseUrl,
+        recipientName: existingProfile.full_name ?? fullName,
+      });
+      invitationEmailSent = sent.ok;
+      if (!sent.ok) {
+        console.error('[invite] existing-user email', sent.error, sent.code);
+      }
+    } else {
+      console.error(
+        '[invite] existing-user email skipped: APP URL no válida'
+      );
+    }
+
     revalidatePath(`/farmacias/${pharmacyId}`);
     return {
       ok: true,
       membershipId: inserted.membershipId,
-      invitationEmailSent: false,
+      invitationEmailSent,
+      inviteKind: 'existing',
     };
   }
 
@@ -401,5 +430,6 @@ export async function invitePharmacyUserAction(input: {
     ok: true,
     membershipId: inserted.membershipId,
     invitationEmailSent: true,
+    inviteKind: 'new',
   };
 }

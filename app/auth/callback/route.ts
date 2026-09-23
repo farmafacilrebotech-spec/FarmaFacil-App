@@ -5,7 +5,7 @@ import { createServerClient } from '@supabase/ssr';
  * Destinos internos permitidos tras el callback de Auth (allowlist).
  * Nunca redirigir a URLs absolutas ni a rutas arbitrarias vía ?next=.
  */
-const ALLOWED_NEXT = new Set(['/first-access']);
+const ALLOWED_NEXT = new Set(['/first-access', '/auth/invitations']);
 
 function safeNextPath(raw: string | null): string {
   const fallback = '/first-access';
@@ -62,11 +62,14 @@ function createCallbackClient(request: NextRequest, nextPath: string) {
 /**
  * Callback Auth SSR.
  *
- * Flujo principal de invitación (Admin inviteUserByEmail):
- *   ?token_hash=...&type=invite&next=/first-access → verifyOtp → cookies → /first-access
+ * Flujo invitación usuario NUEVO (Admin inviteUserByEmail):
+ *   ?token_hash=...&type=invite&next=/first-access → verifyOtp → /first-access
  *
- * Flujo opcional PKCE (otros Auth):
- *   ?code=... → exchangeCodeForSession → cookies → next allowlisted
+ * Flujo usuario EXISTENTE (magic link FarmaFácil):
+ *   ?token_hash=...&type=magiclink|email&next=/auth/invitations → verifyOtp → /auth/invitations
+ *
+ * Flujo opcional PKCE:
+ *   ?code=... → exchangeCodeForSession → next allowlisted
  */
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
@@ -75,16 +78,20 @@ export async function GET(request: NextRequest) {
   const code = url.searchParams.get('code');
   const nextPath = safeNextPath(url.searchParams.get('next'));
 
-  // 1) Invitación / OTP por token_hash (mecanismo correcto para invite Admin + SSR).
+  // 1) OTP por token_hash (invite Auth o magiclink).
   if (tokenHash && otpType) {
-    if (otpType !== 'invite') {
+    const allowedOtp =
+      otpType === 'invite' ||
+      otpType === 'magiclink' ||
+      otpType === 'email';
+    if (!allowedOtp) {
       return redirectToLogin(request, 'auth_callback');
     }
 
     const { supabase, getResponse } = createCallbackClient(request, nextPath);
     const { error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
-      type: 'invite',
+      type: otpType,
     });
 
     if (error) {

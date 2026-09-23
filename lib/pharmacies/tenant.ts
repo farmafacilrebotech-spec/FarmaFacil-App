@@ -4,6 +4,10 @@ import {
   type PharmacyMembershipSummary,
   type CurrentProfile,
 } from '@/lib/auth/access';
+import {
+  listPendingPharmacyInvitations,
+  type PendingPharmacyInvitation,
+} from '@/lib/pharmacies/invitations';
 
 export type PharmacyTenantContext = {
   profile: CurrentProfile;
@@ -14,6 +18,7 @@ export type PharmacyTenantContext = {
     logoUrl: string | null;
     logoColor: string | null;
   };
+  pendingInvitations: PendingPharmacyInvitation[];
 };
 
 /**
@@ -65,6 +70,9 @@ export async function loadPharmacyTenantContext(
     ? brandingRaw[0] ?? null
     : brandingRaw;
 
+  const { invitations: pendingInvitations } =
+    await listPendingPharmacyInvitations(access.profile.id);
+
   return {
     ok: true,
     context: {
@@ -76,6 +84,7 @@ export async function loadPharmacyTenantContext(
         logoUrl: branding?.logo_url ?? null,
         logoColor: (pharmacy.logo_color as string | null) ?? null,
       },
+      pendingInvitations,
     },
   };
 }
