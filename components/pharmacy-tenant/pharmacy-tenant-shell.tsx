@@ -1,46 +1,13 @@
-import { signOutAction } from '@/app/auth/actions';
-import { BrandLogo } from '@/components/brand';
-import { Button } from '@/components/ui/button';
-import type { PharmacyTenantContext } from '@/lib/pharmacies/tenant';
+'use client';
+
+import * as React from 'react';
+
+import { cn } from '@/lib/utils';
 import { displayNameFromIdentity } from '@/lib/format';
-
-function PharmacyAvatar({
-  name,
-  logoUrl,
-  logoColor,
-}: {
-  name: string;
-  logoUrl: string | null;
-  logoColor: string | null;
-}) {
-  if (logoUrl) {
-    return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        src={logoUrl}
-        alt={name}
-        className="h-12 w-12 rounded-xl object-cover ring-1 ring-border"
-      />
-    );
-  }
-
-  const initials = name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0]?.toUpperCase() ?? '')
-    .join('');
-
-  return (
-    <div
-      className="flex h-12 w-12 items-center justify-center rounded-xl text-sm font-semibold text-white"
-      style={{ backgroundColor: logoColor || '#0d9488' }}
-      aria-hidden
-    >
-      {initials || 'F'}
-    </div>
-  );
-}
+import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
+import type { PharmacyTenantContext } from '@/lib/pharmacies/tenant';
+import { PharmacyTenantSidebar } from './pharmacy-tenant-sidebar';
+import { PharmacyTenantHeader } from './pharmacy-tenant-header';
 
 export function PharmacyTenantShell({
   context,
@@ -49,41 +16,50 @@ export function PharmacyTenantShell({
   context: PharmacyTenantContext;
   children: React.ReactNode;
 }) {
-  const userLabel = displayNameFromIdentity(
-    context.profile.fullName,
-    context.profile.email
-  );
+  const [collapsed, setCollapsed] = React.useState(false);
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+
+  const user = {
+    name: displayNameFromIdentity(
+      context.profile.fullName,
+      context.profile.email
+    ),
+    email: context.profile.email,
+    roleLabel: pharmacyRoleLabel(context.membership.roleKey),
+  };
+
+  const pharmacy = {
+    id: context.pharmacy.id,
+    name: context.pharmacy.name,
+    logoUrl: context.pharmacy.logoUrl,
+    logoColor: context.pharmacy.logoColor,
+  };
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <PharmacyAvatar
-              name={context.pharmacy.name}
-              logoUrl={context.pharmacy.logoUrl}
-              logoColor={context.pharmacy.logoColor}
-            />
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-foreground">
-                {context.pharmacy.name}
-              </p>
-              <p className="truncate text-xs text-muted-foreground">
-                {context.membership.roleName} · {userLabel}
-              </p>
-            </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-3">
-            <BrandLogo size={28} />
-            <form action={signOutAction}>
-              <Button type="submit" variant="outline" size="sm">
-                Cerrar sesión
-              </Button>
-            </form>
-          </div>
-        </div>
-      </header>
-      <main className="mx-auto max-w-3xl px-4 py-8">{children}</main>
+    <div className="min-h-screen overflow-x-hidden bg-background">
+      <PharmacyTenantSidebar
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((c) => !c)}
+        mobileOpen={mobileOpen}
+        onMobileClose={() => setMobileOpen(false)}
+        pharmacy={pharmacy}
+        user={user}
+      />
+      <div
+        className={cn(
+          'flex min-h-screen min-w-0 flex-col transition-[padding] duration-300 ease-out',
+          collapsed ? 'lg:pl-[76px]' : 'lg:pl-[256px]'
+        )}
+      >
+        <PharmacyTenantHeader
+          onMobileMenu={() => setMobileOpen(true)}
+          pharmacy={pharmacy}
+          user={user}
+        />
+        <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
+          {children}
+        </main>
+      </div>
     </div>
   );
 }

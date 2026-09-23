@@ -1,9 +1,9 @@
-import { PharmacyTenantDashboard } from '@/components/pharmacy-tenant/pharmacy-tenant-dashboard';
+import { PharmacyTenantSettings } from '@/components/pharmacy-tenant/pharmacy-tenant-settings';
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 
 export const dynamic = 'force-dynamic';
 
-export default async function PharmacyDashboardPage({
+export default async function PharmacyConfiguracionPage({
   params,
 }: {
   params: { pharmacyId: string };
@@ -13,5 +13,5 @@ export default async function PharmacyDashboardPage({
     return null;
   }
 
-  return <PharmacyTenantDashboard context={result.context} />;
+  return <PharmacyTenantSettings context={result.context} />;
 }
