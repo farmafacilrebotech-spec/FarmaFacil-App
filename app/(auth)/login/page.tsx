@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, LogIn, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, LogIn } from 'lucide-react';
 
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
@@ -234,17 +234,6 @@ function LoginForm() {
         </form>
       </div>
 
-      <div className="mt-6 text-center">
-        <p className="text-sm text-muted-foreground">
-          ¿No tienes acceso todavía?{' '}
-          <Link
-            href="/invite"
-            className="inline-flex items-center gap-0.5 font-medium text-primary transition-colors hover:text-primary-hover"
-          >
-            Solicitar acceso <ArrowRight className="h-3.5 w-3.5" />
-          </Link>
-        </p>
-      </div>
     </div>
   );
 }
