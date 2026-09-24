@@ -71,6 +71,10 @@ export default function ResetPasswordPage() {
     }
 
     setDoneMessage(result.message);
+    // Hard navigation: evita reutilizar estado/cookies en el cliente.
+    window.setTimeout(() => {
+      window.location.replace('/login');
+    }, 1200);
   }
 
   return (

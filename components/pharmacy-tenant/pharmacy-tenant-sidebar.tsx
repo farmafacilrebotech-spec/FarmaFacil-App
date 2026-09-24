@@ -10,6 +10,7 @@ import { tenantHref, tenantNavItems } from '@/lib/pharmacies/tenant-nav';
 import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { initials } from '@/lib/format';
+import { createClient } from '@/lib/supabase/client';
 import { signOutAction } from '@/app/auth/actions';
 
 export type TenantShellUser = {
@@ -168,7 +169,15 @@ export function PharmacyTenantSidebar({
             </div>
             <button
               type="button"
-              onClick={() => void signOutAction()}
+              onClick={() => {
+                void (async () => {
+                  const supabase = createClient();
+                  await supabase.auth
+                    .signOut({ scope: 'local' })
+                    .catch(() => undefined);
+                  await signOutAction();
+                })();
+              }}
               className={cn(
                 'rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground',
                 collapsed && 'lg:hidden'

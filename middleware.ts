@@ -61,7 +61,8 @@ export async function middleware(request: NextRequest) {
 
   // Con sesión en /login → resolver destino (plataforma vs farmacia).
   // Nunca forzar /dashboard: los usuarios de farmacia no son SuperAdmin.
-  // /first-access NO se redirige aquí (está en AUTH_ROUTES y no entra en este if).
+  // /first-access, /reset-password y /forgot-password NO se redirigen aquí
+  // (están en AUTH_ROUTES; recovery debe poder completar el cambio de clave).
   if (user && pathname === '/login') {
     return redirectWithSession(request, '/auth/continue', supabaseResponse, true);
   }

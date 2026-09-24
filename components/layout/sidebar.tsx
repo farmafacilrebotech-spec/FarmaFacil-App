@@ -11,6 +11,7 @@ import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { initials } from '@/lib/format';
+import { createClient } from '@/lib/supabase/client';
 import { signOutAction } from '@/app/auth/actions';
 import type { ShellUser } from './app-shell';
 
@@ -156,7 +157,15 @@ export function Sidebar({
             </div>
             <button
               type="button"
-              onClick={() => void signOutAction()}
+              onClick={() => {
+                void (async () => {
+                  const supabase = createClient();
+                  await supabase.auth
+                    .signOut({ scope: 'local' })
+                    .catch(() => undefined);
+                  await signOutAction();
+                })();
+              }}
               className={cn(
                 'rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground',
                 collapsed && 'lg:hidden'

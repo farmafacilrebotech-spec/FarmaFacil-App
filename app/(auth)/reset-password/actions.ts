@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '@/lib/supabase/server';
+import { signOutAndClearCookies } from '@/lib/auth/sign-out';
 
 export type ResetPasswordActionResult =
   | { ok: true; message: string }
@@ -8,7 +9,8 @@ export type ResetPasswordActionResult =
 
 /**
  * Establece la nueva contraseña tras un recovery Auth válido (sesión en cookies).
- * Tras éxito cierra la sesión de recovery para forzar login con la nueva clave.
+ * Tras éxito cierra la sesión de recovery por completo (cookies incluidas)
+ * para forzar login con la nueva clave y no reutilizar sesión antigua.
  */
 export async function resetPasswordAction(input: {
   password: string;
@@ -67,7 +69,7 @@ export async function resetPasswordAction(input: {
     };
   }
 
-  await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+  await signOutAndClearCookies();
 
   return {
     ok: true,

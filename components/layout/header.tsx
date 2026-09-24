@@ -37,6 +37,7 @@ import { Breadcrumbs } from './breadcrumbs';
 import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { pharmacies } from '@/lib/mock-data';
 import { initials } from '@/lib/format';
+import { createClient } from '@/lib/supabase/client';
 import { signOutAction } from '@/app/auth/actions';
 import type { ShellUser } from './app-shell';
 
@@ -221,7 +222,13 @@ export function Header({ onMobileMenu, user }: HeaderProps) {
               className="text-destructive focus:text-destructive"
               onSelect={(e) => {
                 e.preventDefault();
-                void signOutAction();
+                void (async () => {
+                  const supabase = createClient();
+                  await supabase.auth
+                    .signOut({ scope: 'local' })
+                    .catch(() => undefined);
+                  await signOutAction();
+                })();
               }}
             >
               <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
