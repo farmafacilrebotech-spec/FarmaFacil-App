@@ -176,6 +176,7 @@ function buildInviteEmailHtml(input: {
   <title>Invitación FarmaFácil</title>
 </head>
 <body style="margin:0;padding:0;background-color:${BRAND.grayBg};">
+  <!-- ff-pharmacy-invite-v2 -->
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:${BRAND.grayBg};">
     <tr>
       <td align="center" style="padding:32px 16px;">

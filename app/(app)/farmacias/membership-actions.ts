@@ -541,9 +541,17 @@ export async function resendPharmacyInvitationAction(input: {
 
   const email = loaded.membership.email;
   const fullName = loaded.membership.fullName?.trim() || undefined;
-  const kind = await resolvePharmacyInviteUserKind(loaded.membership.profileId);
+  const kindResult = await resolvePharmacyInviteUserKind(
+    loaded.membership.profileId
+  );
 
-  if (kind === 'existing') {
+  if (!kindResult.ok) {
+    return { ok: false, error: kindResult.error };
+  }
+
+  // Usuario FarmaFácil reutilizable (otra farmacia / cuenta ya establecida):
+  // siempre plantilla V2 + magic link token_hash → /auth/invitations.
+  if (kindResult.kind === 'existing') {
     const sent = await sendExistingUserPharmacyInviteEmail({
       to: email,
       pharmacyName,
@@ -574,7 +582,8 @@ export async function resendPharmacyInvitationAction(input: {
     };
   }
 
-  // Usuario nuevo todavía en alta: mecanismo Auth inviteUserByEmail.
+  // Usuario nuevo: solo alta Auth pendiente → inviteUserByEmail (Supabase Auth).
+  // Si Auth indica que el usuario ya existe, no usar HTML inline: es existing → V2.
   const redirectTo = `${appBaseUrl}/auth/callback?next=/first-access`;
 
   try {
@@ -589,62 +598,46 @@ export async function resendPharmacyInvitationAction(input: {
 
     if (inviteError) {
       const msg = inviteError.message.toLowerCase();
-      // Usuario Auth ya existe (p.ej. email editado y confirmado por Admin):
-      // generar enlace invite y enviarlo por FarmaFácil sin crear otro user.
       if (
         msg.includes('already') ||
         msg.includes('registered') ||
         msg.includes('exists')
       ) {
-        const { data: linkData, error: linkError } =
-          await admin.auth.admin.generateLink({
-            type: 'invite',
-            email,
-            options: { redirectTo },
-          });
-
-        if (linkError || !linkData?.properties?.action_link) {
-          console.error(
-            '[membership] resend generateLink invite',
-            linkError?.message
-          );
-          return {
-            ok: false,
-            error:
-              'No se ha podido regenerar el enlace de invitación Auth. Revisa el email del usuario.',
-          };
-        }
-
-        const { sendTransactionalEmail } = await import('@/lib/email/send');
-        const actionUrl = linkData.properties.action_link;
-        const subject = `Completa tu acceso a ${pharmacyName}`;
-        const text = [
-          `Hola ${fullName || 'hola'},`,
-          '',
-          `Te han invitado a acceder a ${pharmacyName} en FarmaFácil.`,
-          'Abre el siguiente enlace para crear tu contraseña y completar el acceso:',
-          actionUrl,
-          '',
-          '— Equipo FarmaFácil',
-        ].join('\n');
-        const html = `<p>Hola ${fullName || 'hola'},</p><p>Te han invitado a <strong>${pharmacyName}</strong>. <a href="${actionUrl}">Completar acceso</a></p>`;
-
-        const mailed = await sendTransactionalEmail({
+        // Auth ya tiene cuenta reutilizable: flujo segunda farmacia (V2), nunca HTML antiguo.
+        const sent = await sendExistingUserPharmacyInviteEmail({
           to: email,
-          subject,
-          html,
-          text,
+          pharmacyName,
+          appBaseUrl,
+          recipientName: fullName,
         });
-        if (!mailed.ok) {
-          return { ok: false, error: mailed.error };
+        if (!sent.ok) {
+          return { ok: false, error: sent.error };
         }
-      } else {
-        console.error('[membership] resend invite', inviteError.message);
+
+        const now = new Date().toISOString();
+        await supabase
+          .from('pharmacy_memberships')
+          .update({
+            invited_at: now,
+            updated_by: auth.actorId,
+            updated_at: now,
+          })
+          .eq('id', membershipId)
+          .eq('pharmacy_id', pharmacyId)
+          .eq('status', 'invited');
+
+        revalidatePath(`/farmacias/${pharmacyId}`);
         return {
-          ok: false,
-          error: 'No se ha podido reenviar la invitación por email.',
+          ok: true,
+          message: `Invitación reenviada: se ha notificado el acceso a ${pharmacyName}.`,
         };
       }
+
+      console.error('[membership] resend invite', inviteError.message);
+      return {
+        ok: false,
+        error: 'No se ha podido reenviar la invitación por email.',
+      };
     }
   } catch (err) {
     console.error('[membership] resend admin client', err);
