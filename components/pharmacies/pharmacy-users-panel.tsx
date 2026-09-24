@@ -10,6 +10,8 @@ import {
   UserX,
   Send,
   Pencil,
+  KeyRound,
+  UserPlus,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -20,8 +22,10 @@ import { formatDateTime, initials } from '@/lib/format';
 import {
   cancelPharmacyInvitationAction,
   reactivatePharmacyMembershipAction,
+  reinvitePharmacyMembershipAction,
   resendPharmacyInvitationAction,
   revokePharmacyMembershipAction,
+  sendPasswordResetForMembershipAction,
   suspendPharmacyMembershipAction,
 } from '@/app/(app)/farmacias/membership-actions';
 import { Button } from '@/components/ui/button';
@@ -54,7 +58,9 @@ type ConfirmAction =
   | 'suspend'
   | 'reactivate'
   | 'revoke'
-  | 'cancel_invitation';
+  | 'cancel_invitation'
+  | 'reinvite'
+  | 'send_password_reset';
 
 const CONFIRM_COPY: Record<
   ConfirmAction,
@@ -81,7 +87,7 @@ const CONFIRM_COPY: Record<
   revoke: {
     title: '¿Revocar acceso?',
     description:
-      'El usuario dejará de pertenecer a esta farmacia. No se borrará su cuenta, pero de momento no se podrá reactivar automáticamente.',
+      'El usuario dejará de pertenecer a esta farmacia. No se borrará su cuenta. Podrás volver a invitarlo más adelante.',
     confirmLabel: 'Revocar acceso',
     destructive: true,
   },
@@ -92,8 +98,24 @@ const CONFIRM_COPY: Record<
     confirmLabel: 'Cancelar invitación',
     destructive: true,
   },
+  reinvite: {
+    title: '¿Volver a invitar?',
+    description:
+      'Se creará de nuevo una invitación pendiente para esta farmacia (misma cuenta). El usuario deberá aceptarla; no se reactivará el acceso automáticamente.',
+    confirmLabel: 'Volver a invitar',
+  },
+  send_password_reset: {
+    title: '¿Enviar acceso / Restablecer contraseña?',
+    description:
+      'Se enviará un enlace de recuperación al email actual del usuario. No se modifica su estado ni su membresía en esta farmacia.',
+    confirmLabel: 'Enviar enlace',
+  },
 };
 
+/**
+ * Menú de acciones por fila: estado y membershipId solo de `member` de esta celda.
+ * No comparte estado con otras filas.
+ */
 function MemberActionsCell({
   pharmacyId,
   member,
@@ -105,16 +127,25 @@ function MemberActionsCell({
   roles: PharmacyRoleOption[];
   onDone: (message: string) => void;
 }) {
+  // Estado local por instancia de fila (key = membership id en el padre).
+  const membershipId = member.id;
+  const status = member.status;
+
   const [confirm, setConfirm] = React.useState<ConfirmAction | null>(null);
   const [pending, setPending] = React.useState(false);
   const [resending, setResending] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
 
+  function openConfirm(action: ConfirmAction) {
+    // Evita la carrera Radix Dropdown→AlertDialog que cerraba el confirm.
+    window.setTimeout(() => setConfirm(action), 0);
+  }
+
   async function runConfirmed() {
     if (!confirm || pending) return;
     setPending(true);
 
-    const input = { pharmacyId, membershipId: member.id };
+    const input = { pharmacyId, membershipId };
     let result;
     switch (confirm) {
       case 'suspend':
@@ -128,6 +159,12 @@ function MemberActionsCell({
         break;
       case 'cancel_invitation':
         result = await cancelPharmacyInvitationAction(input);
+        break;
+      case 'reinvite':
+        result = await reinvitePharmacyMembershipAction(input);
+        break;
+      case 'send_password_reset':
+        result = await sendPasswordResetForMembershipAction(input);
         break;
     }
 
@@ -145,7 +182,7 @@ function MemberActionsCell({
     setResending(true);
     const result = await resendPharmacyInvitationAction({
       pharmacyId,
-      membershipId: member.id,
+      membershipId,
     });
     setResending(false);
     if (!result.ok) {
@@ -170,14 +207,14 @@ function MemberActionsCell({
             <MoreHorizontal className="h-4 w-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuItem onSelect={() => setEditOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             Editar usuario
           </DropdownMenuItem>
-          {member.status !== 'revoked' ? <DropdownMenuSeparator /> : null}
+          <DropdownMenuSeparator />
 
-          {member.status === 'invited' ? (
+          {status === 'invited' ? (
             <>
               <DropdownMenuItem
                 disabled={resending}
@@ -193,9 +230,8 @@ function MemberActionsCell({
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
                 onSelect={(e) => {
-                  // Evita la carrera Radix Dropdown→AlertDialog que cerraba el confirm.
                   e.preventDefault();
-                  window.setTimeout(() => setConfirm('cancel_invitation'), 0);
+                  openConfirm('cancel_invitation');
                 }}
               >
                 <Ban className="mr-2 h-4 w-4" />
@@ -204,16 +240,33 @@ function MemberActionsCell({
             </>
           ) : null}
 
-          {member.status === 'active' ? (
+          {status === 'active' ? (
             <>
-              <DropdownMenuItem onSelect={() => setConfirm('suspend')}>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  openConfirm('send_password_reset');
+                }}
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                Enviar acceso / Restablecer contraseña
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  openConfirm('suspend');
+                }}
+              >
                 <Ban className="mr-2 h-4 w-4" />
                 Suspender acceso
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onSelect={() => setConfirm('revoke')}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  openConfirm('revoke');
+                }}
               >
                 <UserX className="mr-2 h-4 w-4" />
                 Revocar acceso
@@ -221,21 +274,50 @@ function MemberActionsCell({
             </>
           ) : null}
 
-          {member.status === 'suspended' ? (
+          {status === 'suspended' ? (
             <>
-              <DropdownMenuItem onSelect={() => setConfirm('reactivate')}>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  openConfirm('send_password_reset');
+                }}
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                Enviar acceso / Restablecer contraseña
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={(e) => {
+                  e.preventDefault();
+                  openConfirm('reactivate');
+                }}
+              >
                 <RotateCcw className="mr-2 h-4 w-4" />
                 Reactivar acceso
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
                 className="text-destructive focus:text-destructive"
-                onSelect={() => setConfirm('revoke')}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  openConfirm('revoke');
+                }}
               >
                 <UserX className="mr-2 h-4 w-4" />
                 Revocar acceso
               </DropdownMenuItem>
             </>
+          ) : null}
+
+          {status === 'revoked' ? (
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+                openConfirm('reinvite');
+              }}
+            >
+              <UserPlus className="mr-2 h-4 w-4" />
+              Volver a invitar
+            </DropdownMenuItem>
           ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
@@ -415,6 +497,7 @@ export function PharmacyUsersPanel({
                       </td>
                       <td className="px-4 py-3.5 text-right">
                         <MemberActionsCell
+                          key={m.id}
                           pharmacyId={pharmacyId}
                           member={m}
                           roles={roles}

@@ -11,6 +11,7 @@ import {
 import type { MembershipStatus, PharmacyRoleKey } from '@/lib/pharmacies/types';
 import { sendExistingUserPharmacyInviteEmail } from '@/lib/email/pharmacy-invitation';
 import { resolvePharmacyInviteUserKind } from '@/lib/pharmacies/invite-user-kind';
+import { requestPasswordRecoveryEmail } from '@/lib/auth/password-recovery';
 
 export type MembershipLifecycleResult =
   | { ok: true; message: string }
@@ -223,7 +224,8 @@ type TransitionAction =
   | 'suspend'
   | 'reactivate'
   | 'revoke'
-  | 'cancel_invitation';
+  | 'cancel_invitation'
+  | 'reinvite';
 
 /**
  * Transición vía ff_transition_pharmacy_membership_v1 (migración 023).
@@ -296,6 +298,7 @@ async function transitionMembershipViaRpc(params: {
       msgLower.includes('solo se puede cancelar') ||
       msgLower.includes('solo se puede suspender') ||
       msgLower.includes('solo se puede reactivar') ||
+      msgLower.includes('solo se puede volver a invitar') ||
       msgLower.includes('ha cambiado')
     ) {
       return {
@@ -668,6 +671,132 @@ export async function resendPharmacyInvitationAction(input: {
   return {
     ok: true,
     message: 'Invitación reenviada por email (alta de usuario nuevo).',
+  };
+}
+
+/**
+ * Volver a invitar: revoked → invited vía RPC `reinvite` (migración 025).
+ * Misma auth.users / profile / membership. Luego email V2.
+ * Si el email falla tras el cambio de estado: éxito parcial con mensaje claro.
+ */
+export async function reinvitePharmacyMembershipAction(input: {
+  pharmacyId: string;
+  membershipId: string;
+}): Promise<MembershipLifecycleResult> {
+  const pharmacyId = input.pharmacyId?.trim() ?? '';
+  const membershipId = input.membershipId?.trim() ?? '';
+  if (!pharmacyId || !membershipId) {
+    return { ok: false, error: 'Datos de membresía no válidos.' };
+  }
+
+  const auth = await requireSuperAdminUsersWrite();
+  if (!auth.ok) return auth;
+
+  const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
+  if (!loaded.ok) return loaded;
+
+  if (loaded.membership.status !== 'revoked') {
+    return {
+      ok: false,
+      error: 'Solo se puede volver a invitar a un usuario con acceso revocado.',
+      code: 'invalid_state',
+    };
+  }
+
+  const transition = await transitionMembershipViaRpc({
+    pharmacyId,
+    membershipId,
+    action: 'reinvite',
+    successMessage: 'Invitación creada. El usuario vuelve a estar pendiente de acceso.',
+  });
+
+  if (!transition.ok) {
+    return transition;
+  }
+
+  const appBaseUrl = getAppBaseUrl();
+  if (!appBaseUrl) {
+    return {
+      ok: true,
+      message:
+        'La invitación se ha creado, pero no se ha podido enviar el correo. Puedes volver a enviarlo.',
+    };
+  }
+
+  const supabase = createClient();
+  const { data: pharmacy } = await supabase
+    .from('pharmacies')
+    .select('name')
+    .eq('id', pharmacyId)
+    .maybeSingle();
+  const pharmacyName =
+    typeof pharmacy?.name === 'string' && pharmacy.name.trim()
+      ? pharmacy.name.trim()
+      : 'tu farmacia';
+
+  const sent = await sendExistingUserPharmacyInviteEmail({
+    to: loaded.membership.email,
+    pharmacyName,
+    appBaseUrl,
+    recipientName: loaded.membership.fullName,
+  });
+
+  if (!sent.ok) {
+    console.error('[membership] reinvite email', sent.error);
+    return {
+      ok: true,
+      message:
+        'La invitación se ha creado, pero no se ha podido enviar el correo. Puedes volver a enviarlo.',
+    };
+  }
+
+  return {
+    ok: true,
+    message: `Invitación creada y enviada para acceder a ${pharmacyName}.`,
+  };
+}
+
+/**
+ * Enviar acceso / Restablecer contraseña (active | suspended).
+ * No modifica membership ni status. Dispara recovery Auth (SMTP de Auth).
+ */
+export async function sendPasswordResetForMembershipAction(input: {
+  pharmacyId: string;
+  membershipId: string;
+}): Promise<MembershipLifecycleResult> {
+  const pharmacyId = input.pharmacyId?.trim() ?? '';
+  const membershipId = input.membershipId?.trim() ?? '';
+  if (!pharmacyId || !membershipId) {
+    return { ok: false, error: 'Datos de membresía no válidos.' };
+  }
+
+  const auth = await requireSuperAdminUsersWrite();
+  if (!auth.ok) return auth;
+
+  const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
+  if (!loaded.ok) return loaded;
+
+  if (
+    loaded.membership.status !== 'active' &&
+    loaded.membership.status !== 'suspended'
+  ) {
+    return {
+      ok: false,
+      error:
+        'Solo se puede enviar acceso o restablecer contraseña a usuarios activos o suspendidos.',
+      code: 'invalid_state',
+    };
+  }
+
+  const result = await requestPasswordRecoveryEmail(loaded.membership.email);
+  if (!result.ok) {
+    return { ok: false, error: result.error };
+  }
+
+  return {
+    ok: true,
+    message:
+      'Se ha enviado un enlace para establecer o restablecer la contraseña al email del usuario.',
   };
 }
 

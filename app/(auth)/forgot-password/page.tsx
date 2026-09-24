@@ -2,20 +2,45 @@
 
 import * as React from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Mail, ArrowLeft, CheckCircle2, Send } from 'lucide-react';
 
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { requestForgotPasswordAction } from '@/app/(auth)/forgot-password/actions';
 
-export default function ForgotPasswordPage() {
-  const [sent, setSent] = React.useState(false);
+function ForgotPasswordForm() {
+  const searchParams = useSearchParams();
   const [email, setEmail] = React.useState('');
+  const [sentMessage, setSentMessage] = React.useState<string | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
 
-  function handleSubmit(e: React.FormEvent) {
+  const linkError = searchParams.get('error');
+  const linkErrorMessage =
+    linkError === 'recovery_invalid'
+      ? 'El enlace de recuperación no es válido o ha caducado. Solicita uno nuevo.'
+      : linkError === 'recovery_missing'
+        ? 'Falta el enlace de recuperación. Solicita uno nuevo desde este formulario.'
+        : null;
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setSent(true);
+    setError(null);
+    setLoading(true);
+
+    const result = await requestForgotPasswordAction(email);
+    setLoading(false);
+
+    if (!result.ok) {
+      setError(result.error);
+      setSentMessage(null);
+      return;
+    }
+
+    setSentMessage(result.message);
   }
 
   return (
@@ -25,7 +50,7 @@ export default function ForgotPasswordPage() {
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
-        {!sent ? (
+        {!sentMessage ? (
           <>
             <div className="mb-6 text-center">
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">
@@ -35,6 +60,12 @@ export default function ForgotPasswordPage() {
                 Te enviaremos un enlace para restablecer tu contraseña
               </p>
             </div>
+
+            {(error || linkErrorMessage) && (
+              <p className="mb-4 rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                {error ?? linkErrorMessage}
+              </p>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-1.5">
@@ -51,12 +82,20 @@ export default function ForgotPasswordPage() {
                     placeholder="admin@farmafacil.es"
                     className="h-11 pl-9"
                     required
+                    autoComplete="email"
+                    disabled={loading}
                   />
                 </div>
               </div>
 
-              <Button type="submit" className="h-11 w-full gap-1.5" size="lg">
-                <Send className="h-4 w-4" /> Enviar enlace
+              <Button
+                type="submit"
+                className="h-11 w-full gap-1.5"
+                size="lg"
+                disabled={loading}
+              >
+                <Send className="h-4 w-4" />
+                {loading ? 'Enviando…' : 'Enviar enlace'}
               </Button>
             </form>
           </>
@@ -69,14 +108,15 @@ export default function ForgotPasswordPage() {
               Revisa tu correo
             </h2>
             <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
-              Hemos enviado un enlace de recuperación a{' '}
-              <span className="font-medium text-foreground">{email || 'tu email'}</span>.
-              El enlace expira en 30 minutos.
+              {sentMessage}
             </p>
             <Button
               variant="outline"
               className="mt-6 gap-1.5"
-              onClick={() => setSent(false)}
+              onClick={() => {
+                setSentMessage(null);
+                setError(null);
+              }}
             >
               Volver a enviar
             </Button>
@@ -93,5 +133,26 @@ export default function ForgotPasswordPage() {
         </Link>
       </div>
     </div>
+  );
+}
+
+export default function ForgotPasswordPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="animate-slide-up">
+          <div className="mb-8 flex justify-center">
+            <BrandLogo size={44} showTagline />
+          </div>
+          <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
+            <p className="text-center text-sm text-muted-foreground">
+              Cargando…
+            </p>
+          </div>
+        </div>
+      }
+    >
+      <ForgotPasswordForm />
+    </React.Suspense>
   );
 }

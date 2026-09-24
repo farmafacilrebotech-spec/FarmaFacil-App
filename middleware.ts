@@ -8,6 +8,8 @@ const AUTH_ROUTES = new Set([
   '/first-access',
   // Auth callback: token_hash/invite o ?code= sin sesión previa.
   '/auth/callback',
+  // Recovery de contraseña (separado de invitaciones).
+  '/auth/recovery',
 ]);
 
 /** Documentos legales públicos (sin sesión). */
