@@ -17,7 +17,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { initials } from '@/lib/format';
-import { createClient } from '@/lib/supabase/client';
 import { signOutAction } from '@/app/auth/actions';
 import type {
   TenantShellPharmacy,
@@ -125,21 +124,13 @@ export function PharmacyTenantHeader({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onSelect={(e) => {
-                e.preventDefault();
-                void (async () => {
-                  const supabase = createClient();
-                  await supabase.auth
-                    .signOut({ scope: 'local' })
-                    .catch(() => undefined);
-                  await signOutAction();
-                })();
-              }}
-            >
-              <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
-            </DropdownMenuItem>
+            <form action={signOutAction}>
+              <DropdownMenuItem asChild className="text-destructive focus:text-destructive">
+                <button type="submit" className="w-full cursor-default">
+                  <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
+                </button>
+              </DropdownMenuItem>
+            </form>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

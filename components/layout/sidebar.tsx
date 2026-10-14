@@ -3,7 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronsLeft, LifeBuoy, LogOut, X } from 'lucide-react';
+import { ChevronsLeft, LifeBuoy, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { navItems, helpItems } from '@/lib/navigation';
@@ -11,8 +11,7 @@ import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { initials } from '@/lib/format';
-import { createClient } from '@/lib/supabase/client';
-import { signOutAction } from '@/app/auth/actions';
+import { SignOutButton } from '@/components/auth/sign-out-button';
 import type { ShellUser } from './app-shell';
 
 interface SidebarProps {
@@ -155,25 +154,14 @@ export function Sidebar({
                 {user.email}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                void (async () => {
-                  const supabase = createClient();
-                  await supabase.auth
-                    .signOut({ scope: 'local' })
-                    .catch(() => undefined);
-                  await signOutAction();
-                })();
-              }}
+            <SignOutButton
+              iconOnly
               className={cn(
                 'rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground',
                 collapsed && 'lg:hidden'
               )}
               aria-label="Cerrar sesión"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            />
           </div>
         </div>
 

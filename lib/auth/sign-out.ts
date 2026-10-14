@@ -28,14 +28,14 @@ export async function clearSupabaseAuthCookies() {
 
 /**
  * Cierra sesión Auth de forma fiable (revoke + cookies SSR).
- * Usar desde signOutAction y tras reset de contraseña.
+ * Debe invocarse SOLO desde server action / form action — no mezclar
+ * con signOut del browser client antes, o las cookies quedan en carrera.
  */
 export async function signOutAndClearCookies(): Promise<{ ok: boolean }> {
   const supabase = createClient();
   const { error } = await supabase.auth.signOut({ scope: 'global' });
   if (error) {
     console.error('[auth] signOut', error.message);
-    // Intento local si el revoke global falla (red / token ya inválido).
     await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
   }
   await clearSupabaseAuthCookies();

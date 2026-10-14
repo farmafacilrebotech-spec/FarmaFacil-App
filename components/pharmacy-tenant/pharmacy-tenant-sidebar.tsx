@@ -3,15 +3,14 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronsLeft, LogOut, X } from 'lucide-react';
+import { ChevronsLeft, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
 import { tenantHref, tenantNavItems } from '@/lib/pharmacies/tenant-nav';
 import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { initials } from '@/lib/format';
-import { createClient } from '@/lib/supabase/client';
-import { signOutAction } from '@/app/auth/actions';
+import { SignOutButton } from '@/components/auth/sign-out-button';
 
 export type TenantShellUser = {
   name: string;
@@ -167,25 +166,14 @@ export function PharmacyTenantSidebar({
                 {user.email}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                void (async () => {
-                  const supabase = createClient();
-                  await supabase.auth
-                    .signOut({ scope: 'local' })
-                    .catch(() => undefined);
-                  await signOutAction();
-                })();
-              }}
+            <SignOutButton
+              iconOnly
               className={cn(
                 'rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground',
                 collapsed && 'lg:hidden'
               )}
               aria-label="Cerrar sesión"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
+            />
           </div>
         </div>
 
