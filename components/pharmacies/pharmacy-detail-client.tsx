@@ -53,6 +53,7 @@ import {
 } from '@/components/shared/status-badge';
 import { PharmacyLogo } from '@/components/brand';
 import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
+import { PharmacySubscriptionPanel } from '@/components/pharmacies/pharmacy-subscription-panel';
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
 import { CatalogoTab } from '@/components/pharmacies/tabs/catalogo-tab';
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
@@ -514,6 +515,8 @@ export function PharmacyDetailClient({
       {success && activeTab !== 'usuarios' ? (
         <SuccessBanner message={success} />
       ) : null}
+
+      <PharmacySubscriptionPanel pharmacy={pharmacy} />
 
       <div>
         {activeTab === 'general' && (

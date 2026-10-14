@@ -408,3 +408,115 @@ export async function changePharmacyPlanAction(
   revalidatePath(`/farmacias/${pharmacyId}`);
   return { ok: true };
 }
+
+function mapCommercialTransitionError(message: string, code?: string): string {
+  const m = message.toLowerCase();
+  if (code === '42501' || m.includes('permission') || m.includes('42501')) {
+    return 'No tienes permiso para gestionar la suscripción de esta farmacia.';
+  }
+  if (m.includes('debes iniciar') || m.includes('28000')) {
+    return 'Debes iniciar sesión para gestionar la suscripción.';
+  }
+  if (m.includes('acción comercial no reconocida')) {
+    return 'Acción comercial no reconocida.';
+  }
+  if (m.includes('no hay suscripción')) {
+    return 'No hay suscripción para esta farmacia.';
+  }
+  if (m.includes('ya está finalizada')) {
+    return 'La suscripción ya está finalizada.';
+  }
+  if (m.includes('fin de periodo')) {
+    return 'No hay fecha de fin de periodo válida. Usa cancelación inmediata o define el periodo.';
+  }
+  if (m.includes('programar la cancelación')) {
+    return 'Solo se puede programar la cancelación con suscripción en prueba o activa.';
+  }
+  if (m.includes('iniciar gracia')) {
+    return 'No se puede iniciar el periodo de gracia en el estado actual.';
+  }
+  if (m.includes('ya está suspendida')) {
+    return 'La farmacia ya está suspendida.';
+  }
+  if (m.includes('archivada')) {
+    return 'No se puede realizar esta acción sobre una farmacia archivada.';
+  }
+  if (m.includes('reactivar')) {
+    return 'No hay estado comercial o de farmacia que reactivar.';
+  }
+  if (message && message.length < 200 && !message.includes('P0001')) {
+    return message;
+  }
+  return 'No se ha podido completar la operación comercial. Inténtalo de nuevo.';
+}
+
+export type CommercialSubscriptionAction =
+  | 'cancel_at_period_end'
+  | 'cancel_now'
+  | 'start_nonpayment_grace'
+  | 'suspend_for_nonpayment'
+  | 'reactivate';
+
+/**
+ * Transición comercial SuperAdmin vía ff_transition_pharmacy_subscription_v1 (029).
+ * Requiere platform.pharmacies.write (RLS + RPC).
+ */
+export async function transitionPharmacySubscriptionAction(
+  pharmacyId: string,
+  action: CommercialSubscriptionAction,
+  reason?: string | null
+): Promise<UpdatePharmacyResult> {
+  if (!pharmacyId) {
+    return { ok: false, error: 'Farmacia no válida.' };
+  }
+
+  const allowed: CommercialSubscriptionAction[] = [
+    'cancel_at_period_end',
+    'cancel_now',
+    'start_nonpayment_grace',
+    'suspend_for_nonpayment',
+    'reactivate',
+  ];
+  if (!allowed.includes(action)) {
+    return { ok: false, error: 'Acción comercial no reconocida.' };
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return {
+      ok: false,
+      error: 'Debes iniciar sesión para gestionar la suscripción.',
+    };
+  }
+
+  const { error } = await supabase.rpc(
+    'ff_transition_pharmacy_subscription_v1',
+    {
+      p_pharmacy_id: pharmacyId,
+      p_action: action,
+      p_reason: reason?.trim() || null,
+    }
+  );
+
+  if (error) {
+    if (process.env.NODE_ENV === 'development') {
+      console.error('[pharmacies] ff_transition_pharmacy_subscription_v1', {
+        message: error.message,
+        code: error.code,
+        details: error.details,
+      });
+    }
+    return {
+      ok: false,
+      error: mapCommercialTransitionError(error.message, error.code),
+    };
+  }
+
+  revalidatePath('/farmacias');
+  revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidatePath(`/f/${pharmacyId}`, 'layout');
+  return { ok: true };
+}

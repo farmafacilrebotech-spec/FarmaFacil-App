@@ -1,0 +1,61 @@
+FarmaFácil — Despliegue coordinado comercial 027–032 + app
+===========================================================
+Objetivo: minimizar la ventana en que BD y app tienen reglas distintas.
+No ejecutar backfill automático. No borrar datos.
+
+PRECONDICIONES
+--------------
+1. Migración 026 aplicada en producción (RAISE + reinvite).
+2. Backup / snapshot de BD disponible.
+3. Código app (gate layout + commercial-access + access.ts) listo para deploy
+   en el mismo cambio o inmediatamente después de las migraciones.
+4. Ventana de mantenimiento corta (panel tenant puede mostrar soft-lock).
+
+ORDEN EXACTO
+------------
+A. Diagnóstico PRE (solo lectura)
+   psql "$DATABASE_URL" -f supabase/diagnostics/trial_end_missing_v1.sql
+   # Si 027 aún no está, usar solo el conteo de trial_end IS NULL en subscriptions.
+   Guardar listado de pharmacy_id afectados.
+
+B. Migraciones BD (seguidas, sin pausa larga)
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/027_subscription_commercial_fields_v1.sql
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/028_ff_pharmacy_is_operable_v1.sql
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/029_ff_transition_pharmacy_subscription_v1.sql
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/030_create_pharmacy_trial_defaults_v1.sql
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/031_membership_requires_pharmacy_operable_v1.sql
+   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/migrations/032_operational_select_requires_operable_v1.sql
+
+C. Diagnóstico POST (solo lectura)
+   psql "$DATABASE_URL" -f supabase/diagnostics/commercial_blocked_preview_v1.sql
+   Revisar would_be_operable = false.
+   Backfill selectivo de trial_end SOLO si se aprueba (ver trial_end_missing_v1.sql).
+
+D. Deploy aplicación (mismo release)
+   - layout /f/[pharmacyId] (soft-lock)
+   - commercial-access + commercial-lifecycle
+   - access.ts (catálogo tenant exige operable; SuperAdmin primero)
+   - tests ya en verde en CI local
+
+E. Verificación rápida
+   - SuperAdmin: /farmacias/[id] OK en farmacia suspendida/cancelada (lectura).
+   - Tenant operable: /f/.../dashboard OK.
+   - Tenant no operable: pantalla “acceso suspendido”, sin catálogo/pedidos.
+   - PostgREST tenant: SELECT pharmacy_products → 0 filas si no operable.
+   - Login / forgot / reset / invitaciones / first-access OK.
+   - RPC membership tenant en farmacia bloqueada → error 42501.
+   - RPC membership SuperAdmin → OK.
+
+VENTANA DE RIESGO
+-----------------
+Entre B y D: app antigua sin soft-lock + BD con RLS estricto
+  → tenant bloqueado ve errores/vacío en catálogo (aceptable breve).
+Entre D y B (app primero): soft-lock UI sin helper 028
+  → commercial-access hace fallback; writes aún no cortados por RLS.
+Preferir: B completo → C → D en <15–30 min.
+
+ROLLBACK (emergencia)
+---------------------
+App: revertir release anterior.
+BD: no hay DOWN automático; restaurar snapshot o redeploy policies 012/020
+    y función membership 026. No usar DROP destructivo de datos.

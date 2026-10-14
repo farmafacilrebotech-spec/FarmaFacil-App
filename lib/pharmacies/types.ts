@@ -72,6 +72,12 @@ export interface PharmacySubscription {
   provider: string;
   current_period_start: string | null;
   current_period_end: string | null;
+  trial_start?: string | null;
+  trial_end?: string | null;
+  cancel_at_period_end?: boolean;
+  cancelled_at?: string | null;
+  grace_period_ends_at?: string | null;
+  commercial_reason?: string | null;
   plan: PlanSummary | null;
 }
 
@@ -92,6 +98,8 @@ export interface PharmacyDetail {
   logo_color: string | null;
   created_at: string;
   updated_at: string;
+  suspended_at?: string | null;
+  suspension_reason?: string | null;
   plan: PlanSummary | null;
   branding: PharmacyBranding | null;
   settings: PharmacySettings | null;

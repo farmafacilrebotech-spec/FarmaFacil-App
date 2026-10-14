@@ -107,15 +107,131 @@ export async function listPharmacies(): Promise<PharmacyListItem[]> {
   }));
 }
 
+type SubscriptionQueryRow = {
+  id: string;
+  status: string;
+  provider: string;
+  current_period_start: string | null;
+  current_period_end: string | null;
+  trial_start?: string | null;
+  trial_end?: string | null;
+  cancel_at_period_end?: boolean | null;
+  cancelled_at?: string | null;
+  grace_period_ends_at?: string | null;
+  commercial_reason?: string | null;
+  plan: PlanRow | PlanRow[] | null;
+};
+
+function mapSubscriptionRow(sub: SubscriptionQueryRow): PharmacySubscription {
+  return {
+    id: sub.id,
+    status: sub.status as PharmacySubscription['status'],
+    provider: sub.provider,
+    current_period_start: sub.current_period_start ?? null,
+    current_period_end: sub.current_period_end ?? null,
+    trial_start: sub.trial_start ?? null,
+    trial_end: sub.trial_end ?? null,
+    cancel_at_period_end: sub.cancel_at_period_end ?? false,
+    cancelled_at: sub.cancelled_at ?? null,
+    grace_period_ends_at: sub.grace_period_ends_at ?? null,
+    commercial_reason: sub.commercial_reason ?? null,
+    plan: mapPlan(sub.plan),
+  };
+}
+
+async function loadPharmacySubscriptionRow(
+  pharmacyId: string
+): Promise<PharmacySubscription | null> {
+  const supabase = createClient();
+
+  const fullSelect = `
+      id,
+      status,
+      provider,
+      current_period_start,
+      current_period_end,
+      trial_start,
+      trial_end,
+      cancel_at_period_end,
+      cancelled_at,
+      grace_period_ends_at,
+      commercial_reason,
+      plan:plans ( id, key, name, description, is_active, sort_order )
+    `;
+
+  const legacySelect = `
+      id,
+      status,
+      provider,
+      current_period_start,
+      current_period_end,
+      trial_start,
+      trial_end,
+      cancel_at_period_end,
+      cancelled_at,
+      plan:plans ( id, key, name, description, is_active, sort_order )
+    `;
+
+  async function fetchWith(select: string, currentOnly: boolean) {
+    let q = supabase
+      .from('subscriptions')
+      .select(select)
+      .eq('pharmacy_id', pharmacyId);
+    if (currentOnly) {
+      q = q.in('status', ['trialing', 'active', 'past_due', 'paused']);
+    }
+    return q.order('updated_at', { ascending: false }).limit(1);
+  }
+
+  let { data: rows, error } = await fetchWith(fullSelect, true);
+
+  if (
+    error &&
+    (error.code === '42703' ||
+      error.message?.includes('grace_period_ends_at') ||
+      error.message?.includes('commercial_reason'))
+  ) {
+    ({ data: rows, error } = await fetchWith(legacySelect, true));
+  }
+
+  if (error && process.env.NODE_ENV === 'development') {
+    console.error('[pharmacies] getPharmacySubscription', error.message);
+  }
+
+  let sub = rows?.[0] as SubscriptionQueryRow | undefined;
+
+  // Sin corriente: última cancelled/expired (para reactivar en SuperAdmin)
+  if (!sub && !error) {
+    let ended = await fetchWith(fullSelect, false);
+    if (
+      ended.error &&
+      (ended.error.code === '42703' ||
+        ended.error.message?.includes('grace_period_ends_at'))
+    ) {
+      ended = await fetchWith(legacySelect, false);
+    }
+    const row = ended.data?.[0] as SubscriptionQueryRow | undefined;
+    if (
+      row &&
+      (row.status === 'cancelled' ||
+        row.status === 'expired' ||
+        row.status === 'paused')
+    ) {
+      sub = row;
+    } else if (row) {
+      sub = row;
+    }
+  }
+
+  return sub ? mapSubscriptionRow(sub) : null;
+}
+
 export async function getPharmacyById(
   id: string
 ): Promise<PharmacyDetail | null> {
   const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from('pharmacies')
-    .select(
-      `
+  const pharmacySelectFull = `
       id,
       name,
       legal_name,
@@ -132,6 +248,8 @@ export async function getPharmacyById(
       logo_color,
       created_at,
       updated_at,
+      suspended_at,
+      suspension_reason,
       plan:plans ( id, key, name, description, is_active, sort_order ),
       branding:pharmacy_branding (
         pharmacy_id,
@@ -153,10 +271,48 @@ export async function getPharmacyById(
         email,
         timezone
       )
+    `;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let data: any = null;
+  let error: { message: string; code?: string } | null = null;
+
+  {
+    const full = await supabase
+      .from('pharmacies')
+      .select(pharmacySelectFull)
+      .eq('id', id)
+      .maybeSingle();
+    data = full.data;
+    error = full.error;
+  }
+
+  // Compatibilidad pre-027: sin suspension_reason
+  if (
+    error &&
+    (error.code === '42703' || error.message?.includes('suspension_reason'))
+  ) {
+    const legacy = await supabase
+      .from('pharmacies')
+      .select(
+        `
+      id, name, legal_name, cif, email, phone, web, address_line, postal_code,
+      city, province, country, status, logo_color, created_at, updated_at, suspended_at,
+      plan:plans ( id, key, name, description, is_active, sort_order ),
+      branding:pharmacy_branding (
+        pharmacy_id, logo_url, primary_color, secondary_color, accent_color,
+        font_family, border_radius, kiosk_wallpaper_url, welcome_message
+      ),
+      settings:pharmacy_settings (
+        pharmacy_id, visible_name, schedule, phone, whatsapp, email, timezone
+      )
     `
-    )
-    .eq('id', id)
-    .maybeSingle();
+      )
+      .eq('id', id)
+      .maybeSingle();
+    data = legacy.data;
+    error = legacy.error;
+  }
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
@@ -167,44 +323,12 @@ export async function getPharmacyById(
 
   if (!data) return null;
 
-  const { data: subRows, error: subError } = await supabase
-    .from('subscriptions')
-    .select(
-      `
-      id,
-      status,
-      provider,
-      current_period_start,
-      current_period_end,
-      plan:plans ( id, key, name, description, is_active, sort_order )
-    `
-    )
-    .eq('pharmacy_id', id)
-    .in('status', ['trialing', 'active', 'past_due', 'paused'])
-    .order('created_at', { ascending: false })
-    .limit(1);
+  const subscription = await loadPharmacySubscriptionRow(id);
 
-  if (subError && process.env.NODE_ENV === 'development') {
-    console.error('[pharmacies] getPharmacySubscription', subError.message);
-  }
-
-  const sub = subRows?.[0];
   const brandingRaw = data.branding as PharmacyBranding | PharmacyBranding[] | null;
   const settingsRaw = data.settings as PharmacySettings | PharmacySettings[] | null;
   const branding = Array.isArray(brandingRaw) ? brandingRaw[0] ?? null : brandingRaw;
   const settings = Array.isArray(settingsRaw) ? settingsRaw[0] ?? null : settingsRaw;
-
-  let subscription: PharmacySubscription | null = null;
-  if (sub) {
-    subscription = {
-      id: sub.id as string,
-      status: sub.status as PharmacySubscription['status'],
-      provider: sub.provider as string,
-      current_period_start: (sub.current_period_start as string | null) ?? null,
-      current_period_end: (sub.current_period_end as string | null) ?? null,
-      plan: mapPlan(sub.plan as PlanRow | PlanRow[] | null),
-    };
-  }
 
   return {
     id: data.id as string,
@@ -223,6 +347,16 @@ export async function getPharmacyById(
     logo_color: (data.logo_color as string | null) ?? null,
     created_at: data.created_at as string,
     updated_at: data.updated_at as string,
+    suspended_at:
+      ((data as { suspended_at?: string | null }).suspended_at as
+        | string
+        | null
+        | undefined) ?? null,
+    suspension_reason:
+      ((data as { suspension_reason?: string | null }).suspension_reason as
+        | string
+        | null
+        | undefined) ?? null,
     plan: mapPlan(data.plan as PlanRow | PlanRow[] | null),
     branding: branding ?? null,
     settings: settings ?? null,
