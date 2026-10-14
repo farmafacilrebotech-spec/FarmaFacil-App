@@ -511,9 +511,8 @@ export function PharmacyDetailClient({
         </div>
       </div>
 
-      {success ? <SuccessBanner message={success} /> : null}
-      {error && activeTab === 'usuarios' ? (
-        <ErrorBanner message={error} />
+      {success && activeTab !== 'usuarios' ? (
+        <SuccessBanner message={success} />
       ) : null}
 
       <div>
@@ -1063,13 +1062,10 @@ export function PharmacyDetailClient({
             pharmacyId={pharmacy.id}
             members={members}
             roles={roles}
-            onSuccessMessage={(message) => {
-              setSuccess(message);
-              setError(null);
-            }}
-            onErrorMessage={(message) => {
-              setError(message);
+            onSuccessMessage={() => {
+              // Feedback solo en el panel Usuarios (evitar banner duplicado).
               setSuccess(null);
+              setError(null);
             }}
           />
         )}

@@ -17,7 +17,6 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
 
 import type { PharmacyMember, PharmacyRoleOption } from '@/lib/pharmacies/types';
 import { MEMBERSHIP_STATUS_LABELS } from '@/lib/pharmacies/labels';
@@ -411,12 +410,10 @@ function MemberActionsCell({
         member={member}
         roles={roles}
         onSuccess={(message, meta) => {
-          onResult({ ok: true, message });
-          if (meta?.suggestResendInvitation) {
-            toast.message('Reenvía la invitación al email corregido.', {
-              description: 'Usa «Reenviar invitación» en Acciones.',
-            });
-          }
+          const suffix = meta?.suggestResendInvitation
+            ? ' Usa «Reenviar invitación» en Acciones para el email corregido.'
+            : '';
+          onResult({ ok: true, message: `${message}${suffix}` });
         }}
       />
     </>
@@ -427,14 +424,13 @@ export function PharmacyUsersPanel({
   pharmacyId,
   members: initialMembers,
   roles,
-  onSuccessMessage,
-  onErrorMessage,
+  onSuccessMessage: _onSuccessMessage,
 }: {
   pharmacyId: string;
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
-  onSuccessMessage: (message: string) => void;
-  onErrorMessage?: (message: string) => void;
+  /** Conservado por compatibilidad; el feedback vive solo en este panel. */
+  onSuccessMessage?: (message: string) => void;
 }) {
   const router = useRouter();
   const [members, setMembers] = React.useState(initialMembers);
@@ -449,26 +445,21 @@ export function PharmacyUsersPanel({
   const activeCount = members.filter((m) => m.status === 'active').length;
 
   function handleActionResult(result: MembershipLifecycleLike) {
+    // Un solo mensaje junto al panel Usuarios (sin toast ni banner padre).
     const interpreted = interpretMembershipActionResult(result);
 
     if (interpreted.kind === 'error') {
       setFeedback({ tone: 'error', message: interpreted.message });
-      onErrorMessage?.(interpreted.message);
-      toast.error(interpreted.message);
       return;
     }
 
     if (interpreted.kind === 'partial_success') {
       setFeedback({ tone: 'warning', message: interpreted.message });
-      onSuccessMessage(interpreted.message);
-      toast.message(interpreted.message);
       router.refresh();
       return;
     }
 
     setFeedback({ tone: 'success', message: interpreted.message });
-    onSuccessMessage(interpreted.message);
-    toast.success(interpreted.message);
     router.refresh();
   }
 
