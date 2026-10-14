@@ -26,7 +26,7 @@ export async function sendTransactionalEmail(input: {
     return {
       ok: false,
       error:
-        'El envío de email no está configurado (RESEND_API_KEY). La membresía se ha creado; configura el correo para notificar al usuario.',
+        'El envío de email no está configurado (falta RESEND_API_KEY en el servidor). No se ha enviado ningún correo.',
       code: 'not_configured',
     };
   }

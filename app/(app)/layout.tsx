@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation';
 import { AppShell } from '@/components/layout/app-shell';
 import { AccessDenied } from '@/components/auth/access-denied';
 import { AuthError } from '@/components/auth/auth-error';
+import { Toaster } from '@/components/ui/sonner';
 import { resolvePlatformAccess } from '@/lib/auth/platform';
 import { displayNameFromIdentity } from '@/lib/format';
 
@@ -35,13 +36,16 @@ export default async function AuthenticatedLayout({
   );
 
   return (
-    <AppShell
-      user={{
-        name: displayName,
-        email: profile.email,
-      }}
-    >
-      {children}
-    </AppShell>
+    <>
+      <AppShell
+        user={{
+          name: displayName,
+          email: profile.email,
+        }}
+      >
+        {children}
+      </AppShell>
+      <Toaster richColors closeButton position="top-right" />
+    </>
   );
 }

@@ -512,6 +512,9 @@ export function PharmacyDetailClient({
       </div>
 
       {success ? <SuccessBanner message={success} /> : null}
+      {error && activeTab === 'usuarios' ? (
+        <ErrorBanner message={error} />
+      ) : null}
 
       <div>
         {activeTab === 'general' && (
@@ -1063,6 +1066,10 @@ export function PharmacyDetailClient({
             onSuccessMessage={(message) => {
               setSuccess(message);
               setError(null);
+            }}
+            onErrorMessage={(message) => {
+              setError(message);
+              setSuccess(null);
             }}
           />
         )}

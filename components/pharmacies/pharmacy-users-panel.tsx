@@ -12,6 +12,9 @@ import {
   Pencil,
   KeyRound,
   UserPlus,
+  CheckCircle2,
+  AlertCircle,
+  AlertTriangle,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
@@ -19,6 +22,10 @@ import { toast } from 'sonner';
 import type { PharmacyMember, PharmacyRoleOption } from '@/lib/pharmacies/types';
 import { MEMBERSHIP_STATUS_LABELS } from '@/lib/pharmacies/labels';
 import { formatDateTime, initials } from '@/lib/format';
+import {
+  interpretMembershipActionResult,
+  type MembershipLifecycleLike,
+} from '@/lib/pharmacies/membership-ui-feedback';
 import {
   cancelPharmacyInvitationAction,
   reactivatePharmacyMembershipAction,
@@ -61,6 +68,10 @@ type ConfirmAction =
   | 'cancel_invitation'
   | 'reinvite'
   | 'send_password_reset';
+
+type PanelFeedback =
+  | { tone: 'success' | 'warning' | 'error'; message: string }
+  | null;
 
 const CONFIRM_COPY: Record<
   ConfirmAction,
@@ -112,6 +123,34 @@ const CONFIRM_COPY: Record<
   },
 };
 
+function PanelFeedbackBanner({ feedback }: { feedback: PanelFeedback }) {
+  if (!feedback) return null;
+
+  const Icon =
+    feedback.tone === 'success'
+      ? CheckCircle2
+      : feedback.tone === 'warning'
+        ? AlertTriangle
+        : AlertCircle;
+
+  const styles =
+    feedback.tone === 'success'
+      ? 'border-success/30 bg-success/10 text-success'
+      : feedback.tone === 'warning'
+        ? 'border-warning/40 bg-warning/10 text-foreground'
+        : 'border-destructive/30 bg-destructive/10 text-destructive';
+
+  return (
+    <div
+      role="status"
+      className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm ${styles}`}
+    >
+      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+      <p className="min-w-0 flex-1 leading-snug">{feedback.message}</p>
+    </div>
+  );
+}
+
 /**
  * Menú de acciones por fila: estado y membershipId solo de `member` de esta celda.
  * No comparte estado con otras filas.
@@ -120,14 +159,13 @@ function MemberActionsCell({
   pharmacyId,
   member,
   roles,
-  onDone,
+  onResult,
 }: {
   pharmacyId: string;
   member: PharmacyMember;
   roles: PharmacyRoleOption[];
-  onDone: (message: string) => void;
+  onResult: (result: MembershipLifecycleLike) => void;
 }) {
-  // Estado local por instancia de fila (key = membership id en el padre).
   const membershipId = member.id;
   const status = member.status;
 
@@ -137,7 +175,6 @@ function MemberActionsCell({
   const [editOpen, setEditOpen] = React.useState(false);
 
   function openConfirm(action: ConfirmAction) {
-    // Evita la carrera Radix Dropdown→AlertDialog que cerraba el confirm.
     window.setTimeout(() => setConfirm(action), 0);
   }
 
@@ -146,50 +183,64 @@ function MemberActionsCell({
     setPending(true);
 
     const input = { pharmacyId, membershipId };
-    let result;
-    switch (confirm) {
-      case 'suspend':
-        result = await suspendPharmacyMembershipAction(input);
-        break;
-      case 'reactivate':
-        result = await reactivatePharmacyMembershipAction(input);
-        break;
-      case 'revoke':
-        result = await revokePharmacyMembershipAction(input);
-        break;
-      case 'cancel_invitation':
-        result = await cancelPharmacyInvitationAction(input);
-        break;
-      case 'reinvite':
-        result = await reinvitePharmacyMembershipAction(input);
-        break;
-      case 'send_password_reset':
-        result = await sendPasswordResetForMembershipAction(input);
-        break;
-    }
+    try {
+      let result: MembershipLifecycleLike;
+      switch (confirm) {
+        case 'suspend':
+          result = await suspendPharmacyMembershipAction(input);
+          break;
+        case 'reactivate':
+          result = await reactivatePharmacyMembershipAction(input);
+          break;
+        case 'revoke':
+          result = await revokePharmacyMembershipAction(input);
+          break;
+        case 'cancel_invitation':
+          result = await cancelPharmacyInvitationAction(input);
+          break;
+        case 'reinvite':
+          result = await reinvitePharmacyMembershipAction(input);
+          break;
+        case 'send_password_reset':
+          result = await sendPasswordResetForMembershipAction(input);
+          break;
+      }
 
-    setPending(false);
-    if (!result.ok) {
-      toast.error(result.error);
-      return;
+      onResult(result);
+      if (result.ok) {
+        setConfirm(null);
+      }
+    } catch (err) {
+      console.error('[users-panel] action', confirm, err);
+      onResult({
+        ok: false,
+        error:
+          'No se ha podido completar la acción. Inténtalo de nuevo o recarga la página.',
+      });
+    } finally {
+      setPending(false);
     }
-    setConfirm(null);
-    onDone(result.message);
   }
 
   async function handleResend() {
     if (resending) return;
     setResending(true);
-    const result = await resendPharmacyInvitationAction({
-      pharmacyId,
-      membershipId,
-    });
-    setResending(false);
-    if (!result.ok) {
-      toast.error(result.error);
-      return;
+    try {
+      const result = await resendPharmacyInvitationAction({
+        pharmacyId,
+        membershipId,
+      });
+      onResult(result);
+    } catch (err) {
+      console.error('[users-panel] resend', err);
+      onResult({
+        ok: false,
+        error:
+          'No se ha podido reenviar la invitación. Inténtalo de nuevo o recarga la página.',
+      });
+    } finally {
+      setResending(false);
     }
-    onDone(result.message);
   }
 
   const copy = confirm ? CONFIRM_COPY[confirm] : null;
@@ -360,7 +411,7 @@ function MemberActionsCell({
         member={member}
         roles={roles}
         onSuccess={(message, meta) => {
-          onDone(message);
+          onResult({ ok: true, message });
           if (meta?.suggestResendInvitation) {
             toast.message('Reenvía la invitación al email corregido.', {
               description: 'Usa «Reenviar invitación» en Acciones.',
@@ -377,15 +428,18 @@ export function PharmacyUsersPanel({
   members: initialMembers,
   roles,
   onSuccessMessage,
+  onErrorMessage,
 }: {
   pharmacyId: string;
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
   onSuccessMessage: (message: string) => void;
+  onErrorMessage?: (message: string) => void;
 }) {
   const router = useRouter();
   const [members, setMembers] = React.useState(initialMembers);
   const [inviteOpen, setInviteOpen] = React.useState(false);
+  const [feedback, setFeedback] = React.useState<PanelFeedback>(null);
 
   React.useEffect(() => {
     setMembers(initialMembers);
@@ -394,9 +448,27 @@ export function PharmacyUsersPanel({
   const invitedCount = members.filter((m) => m.status === 'invited').length;
   const activeCount = members.filter((m) => m.status === 'active').length;
 
-  function handleActionDone(message: string) {
-    onSuccessMessage(message);
-    toast.success(message);
+  function handleActionResult(result: MembershipLifecycleLike) {
+    const interpreted = interpretMembershipActionResult(result);
+
+    if (interpreted.kind === 'error') {
+      setFeedback({ tone: 'error', message: interpreted.message });
+      onErrorMessage?.(interpreted.message);
+      toast.error(interpreted.message);
+      return;
+    }
+
+    if (interpreted.kind === 'partial_success') {
+      setFeedback({ tone: 'warning', message: interpreted.message });
+      onSuccessMessage(interpreted.message);
+      toast.message(interpreted.message);
+      router.refresh();
+      return;
+    }
+
+    setFeedback({ tone: 'success', message: interpreted.message });
+    onSuccessMessage(interpreted.message);
+    toast.success(interpreted.message);
     router.refresh();
   }
 
@@ -421,6 +493,8 @@ export function PharmacyUsersPanel({
           <Plus className="h-4 w-4" /> Invitar usuario
         </Button>
       </div>
+
+      <PanelFeedbackBanner feedback={feedback} />
 
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
         {members.length === 0 ? (
@@ -501,7 +575,7 @@ export function PharmacyUsersPanel({
                           pharmacyId={pharmacyId}
                           member={m}
                           roles={roles}
-                          onDone={handleActionDone}
+                          onResult={handleActionResult}
                         />
                       </td>
                     </tr>
@@ -519,8 +593,7 @@ export function PharmacyUsersPanel({
         pharmacyId={pharmacyId}
         roles={roles}
         onSuccess={(message) => {
-          onSuccessMessage(message);
-          router.refresh();
+          handleActionResult({ ok: true, message });
         }}
       />
     </div>
