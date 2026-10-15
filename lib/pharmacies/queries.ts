@@ -139,6 +139,13 @@ function mapSubscriptionRow(sub: SubscriptionQueryRow): PharmacySubscription {
   };
 }
 
+/** Suscripción corriente (o última finalizada) de una farmacia. RLS: member+pharmacy.view o plataforma. */
+export async function getPharmacySubscription(
+  pharmacyId: string
+): Promise<PharmacySubscription | null> {
+  return loadPharmacySubscriptionRow(pharmacyId);
+}
+
 async function loadPharmacySubscriptionRow(
   pharmacyId: string
 ): Promise<PharmacySubscription | null> {

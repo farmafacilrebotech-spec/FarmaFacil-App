@@ -1,15 +1,20 @@
 import { displayNameFromIdentity } from '@/lib/format';
 import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
 import type { PharmacyTenantContext } from '@/lib/pharmacies/tenant';
+import type { TenantSubscriptionSummary } from '@/lib/pharmacies/tenant-subscription-summary';
 import { PageHeader } from '@/components/shared/page-header';
 import { PharmacyLogo } from '@/components/brand';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
+import { PharmacyTenantSubscriptionCard } from '@/components/pharmacy-tenant/pharmacy-tenant-subscription-card';
 
 export function PharmacyTenantSettings({
   context,
+  subscriptionSummary = null,
 }: {
   context: PharmacyTenantContext;
+  /** Solo OWNER/ADMIN; null = no mostrar sección. */
+  subscriptionSummary?: TenantSubscriptionSummary | null;
 }) {
   const userLabel = displayNameFromIdentity(
     context.profile.fullName,
@@ -23,6 +28,10 @@ export function PharmacyTenantSettings({
         title="Configuración"
         description="Información de tu farmacia y de tu acceso"
       />
+
+      {subscriptionSummary ? (
+        <PharmacyTenantSubscriptionCard summary={subscriptionSummary} />
+      ) : null}
 
       <Card className="overflow-hidden">
         <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">

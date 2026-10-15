@@ -1,5 +1,7 @@
 import { PharmacyTenantSettings } from '@/components/pharmacy-tenant/pharmacy-tenant-settings';
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
+import { loadTenantSubscriptionSummary } from '@/lib/pharmacies/tenant-subscription';
+import { canViewTenantSubscriptionSummary } from '@/lib/pharmacies/tenant-subscription-summary';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,5 +15,17 @@ export default async function PharmacyConfiguracionPage({
     return null;
   }
 
-  return <PharmacyTenantSettings context={result.context} />;
+  const canViewSubscription = canViewTenantSubscriptionSummary(
+    result.context.membership.roleKey
+  );
+  const subscriptionSummary = canViewSubscription
+    ? await loadTenantSubscriptionSummary(params.pharmacyId)
+    : null;
+
+  return (
+    <PharmacyTenantSettings
+      context={result.context}
+      subscriptionSummary={subscriptionSummary}
+    />
+  );
 }

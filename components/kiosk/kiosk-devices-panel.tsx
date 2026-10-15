@@ -16,6 +16,11 @@ import type {
   KioskCommercialUiState,
   KioskEntitlementRecord,
 } from '@/lib/kiosk/entitlement-status';
+import {
+  kioskDeviceCommercialServiceLabel,
+  kioskDeviceTechnicalLabel,
+  resolveKioskDeviceCommercialService,
+} from '@/lib/kiosk/device-status-display';
 import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
@@ -29,10 +34,6 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { formatDateTime } from '@/lib/format';
-
-function statusLabel(status: KioskDeviceRow['status']) {
-  return status === 'active' ? 'Activo' : 'Revocado';
-}
 
 export function KioskDevicesPanel({
   pharmacyId,
@@ -127,9 +128,10 @@ export function KioskDevicesPanel({
         <div>
           <h2 className="text-lg font-semibold text-foreground">Dispositivos</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Vincula tablets Android al kiosko de esta farmacia con un código de
-            un solo uso (10 minutos). La revocación invalida la sesión de la
-            tablet.
+            Vincula tablets Android con un código de un solo uso (10 minutos).
+            El estado técnico indica si el dispositivo sigue emparejado; el
+            comercial, si el servicio Kiosko está habilitado por suscripción.
+            Puedes revocar un dispositivo aunque el módulo esté bloqueado.
           </p>
         </div>
         <Button
@@ -188,49 +190,71 @@ export function KioskDevicesPanel({
             <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
               <tr>
                 <th className="px-4 py-3 font-medium">Nombre</th>
-                <th className="px-4 py-3 font-medium">Estado</th>
+                <th className="px-4 py-3 font-medium">Estado técnico</th>
+                <th className="px-4 py-3 font-medium">Estado comercial</th>
                 <th className="px-4 py-3 font-medium">Vinculado</th>
                 <th className="px-4 py-3 font-medium">Última actividad</th>
                 <th className="px-4 py-3 font-medium">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {devices.map((d) => (
-                <tr key={d.id} className="border-t border-border">
-                  <td className="px-4 py-3 font-medium text-foreground">
-                    {d.displayName}
-                  </td>
-                  <td className="px-4 py-3">
-                    <Badge
-                      variant={d.status === 'active' ? 'default' : 'secondary'}
-                    >
-                      {statusLabel(d.status)}
-                    </Badge>
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {formatDateTime(d.pairedAt)}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">
-                    {d.lastSeenAt ? formatDateTime(d.lastSeenAt) : '—'}
-                  </td>
-                  <td className="px-4 py-3">
-                    {d.status === 'active' ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="gap-1"
-                        onClick={() => setRevokeTarget(d)}
+              {devices.map((d) => {
+                const commercial = resolveKioskDeviceCommercialService({
+                  deviceStatus: d.status,
+                  moduleUsable,
+                });
+                return (
+                  <tr key={d.id} className="border-t border-border">
+                    <td className="px-4 py-3 font-medium text-foreground">
+                      {d.displayName}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge
+                        variant={
+                          d.status === 'active' ? 'secondary' : 'outline'
+                        }
                       >
-                        <ShieldOff className="h-3.5 w-3.5" />
-                        Revocar
-                      </Button>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                        {kioskDeviceTechnicalLabel(d.status)}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      {commercial === 'not_applicable' ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <Badge
+                          variant={
+                            commercial === 'enabled' ? 'default' : 'destructive'
+                          }
+                        >
+                          {kioskDeviceCommercialServiceLabel(commercial)}
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {formatDateTime(d.pairedAt)}
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">
+                      {d.lastSeenAt ? formatDateTime(d.lastSeenAt) : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {d.status === 'active' ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="gap-1"
+                          onClick={() => setRevokeTarget(d)}
+                        >
+                          <ShieldOff className="h-3.5 w-3.5" />
+                          Revocar
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
