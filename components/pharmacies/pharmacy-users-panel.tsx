@@ -19,6 +19,12 @@ import {
 import { useRouter } from 'next/navigation';
 
 import type { PharmacyMember, PharmacyRoleOption } from '@/lib/pharmacies/types';
+import {
+  canShowDestructiveAction,
+  canShowMemberActions,
+  rolesForMemberEdit,
+  type PharmacyUsersCapabilities,
+} from '@/lib/pharmacies/membership-capabilities';
 import { MEMBERSHIP_STATUS_LABELS } from '@/lib/pharmacies/labels';
 import { formatDateTime, initials } from '@/lib/format';
 import {
@@ -158,15 +164,30 @@ function MemberActionsCell({
   pharmacyId,
   member,
   roles,
+  capabilities,
   onResult,
 }: {
   pharmacyId: string;
   member: PharmacyMember;
   roles: PharmacyRoleOption[];
+  capabilities: PharmacyUsersCapabilities;
   onResult: (result: MembershipLifecycleLike) => void;
 }) {
   const membershipId = member.id;
   const status = member.status;
+  const actor = capabilities.actor;
+  const canManage = canShowMemberActions(actor, member);
+  const canSuspend = canShowDestructiveAction(actor, member, 'suspend');
+  const canRevoke = canShowDestructiveAction(actor, member, 'revoke');
+  const canCancel = canShowDestructiveAction(actor, member, 'cancel_invitation');
+
+  if (!canManage) {
+    return (
+      <span className="text-xs text-muted-foreground" title="Sin permiso para gestionar este usuario">
+        —
+      </span>
+    );
+  }
 
   const [confirm, setConfirm] = React.useState<ConfirmAction | null>(null);
   const [pending, setPending] = React.useState(false);
@@ -277,16 +298,18 @@ function MemberActionsCell({
                 {resending ? 'Reenviando…' : 'Reenviar invitación'}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={(e) => {
-                  e.preventDefault();
-                  openConfirm('cancel_invitation');
-                }}
-              >
-                <Ban className="mr-2 h-4 w-4" />
-                Cancelar invitación
-              </DropdownMenuItem>
+              {canCancel ? (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    openConfirm('cancel_invitation');
+                  }}
+                >
+                  <Ban className="mr-2 h-4 w-4" />
+                  Cancelar invitación
+                </DropdownMenuItem>
+              ) : null}
             </>
           ) : null}
 
@@ -301,26 +324,30 @@ function MemberActionsCell({
                 <KeyRound className="mr-2 h-4 w-4" />
                 Enviar acceso / Restablecer contraseña
               </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={(e) => {
-                  e.preventDefault();
-                  openConfirm('suspend');
-                }}
-              >
-                <Ban className="mr-2 h-4 w-4" />
-                Suspender acceso
-              </DropdownMenuItem>
+              {canSuspend ? (
+                <DropdownMenuItem
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    openConfirm('suspend');
+                  }}
+                >
+                  <Ban className="mr-2 h-4 w-4" />
+                  Suspender acceso
+                </DropdownMenuItem>
+              ) : null}
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={(e) => {
-                  e.preventDefault();
-                  openConfirm('revoke');
-                }}
-              >
-                <UserX className="mr-2 h-4 w-4" />
-                Revocar acceso
-              </DropdownMenuItem>
+              {canRevoke ? (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    openConfirm('revoke');
+                  }}
+                >
+                  <UserX className="mr-2 h-4 w-4" />
+                  Revocar acceso
+                </DropdownMenuItem>
+              ) : null}
             </>
           ) : null}
 
@@ -345,16 +372,18 @@ function MemberActionsCell({
                 Reactivar acceso
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onSelect={(e) => {
-                  e.preventDefault();
-                  openConfirm('revoke');
-                }}
-              >
-                <UserX className="mr-2 h-4 w-4" />
-                Revocar acceso
-              </DropdownMenuItem>
+              {canRevoke ? (
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => {
+                    e.preventDefault();
+                    openConfirm('revoke');
+                  }}
+                >
+                  <UserX className="mr-2 h-4 w-4" />
+                  Revocar acceso
+                </DropdownMenuItem>
+              ) : null}
             </>
           ) : null}
 
@@ -408,7 +437,7 @@ function MemberActionsCell({
         onOpenChange={setEditOpen}
         pharmacyId={pharmacyId}
         member={member}
-        roles={roles}
+        roles={rolesForMemberEdit(actor, member, roles)}
         onSuccess={(message, meta) => {
           const suffix = meta?.suggestResendInvitation
             ? ' Usa «Reenviar invitación» en Acciones para el email corregido.'
@@ -424,11 +453,13 @@ export function PharmacyUsersPanel({
   pharmacyId,
   members: initialMembers,
   roles,
+  capabilities,
   onSuccessMessage: _onSuccessMessage,
 }: {
   pharmacyId: string;
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
+  capabilities: PharmacyUsersCapabilities;
   /** Conservado por compatibilidad; el feedback vive solo en este panel. */
   onSuccessMessage?: (message: string) => void;
 }) {
@@ -476,13 +507,15 @@ export function PharmacyUsersPanel({
               : `${members.length} usuario${members.length === 1 ? '' : 's'} · ${activeCount} activo${activeCount === 1 ? '' : 's'} · ${invitedCount} invitado${invitedCount === 1 ? '' : 's'}`}
           </p>
         </div>
-        <Button
-          size="sm"
-          className="gap-1.5"
-          onClick={() => setInviteOpen(true)}
-        >
-          <Plus className="h-4 w-4" /> Invitar usuario
-        </Button>
+        {capabilities.canInvite ? (
+          <Button
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setInviteOpen(true)}
+          >
+            <Plus className="h-4 w-4" /> Invitar usuario
+          </Button>
+        ) : null}
       </div>
 
       <PanelFeedbackBanner feedback={feedback} />
@@ -565,7 +598,8 @@ export function PharmacyUsersPanel({
                           key={m.id}
                           pharmacyId={pharmacyId}
                           member={m}
-                          roles={roles}
+                          roles={capabilities.assignableRoles}
+                          capabilities={capabilities}
                           onResult={handleActionResult}
                         />
                       </td>
@@ -578,15 +612,17 @@ export function PharmacyUsersPanel({
         )}
       </div>
 
-      <InviteUserDialog
-        open={inviteOpen}
-        onOpenChange={setInviteOpen}
-        pharmacyId={pharmacyId}
-        roles={roles}
-        onSuccess={(message) => {
-          handleActionResult({ ok: true, message });
-        }}
-      />
+      {capabilities.canInvite ? (
+        <InviteUserDialog
+          open={inviteOpen}
+          onOpenChange={setInviteOpen}
+          pharmacyId={pharmacyId}
+          roles={capabilities.assignableRoles}
+          onSuccess={(message) => {
+            handleActionResult({ ok: true, message });
+          }}
+        />
+      ) : null}
     </div>
   );
 }

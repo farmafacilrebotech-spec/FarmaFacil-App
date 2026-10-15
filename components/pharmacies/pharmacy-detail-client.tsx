@@ -14,6 +14,7 @@ import {
   Pill,
   ShoppingCart,
   Activity,
+  MonitorSmartphone,
   Globe,
   Mail,
   Phone,
@@ -56,7 +57,14 @@ import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
 import { PharmacySubscriptionPanel } from '@/components/pharmacies/pharmacy-subscription-panel';
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
 import { CatalogoTab } from '@/components/pharmacies/tabs/catalogo-tab';
+import { KioskDevicesPanel } from '@/components/kiosk/kiosk-devices-panel';
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
+import type { KioskDeviceRow } from '@/lib/kiosk/devices';
+import type {
+  KioskCommercialUiState,
+  KioskEntitlementRecord,
+} from '@/lib/kiosk/entitlement-status';
+import type { PharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 
 const tabs = [
   { id: 'general', label: 'General', icon: LayoutDashboard, ready: true },
@@ -66,6 +74,7 @@ const tabs = [
   { id: 'usuarios', label: 'Usuarios', icon: Users, ready: true },
   { id: 'clientes', label: 'Clientes', icon: User, ready: false },
   { id: 'catalogo', label: 'Catálogo', icon: Pill, ready: true },
+  { id: 'kiosko', label: 'Kiosko', icon: MonitorSmartphone, ready: true },
   { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, ready: false },
   { id: 'actividad', label: 'Actividad', icon: Activity, ready: false },
 ] as const;
@@ -176,17 +185,29 @@ export function PharmacyDetailClient({
   plans,
   members,
   roles,
+  usersCapabilities,
   catalogProducts = [],
   catalogCategories = [],
   catalogLoadError = null,
+  kioskDevices = [],
+  kioskDevicesError = null,
+  kioskCommercialUiState = 'not_contracted',
+  kioskEntitlement = null,
+  kioskModuleUsable = false,
 }: {
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
+  usersCapabilities: PharmacyUsersCapabilities;
   catalogProducts?: PharmacyProduct[];
   catalogCategories?: string[];
   catalogLoadError?: string | null;
+  kioskDevices?: KioskDeviceRow[];
+  kioskDevicesError?: string | null;
+  kioskCommercialUiState?: KioskCommercialUiState;
+  kioskEntitlement?: KioskEntitlementRecord | null;
+  kioskModuleUsable?: boolean;
 }) {
   const router = useRouter();
   const [pharmacy, setPharmacy] = React.useState(initialPharmacy);
@@ -1065,6 +1086,7 @@ export function PharmacyDetailClient({
             pharmacyId={pharmacy.id}
             members={members}
             roles={roles}
+            capabilities={usersCapabilities}
             onSuccessMessage={() => {
               // Feedback solo en el panel Usuarios (evitar banner duplicado).
               setSuccess(null);
@@ -1083,10 +1105,23 @@ export function PharmacyDetailClient({
           />
         )}
 
+        {activeTab === 'kiosko' && (
+          <KioskDevicesPanel
+            pharmacyId={pharmacy.id}
+            devices={kioskDevices}
+            loadError={kioskDevicesError}
+            commercialUiState={kioskCommercialUiState}
+            entitlement={kioskEntitlement}
+            moduleUsable={kioskModuleUsable}
+            showAdminControls
+          />
+        )}
+
         {activeTab !== 'general' &&
           activeTab !== 'personalizacion' &&
           activeTab !== 'usuarios' &&
-          activeTab !== 'catalogo' && (
+          activeTab !== 'catalogo' &&
+          activeTab !== 'kiosko' && (
           <PendingPanel
             title={tabs.find((t) => t.id === activeTab)?.label ?? 'Sección'}
           />

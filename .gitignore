@@ -27,9 +27,16 @@ yarn-error.log*
 # local env files
 .env
 .env*.local
+# staging (también cubierto por .env*.local; explícito por seguridad)
+.env.staging.local
+.env.staging
+.env.*.staging*
 
 # local database backups (never commit)
 /backups/
+
+# Supabase CLI local cache (never commit; do not link to production)
+/supabase/.temp/
 
 # vercel
 .vercel

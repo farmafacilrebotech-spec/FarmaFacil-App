@@ -37,8 +37,8 @@ export function InviteUserDialog({
   roles: PharmacyRoleOption[];
   onSuccess: (message: string) => void;
 }) {
-  const defaultRole =
-    roles.find((r) => r.key === 'PHARMACY_OWNER')?.key ?? roles[0]?.key ?? '';
+  // Preferir el primer rol ofrecido (ya filtrado por jerarquía del actor).
+  const defaultRole = roles[0]?.key ?? '';
 
   const [fullName, setFullName] = React.useState('');
   const [email, setEmail] = React.useState('');
