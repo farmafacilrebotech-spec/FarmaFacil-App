@@ -11,7 +11,8 @@
     "test:membership-ui": "node --experimental-strip-types --test lib/pharmacies/membership-ui-feedback.test.ts",
     "test:commercial-lifecycle": "node --experimental-strip-types --test lib/pharmacies/commercial-lifecycle.test.ts",
     "test:commercial-access": "node --experimental-strip-types --test lib/pharmacies/commercial-access-gate.test.ts",
-    "test:pending-invitations": "node --experimental-strip-types --test lib/pharmacies/pending-invitations.test.ts"
+    "test:pending-invitations": "node --experimental-strip-types --test lib/pharmacies/pending-invitations.test.ts",
+    "test:invite-user-kind": "node --experimental-strip-types --test lib/pharmacies/invite-user-kind.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

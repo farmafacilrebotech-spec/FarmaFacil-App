@@ -1,6 +1,12 @@
+import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import {
+  classifyInviteUserKind,
+  type PharmacyInviteUserKind,
+} from '@/lib/pharmacies/invite-user-kind-logic';
 
-export type PharmacyInviteUserKind = 'new' | 'existing';
+export type { PharmacyInviteUserKind };
+export { classifyInviteUserKind };
 
 export type ResolvePharmacyInviteUserKindResult =
   | { ok: true; kind: PharmacyInviteUserKind }
@@ -10,14 +16,12 @@ export type ResolvePharmacyInviteUserKindResult =
  * Clasifica si el destinatario de una invitación es usuario Auth/profile
  * reutilizable (existing) o alta Auth pendiente (new).
  *
- * Criterio (solo Admin / service_role, sin RLS):
- * - Debe existir auth.users y profiles; si la consulta falla → error explícito
- *   (nunca degradar en silencio a «new»).
- * - existing: tiene alguna membership en estado distinto de «invited»
- *   (ya fue usuario real de FarmaFácil: active / suspended / revoked).
- * - new: solo memberships «invited» (alta Auth pendiente de first-access).
+ * - Auth: Admin API (getUserById).
+ * - profiles / pharmacy_memberships: cliente JWT del SuperAdmin (RLS).
+ *   No usar service_role aquí: en este proyecto service_role no tiene
+ *   GRANT SELECT sobre esas tablas (solo Auth Admin).
  *
- * No usa: legal, last_sign_in_at, email_confirmed_at, ni cliente RLS.
+ * No usa: legal, last_sign_in_at, email_confirmed_at.
  */
 export async function resolvePharmacyInviteUserKind(
   profileId: string
@@ -42,10 +46,7 @@ export async function resolvePharmacyInviteUserKind(
     await admin.auth.admin.getUserById(id);
 
   if (authError) {
-    console.error(
-      '[invite-user-kind] getUserById',
-      authError.message
-    );
+    console.error('[invite-user-kind] getUserById', authError.message);
     return {
       ok: false,
       error:
@@ -61,7 +62,10 @@ export async function resolvePharmacyInviteUserKind(
     };
   }
 
-  const { data: profile, error: profileError } = await admin
+  // Lecturas de app: sesión SuperAdmin + RLS (platform.users.read|write).
+  const supabase = createClient();
+
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
     .select('id')
     .eq('id', id)
@@ -88,7 +92,7 @@ export async function resolvePharmacyInviteUserKind(
     };
   }
 
-  const { data: memberships, error: membershipError } = await admin
+  const { data: memberships, error: membershipError } = await supabase
     .from('pharmacy_memberships')
     .select('id, status')
     .eq('profile_id', id);
@@ -106,16 +110,10 @@ export async function resolvePharmacyInviteUserKind(
     };
   }
 
-  const rows = memberships ?? [];
-  // Ya fue miembro real (otra farmacia o estado no pendiente) → cuenta reutilizable.
-  const hasReusableMembership = rows.some(
-    (row) => row.status !== 'invited'
-  );
-
-  if (hasReusableMembership) {
-    return { ok: true, kind: 'existing' };
-  }
-
-  // Solo memberships invited: alta Auth pendiente (first-access).
-  return { ok: true, kind: 'new' };
+  return {
+    ok: true,
+    kind: classifyInviteUserKind(
+      (memberships ?? []).map((row) => String(row.status ?? ''))
+    ),
+  };
 }
