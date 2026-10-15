@@ -3,13 +3,10 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import {
-  getCurrentProfile,
-  hasPlatformSuperAdminRole,
-  hasPlatformPermission,
-} from '@/lib/auth/platform';
 import type { PharmacyRoleKey } from '@/lib/pharmacies/types';
 import { sendExistingUserPharmacyInviteEmail } from '@/lib/email/pharmacy-invitation';
+import { requirePharmacyMembershipManage } from '@/lib/pharmacies/membership-authz';
+import { canAssignRole } from '@/lib/pharmacies/membership-hierarchy';
 
 export type InvitePharmacyUserResult =
   | {
@@ -149,9 +146,10 @@ async function insertMembership(params: {
 /**
  * Invita a un usuario a una farmacia.
  *
- * Autorización: sesión JWT + PLATFORM_SUPERADMIN + platform.users.write.
+ * Autorización: SuperAdmin (platform.users.write) O memberships.manage
+ * (OWNER/ADMIN) + jerarquía de roles + farmacia operable.
  * service_role: solo Auth Admin inviteUserByEmail.
- * Memberships/profiles/roles: cliente autenticado + RLS.
+ * Memberships/profiles/roles: cliente autenticado + RLS + trigger 037.
  *
  * Auth y PostgreSQL no comparten transacción. Si Auth OK y membership falla,
  * no se borra el usuario Auth; el reintento crea solo la membership.
@@ -180,47 +178,19 @@ export async function invitePharmacyUserAction(input: {
     return { ok: false, error: 'Selecciona un rol válido.' };
   }
 
-  const {
-    profile,
-    authenticated,
-    error: profileError,
-  } = await getCurrentProfile();
-
-  if (!authenticated || !profile) {
-    return { ok: false, error: 'Debes iniciar sesión para invitar usuarios.' };
-  }
-  if (profileError) {
-    return { ok: false, error: 'No se ha podido verificar tu sesión.' };
+  const auth = await requirePharmacyMembershipManage(pharmacyId);
+  if (!auth.ok) {
+    return { ok: false, error: auth.error };
   }
 
-  const superAdmin = await hasPlatformSuperAdminRole(profile.id);
-  if (superAdmin.error) {
+  if (!canAssignRole(auth.actor, roleKey as PharmacyRoleKey)) {
     return {
       ok: false,
-      error: 'No se ha podido verificar tu rol de plataforma.',
-    };
-  }
-  if (!superAdmin.ok) {
-    return {
-      ok: false,
-      error: 'Solo un SuperAdministrador puede invitar usuarios.',
+      error: 'No puedes asignar ese rol con tu nivel de acceso.',
     };
   }
 
-  const canWrite = await hasPlatformPermission('platform.users.write');
-  if (canWrite.error) {
-    return {
-      ok: false,
-      error: 'No se ha podido verificar tu permiso de usuarios.',
-    };
-  }
-  if (!canWrite.ok) {
-    return {
-      ok: false,
-      error: 'No tienes permiso para gestionar usuarios de farmacia.',
-    };
-  }
-
+  const profile = { id: auth.actorId };
   const supabase = createClient();
 
   const { data: pharmacy, error: pharmacyError } = await supabase
@@ -332,6 +302,7 @@ export async function invitePharmacyUserAction(input: {
     }
 
     revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidatePath(`/f/${pharmacyId}/usuarios`);
     return {
       ok: true,
       membershipId: inserted.membershipId,
@@ -426,6 +397,7 @@ export async function invitePharmacyUserAction(input: {
   }
 
   revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidatePath(`/f/${pharmacyId}/usuarios`);
   return {
     ok: true,
     membershipId: inserted.membershipId,

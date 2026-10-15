@@ -18,6 +18,14 @@ function isPublicLegalRoute(pathname: string): boolean {
 }
 
 /**
+ * Runtime kiosko (tablet): sin login de usuario humano.
+ * La sesión de dispositivo va en cookie HttpOnly propia; NO autoriza /f ni panel.
+ */
+function isPublicKioskRoute(pathname: string): boolean {
+  return pathname === '/k' || pathname.startsWith('/k/');
+}
+
+/**
  * Cualquier redirect debe preservar las cookies que updateSession
  * acaba de refrescar. Si se pierden, el Server Component no ve sesión
  * y el layout redirige a /login → bucle con este middleware.
@@ -46,7 +54,8 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   const isAuthRoute = AUTH_ROUTES.has(pathname);
-  const isPublicRoute = isAuthRoute || isPublicLegalRoute(pathname);
+  const isPublicRoute =
+    isAuthRoute || isPublicLegalRoute(pathname) || isPublicKioskRoute(pathname);
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
@@ -74,7 +83,7 @@ export const config = {
   matcher: [
     /*
      * Excluye estáticos y assets públicos.
-     * No anticipa rutas públicas QR/kiosco futuras.
+     * Rutas /k/* son públicas (sesión de dispositivo, no de usuario).
      */
     '/((?!_next/static|_next/image|favicon.ico|images/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],

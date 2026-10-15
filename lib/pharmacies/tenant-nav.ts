@@ -6,6 +6,8 @@ import {
   Tag,
   Bot,
   Settings,
+  UserCog,
+  MonitorSmartphone,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -53,6 +55,18 @@ export const tenantNavItems: TenantNavItem[] = [
     segment: 'asistente',
     icon: Bot,
     description: 'Asistente de farmacia',
+  },
+  {
+    label: 'Usuarios y accesos',
+    segment: 'usuarios',
+    icon: UserCog,
+    description: 'Invitaciones y roles de la farmacia',
+  },
+  {
+    label: 'Kiosko',
+    segment: 'dispositivos',
+    icon: MonitorSmartphone,
+    description: 'Dispositivos tablet vinculados',
   },
   {
     label: 'Configuración',

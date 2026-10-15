@@ -3,15 +3,16 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import {
-  getCurrentProfile,
-  hasPlatformSuperAdminRole,
-  hasPlatformPermission,
-} from '@/lib/auth/platform';
 import type { MembershipStatus, PharmacyRoleKey } from '@/lib/pharmacies/types';
 import { sendExistingUserPharmacyInviteEmail } from '@/lib/email/pharmacy-invitation';
 import { resolvePharmacyInviteUserKind } from '@/lib/pharmacies/invite-user-kind';
 import { requestPasswordRecoveryEmail } from '@/lib/auth/password-recovery';
+import {
+  assertCanManageMembership,
+  requirePharmacyMembershipManage,
+} from '@/lib/pharmacies/membership-authz';
+import type { MembershipActor } from '@/lib/pharmacies/membership-hierarchy';
+import type { MembershipManageAction } from '@/lib/pharmacies/membership-hierarchy';
 
 export type MembershipLifecycleResult =
   | { ok: true; message: string }
@@ -47,54 +48,6 @@ function getAppBaseUrl(): string | null {
 
   if (configured) return configured.replace(/\/$/, '');
   return 'http://localhost:3000';
-}
-
-async function requireSuperAdminUsersWrite(): Promise<
-  | { ok: true; actorId: string }
-  | { ok: false; error: string }
-> {
-  const {
-    profile,
-    authenticated,
-    error: profileError,
-  } = await getCurrentProfile();
-
-  if (!authenticated || !profile) {
-    return { ok: false, error: 'Debes iniciar sesión.' };
-  }
-  if (profileError) {
-    return { ok: false, error: 'No se ha podido verificar tu sesión.' };
-  }
-
-  const superAdmin = await hasPlatformSuperAdminRole(profile.id);
-  if (superAdmin.error) {
-    return {
-      ok: false,
-      error: 'No se ha podido verificar tu rol de plataforma.',
-    };
-  }
-  if (!superAdmin.ok) {
-    return {
-      ok: false,
-      error: 'Solo un SuperAdministrador puede gestionar usuarios de farmacia.',
-    };
-  }
-
-  const canWrite = await hasPlatformPermission('platform.users.write');
-  if (canWrite.error) {
-    return {
-      ok: false,
-      error: 'No se ha podido verificar tu permiso de usuarios.',
-    };
-  }
-  if (!canWrite.ok) {
-    return {
-      ok: false,
-      error: 'No tienes permiso para gestionar usuarios de farmacia.',
-    };
-  }
-
-  return { ok: true, actorId: profile.id };
 }
 
 async function loadMembershipForPharmacy(
@@ -218,6 +171,24 @@ async function wouldRemoveLastActiveOwner(
   }
 
   return { blocked: false };
+}
+
+
+function revalidateMembershipPaths(pharmacyId: string) {
+  revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidatePath(`/f/${pharmacyId}/usuarios`);
+  revalidatePath('/auth/invitations');
+  revalidatePath('/auth/select-pharmacy');
+}
+
+function assertTargetAllowed(input: {
+  actor: MembershipActor;
+  targetProfileId: string;
+  targetRoleKey: PharmacyRoleKey;
+  action: MembershipManageAction;
+  newRoleKey?: PharmacyRoleKey;
+}): { ok: true } | { ok: false; error: string } {
+  return assertCanManageMembership(input);
 }
 
 type TransitionAction =
@@ -352,9 +323,7 @@ async function transitionMembershipViaRpc(params: {
     };
   }
 
-  revalidatePath(`/farmacias/${params.pharmacyId}`);
-  revalidatePath('/auth/invitations');
-  revalidatePath('/auth/select-pharmacy');
+  revalidateMembershipPaths(params.pharmacyId);
   return { ok: true, message: params.successMessage };
 }
 
@@ -368,11 +337,20 @@ export async function suspendPharmacyMembershipAction(input: {
     return { ok: false, error: 'Datos de membresía no válidos.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId);
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'suspend',
+  });
+  if (!allowed.ok) return allowed;
+
 
   if (loaded.membership.status !== 'active') {
     return {
@@ -401,11 +379,20 @@ export async function reactivatePharmacyMembershipAction(input: {
     return { ok: false, error: 'Datos de membresía no válidos.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId);
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'reactivate',
+  });
+  if (!allowed.ok) return allowed;
+
 
   if (loaded.membership.status !== 'suspended') {
     return {
@@ -434,11 +421,20 @@ export async function revokePharmacyMembershipAction(input: {
     return { ok: false, error: 'Datos de membresía no válidos.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId);
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'revoke',
+  });
+  if (!allowed.ok) return allowed;
+
 
   if (
     loaded.membership.status !== 'active' &&
@@ -470,11 +466,20 @@ export async function cancelPharmacyInvitationAction(input: {
     return { ok: false, error: 'Datos de membresía no válidos.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId);
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'cancel_invitation',
+  });
+  if (!allowed.ok) return allowed;
+
 
   if (loaded.membership.status !== 'invited') {
     return {
@@ -508,11 +513,22 @@ export async function resendPharmacyInvitationAction(input: {
     return { ok: false, error: 'Datos de membresía no válidos.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId, {
+    requireOperable: false,
+  });
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'resend',
+  });
+  if (!allowed.ok) return allowed;
+
 
   if (loaded.membership.status !== 'invited') {
     return {
@@ -578,7 +594,7 @@ export async function resendPharmacyInvitationAction(input: {
       .eq('pharmacy_id', pharmacyId)
       .eq('status', 'invited');
 
-    revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidateMembershipPaths(pharmacyId);
     return {
       ok: true,
       message: `Invitación reenviada: se ha notificado el acceso a ${pharmacyName}.`,
@@ -629,7 +645,7 @@ export async function resendPharmacyInvitationAction(input: {
           .eq('pharmacy_id', pharmacyId)
           .eq('status', 'invited');
 
-        revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidateMembershipPaths(pharmacyId);
         return {
           ok: true,
           message: `Invitación reenviada: se ha notificado el acceso a ${pharmacyName}.`,
@@ -667,7 +683,7 @@ export async function resendPharmacyInvitationAction(input: {
     console.error('[membership] resend touch', touchError.message);
   }
 
-  revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidateMembershipPaths(pharmacyId);
   return {
     ok: true,
     message: 'Invitación reenviada por email (alta de usuario nuevo).',
@@ -689,11 +705,20 @@ export async function reinvitePharmacyMembershipAction(input: {
     return { ok: false, error: 'Datos de membresía no válidos.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId);
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'reinvite',
+  });
+  if (!allowed.ok) return allowed;
+
 
   if (loaded.membership.status !== 'revoked') {
     return {
@@ -770,11 +795,22 @@ export async function sendPasswordResetForMembershipAction(input: {
     return { ok: false, error: 'Datos de membresía no válidos.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId, {
+    requireOperable: false,
+  });
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'password_reset',
+  });
+  if (!allowed.ok) return allowed;
+
 
   if (
     loaded.membership.status !== 'active' &&
@@ -855,11 +891,21 @@ export async function editPharmacyUserAction(input: {
     return { ok: false, error: 'Selecciona un rol válido.' };
   }
 
-  const auth = await requireSuperAdminUsersWrite();
+  const auth = await requirePharmacyMembershipManage(pharmacyId);
   if (!auth.ok) return auth;
 
   const loaded = await loadMembershipForPharmacy(pharmacyId, membershipId);
   if (!loaded.ok) return loaded;
+
+  const allowed = assertTargetAllowed({
+    actor: auth.actor,
+    targetProfileId: loaded.membership.profileId,
+    targetRoleKey: loaded.membership.roleKey,
+    action: 'edit',
+    newRoleKey: roleKey as PharmacyRoleKey,
+  });
+  if (!allowed.ok) return allowed;
+
 
   const membership = loaded.membership;
   const profileId = membership.profileId;
@@ -1085,7 +1131,7 @@ export async function editPharmacyUserAction(input: {
     }
   }
 
-  revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidateMembershipPaths(pharmacyId);
 
   const suggestResendInvitation =
     emailChanged && membership.status === 'invited';
