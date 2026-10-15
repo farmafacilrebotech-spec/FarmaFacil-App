@@ -61,7 +61,7 @@ export default async function AuthInvitationsPage({
   if (sessionMismatch) {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-        <BrandLogo size={44} showTagline />
+        <BrandLogo size={96} showTagline />
         <div className="mt-8 w-full max-w-lg rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
           <h1 className="text-xl font-semibold text-foreground">
             Cuenta incorrecta
@@ -120,7 +120,7 @@ export default async function AuthInvitationsPage({
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-      <BrandLogo size={44} showTagline />
+      <BrandLogo size={96} showTagline />
       <div className="mt-8 w-full max-w-lg rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
         <h1 className="text-xl font-semibold text-foreground">
           Invitaciones pendientes

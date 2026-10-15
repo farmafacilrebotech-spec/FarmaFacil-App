@@ -20,7 +20,7 @@ export function AuthError({
 }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-      <BrandLogo size={44} showTagline />
+      <BrandLogo size={96} showTagline />
       <div className="mt-8 w-full max-w-md rounded-2xl border border-border bg-card p-8 text-center shadow-soft-lg">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-600">
           <AlertTriangle className="h-7 w-7" />

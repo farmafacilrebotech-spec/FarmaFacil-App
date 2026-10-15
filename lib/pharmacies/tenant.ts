@@ -8,6 +8,7 @@ import {
   listPendingPharmacyInvitations,
   type PendingPharmacyInvitation,
 } from '@/lib/pharmacies/invitations';
+import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 
 export type PharmacyTenantContext = {
   profile: CurrentProfile;
@@ -18,8 +19,90 @@ export type PharmacyTenantContext = {
     logoUrl: string | null;
     logoColor: string | null;
   };
+  /** Farmacias con membership active del usuario (RLS). Para el selector. */
+  authorizedPharmacies: ShellPharmacyOption[];
   pendingInvitations: PendingPharmacyInvitation[];
 };
+
+/**
+ * Lista farmacias con membership active del perfil (aislamiento RLS).
+ */
+export async function listAuthorizedPharmaciesForProfile(
+  profileId: string
+): Promise<ShellPharmacyOption[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('pharmacy_memberships')
+    .select(
+      `
+      pharmacy_id,
+      pharmacies!inner (
+        id,
+        name,
+        city,
+        province,
+        logo_color,
+        pharmacy_branding ( logo_url )
+      )
+    `
+    )
+    .eq('profile_id', profileId)
+    .eq('status', 'active');
+
+  if (error) {
+    console.error(
+      '[pharmacy-tenant] listAuthorizedPharmacies',
+      error.code,
+      error.message
+    );
+    return [];
+  }
+
+  const options: ShellPharmacyOption[] = [];
+  for (const row of data ?? []) {
+    const raw = row.pharmacies as
+      | {
+          id: string;
+          name: string;
+          city: string | null;
+          province: string | null;
+          logo_color: string | null;
+          pharmacy_branding:
+            | { logo_url: string | null }
+            | { logo_url: string | null }[]
+            | null;
+        }
+      | {
+          id: string;
+          name: string;
+          city: string | null;
+          province: string | null;
+          logo_color: string | null;
+          pharmacy_branding:
+            | { logo_url: string | null }
+            | { logo_url: string | null }[]
+            | null;
+        }[]
+      | null;
+    const ph = Array.isArray(raw) ? raw[0] : raw;
+    if (!ph?.id) continue;
+    const brandingRaw = ph.pharmacy_branding;
+    const branding = Array.isArray(brandingRaw)
+      ? brandingRaw[0] ?? null
+      : brandingRaw;
+    options.push({
+      id: ph.id,
+      name: ph.name,
+      city: ph.city ?? null,
+      province: ph.province ?? null,
+      logoColor: ph.logo_color ?? null,
+      logoUrl: branding?.logo_url ?? null,
+    });
+  }
+
+  options.sort((a, b) => a.name.localeCompare(b.name, 'es'));
+  return options;
+}
 
 /**
  * Carga contexto tenant solo si hay membership active para pharmacyId.
@@ -70,8 +153,11 @@ export async function loadPharmacyTenantContext(
     ? brandingRaw[0] ?? null
     : brandingRaw;
 
-  const { invitations: pendingInvitations } =
-    await listPendingPharmacyInvitations(access.profile.id);
+  const [{ invitations: pendingInvitations }, authorizedPharmacies] =
+    await Promise.all([
+      listPendingPharmacyInvitations(access.profile.id),
+      listAuthorizedPharmaciesForProfile(access.profile.id),
+    ]);
 
   return {
     ok: true,
@@ -84,6 +170,7 @@ export async function loadPharmacyTenantContext(
         logoUrl: branding?.logo_url ?? null,
         logoColor: (pharmacy.logo_color as string | null) ?? null,
       },
+      authorizedPharmacies,
       pendingInvitations,
     },
   };

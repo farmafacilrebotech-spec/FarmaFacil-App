@@ -68,7 +68,7 @@ export function FirstAccessForm({
   return (
     <div className="animate-slide-up">
       <div className="mb-8 flex justify-center">
-        <BrandLogo size={44} showTagline />
+        <BrandLogo size={96} showTagline />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
@@ -232,7 +232,7 @@ export function FirstAccessNoSession() {
   return (
     <div className="animate-slide-up">
       <div className="mb-8 flex justify-center">
-        <BrandLogo size={44} showTagline />
+        <BrandLogo size={96} showTagline />
       </div>
       <div className="rounded-2xl border border-border bg-card p-8 text-center shadow-soft-lg">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">

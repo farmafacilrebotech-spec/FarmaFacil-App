@@ -27,7 +27,7 @@ export function LegalDocShell({
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/80">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-4 px-4 py-5">
-          <BrandLogo size={36} showTagline />
+          <BrandLogo size={44} />
           <Link
             href="/login"
             className="text-sm text-muted-foreground hover:text-foreground"

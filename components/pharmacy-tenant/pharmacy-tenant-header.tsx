@@ -5,6 +5,7 @@ import { Menu, LogOut, Moon, Sun } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
 import { BrandLogo, PharmacyLogo } from '@/components/brand';
+import { PharmacySwitcher } from '@/components/layout/pharmacy-switcher';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { initials } from '@/lib/format';
 import { signOutAction } from '@/app/auth/actions';
+import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 import type {
   TenantShellPharmacy,
   TenantShellUser,
@@ -27,18 +29,21 @@ interface PharmacyTenantHeaderProps {
   onMobileMenu: () => void;
   pharmacy: TenantShellPharmacy;
   user: TenantShellUser;
+  authorizedPharmacies: ShellPharmacyOption[];
 }
 
 export function PharmacyTenantHeader({
   onMobileMenu,
   pharmacy,
   user,
+  authorizedPharmacies,
 }: PharmacyTenantHeaderProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   React.useEffect(() => setMounted(true), []);
 
   const userInitials = initials(user.name || user.email);
+  const multi = authorizedPharmacies.length > 1;
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full min-w-0 items-center gap-2 border-b border-border bg-background/80 px-3 backdrop-blur-md sm:gap-3 lg:px-6">
@@ -55,19 +60,31 @@ export function PharmacyTenantHeader({
         <BrandLogo variant="mark" size={32} />
       </div>
 
+      {/* Desktop: nombre fijo o selector solo entre farmacias autorizadas */}
       <div className="hidden min-w-0 items-center gap-2.5 lg:flex">
-        <PharmacyLogo
-          name={pharmacy.name}
-          logoUrl={pharmacy.logoUrl}
-          logoColor={pharmacy.logoColor || '#0d9488'}
-          size={28}
-          rounded="lg"
-        />
-        <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-foreground">
-            {pharmacy.name}
-          </p>
-        </div>
+        {multi ? (
+          <PharmacySwitcher
+            pharmacies={authorizedPharmacies}
+            currentId={pharmacy.id}
+            hrefForPharmacy={(id) => `/f/${id}/dashboard`}
+            className="flex max-w-[220px] shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+          />
+        ) : (
+          <>
+            <PharmacyLogo
+              name={pharmacy.name}
+              logoUrl={pharmacy.logoUrl}
+              logoColor={pharmacy.logoColor || '#0d9488'}
+              size={28}
+              rounded="lg"
+            />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-semibold text-foreground">
+                {pharmacy.name}
+              </p>
+            </div>
+          </>
+        )}
         <Badge variant="secondary" className="shrink-0 font-medium">
           {user.roleLabel}
         </Badge>
@@ -125,7 +142,10 @@ export function PharmacyTenantHeader({
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <form action={signOutAction}>
-              <DropdownMenuItem asChild className="text-destructive focus:text-destructive">
+              <DropdownMenuItem
+                asChild
+                className="text-destructive focus:text-destructive"
+              >
                 <button type="submit" className="w-full cursor-default">
                   <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
                 </button>

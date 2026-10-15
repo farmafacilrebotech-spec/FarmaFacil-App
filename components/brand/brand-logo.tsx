@@ -5,15 +5,14 @@ import Image from 'next/image';
 import { cn } from '@/lib/utils';
 
 /**
- * BrandLogo — FarmaFácil global brand identity.
+ * BrandLogo — identidad gráfica oficial FarmaFácil.
  *
- * Renders the official FarmaFácil logo. Uses the JPEG asset when available
- * and falls back to a bundled SVG mark so the project always renders
- * correctly even before the final brand assets are placed.
+ * Usa el logotipo oficial (PNG circular) sin redibujar ni aproximar.
+ * - full: emblema completo (cruz + anillo + FARMAFÁCIL).
+ * - mark: mismo emblema a tamaño reducido (sidebar colapsado, header).
+ * - wordmark: solo texto tipográfico (casos excepcionales).
  *
- * To swap the official image later, replace the file at:
- *   public/images/logos/farmafacil-logo.jpeg
- * …or point `src` to an SVG. No screen changes required.
+ * Asset fuente: public/images/logos/farmafacil-logo.png
  */
 
 type Variant = 'full' | 'mark' | 'wordmark';
@@ -21,15 +20,14 @@ type Variant = 'full' | 'mark' | 'wordmark';
 interface BrandLogoProps {
   variant?: Variant;
   className?: string;
+  /** Ancho del emblema; la altura respeta la proporción 709×711. */
   size?: number;
+  /** Etiqueta auxiliar bajo el emblema (p. ej. «Panel de gestión»). */
   showTagline?: boolean;
 }
 
-// Path to the official JPEG logo (replace this file to update branding globally).
-const LOGO_JPEG = '/images/logos/farmafacil-logo.jpeg';
-// Bundled SVG fallbacks.
-const MARK_SVG = '/images/logos/farmafacil-mark.svg';
-const FULL_SVG = '/images/logos/farmafacil-logo-full.svg';
+const LOGO_FULL = '/images/logos/farmafacil-logo.png';
+const LOGO_MARK = '/images/logos/farmafacil-mark.png';
 
 export function BrandLogo({
   variant = 'full',
@@ -37,36 +35,6 @@ export function BrandLogo({
   size = 36,
   showTagline = false,
 }: BrandLogoProps) {
-  const [imgError, setImgError] = React.useState(false);
-
-  // --- Mark only (icon) ---
-  if (variant === 'mark') {
-    if (!imgError) {
-      return (
-        <Image
-          src={LOGO_JPEG}
-          alt="FarmaFácil"
-          width={size}
-          height={size}
-          className={cn('rounded-lg object-contain', className)}
-          onError={() => setImgError(true)}
-          priority
-        />
-      );
-    }
-    return (
-      <Image
-        src={MARK_SVG}
-        alt="FarmaFácil"
-        width={size}
-        height={size}
-        className={cn('rounded-lg', className)}
-        priority
-      />
-    );
-  }
-
-  // --- Wordmark only (text) ---
   if (variant === 'wordmark') {
     return (
       <span
@@ -78,46 +46,40 @@ export function BrandLogo({
     );
   }
 
-  // --- Full (mark + wordmark) ---
-  const markSize = size;
+  const src = variant === 'mark' || size <= 40 ? LOGO_MARK : LOGO_FULL;
+  const width = size;
+  const height = Math.round(size * (711 / 709));
+
+  const emblem = (
+    <Image
+      src={src}
+      alt="FarmaFácil"
+      width={width}
+      height={height}
+      className="shrink-0 object-contain"
+      priority
+      sizes={`${size}px`}
+    />
+  );
+
+  if (variant === 'mark' || !showTagline) {
+    return <div className={cn('inline-flex', className)}>{emblem}</div>;
+  }
+
   return (
-    <div className={cn('flex items-center gap-2.5', className)}>
-      {imgError ? (
-        <Image
-          src={MARK_SVG}
-          alt="FarmaFácil"
-          width={markSize}
-          height={markSize}
-          className="shrink-0 rounded-lg"
-          priority
-        />
-      ) : (
-        <Image
-          src={LOGO_JPEG}
-          alt="FarmaFácil"
-          width={markSize}
-          height={markSize}
-          className="shrink-0 rounded-lg object-contain"
-          onError={() => setImgError(true)}
-          priority
-        />
+    <div
+      className={cn(
+        'flex flex-col items-center justify-center gap-2 text-center',
+        className
       )}
-      <div className="flex flex-col leading-none">
-        <span
-          className="font-semibold tracking-tight text-foreground"
-          style={{ fontSize: size * 0.42 }}
-        >
-          FarmaFácil
-        </span>
-        {showTagline && (
-          <span
-            className="font-medium text-muted-foreground"
-            style={{ fontSize: size * 0.3 }}
-          >
-            Panel de gestión
-          </span>
-        )}
-      </div>
+    >
+      {emblem}
+      <span
+        className="font-medium tracking-tight text-muted-foreground"
+        style={{ fontSize: Math.max(12, Math.round(size * 0.16)) }}
+      >
+        Panel de gestión
+      </span>
     </div>
   );
 }

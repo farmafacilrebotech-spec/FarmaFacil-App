@@ -12,19 +12,12 @@ import {
   Sun,
   User,
   LogOut,
-  ChevronsUpDown,
-  Check,
-  Store,
 } from 'lucide-react';
 import { useTheme } from 'next-themes';
 
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Avatar,
-  AvatarFallback,
-} from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,24 +27,25 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Breadcrumbs } from './breadcrumbs';
-import { BrandLogo, PharmacyLogo } from '@/components/brand';
-import { pharmacies } from '@/lib/mock-data';
+import { BrandLogo } from '@/components/brand';
+import { PharmacySwitcher } from './pharmacy-switcher';
 import { initials } from '@/lib/format';
 import { signOutAction } from '@/app/auth/actions';
+import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 import type { ShellUser } from './app-shell';
 
 interface HeaderProps {
   onMobileMenu: () => void;
   user: ShellUser;
+  pharmacies: ShellPharmacyOption[];
 }
 
-export function Header({ onMobileMenu, user }: HeaderProps) {
+export function Header({ onMobileMenu, user, pharmacies }: HeaderProps) {
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   const router = useRouter();
   React.useEffect(() => setMounted(true), []);
 
-  const [selectedPharmacy, setSelectedPharmacy] = React.useState(pharmacies[0]);
   const userInitials = initials(user.name || user.email);
 
   return (
@@ -68,66 +62,16 @@ export function Header({ onMobileMenu, user }: HeaderProps) {
         <BrandLogo variant="mark" size={32} />
       </div>
 
-      {/* Selector mock: solo en xl+ para no comprimir el header en 1280–1440 */}
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            className="hidden max-w-[148px] shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent xl:flex"
-          >
-            <PharmacyLogo
-              name={selectedPharmacy.name}
-              logoColor={selectedPharmacy.logoColor}
-              size={24}
-              rounded="lg"
-            />
-            <span className="min-w-0 truncate">{selectedPharmacy.name}</span>
-            <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-64" collisionPadding={12}>
-          <DropdownMenuLabel className="text-xs text-muted-foreground">
-            Farmacias
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-          {pharmacies.slice(0, 6).map((p) => (
-            <DropdownMenuItem
-              key={p.id}
-              onClick={() => setSelectedPharmacy(p)}
-              className="gap-2.5"
-            >
-              <PharmacyLogo
-                name={p.name}
-                logoColor={p.logoColor}
-                size={28}
-                rounded="lg"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{p.name}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {p.city}, {p.province}
-                </p>
-              </div>
-              {selectedPharmacy.id === p.id && (
-                <Check className="h-4 w-4 shrink-0 text-primary" />
-              )}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => router.push('/farmacias')}
-            className="gap-2 text-primary"
-          >
-            <Store className="h-4 w-4" /> Ver todas las farmacias
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <PharmacySwitcher
+        pharmacies={pharmacies}
+        hrefForPharmacy={(id) => `/farmacias/${id}`}
+        viewAllHref="/farmacias"
+      />
 
       <div className="hidden min-w-0 flex-1 overflow-hidden lg:block">
         <Breadcrumbs className="min-w-0" />
       </div>
 
-      {/* Buscador: crece/encoge sin empujar acciones */}
       <div className="relative ml-auto hidden min-w-0 max-w-[220px] flex-1 md:block lg:max-w-xs xl:max-w-sm">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -218,7 +162,10 @@ export function Header({ onMobileMenu, user }: HeaderProps) {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <form action={signOutAction}>
-              <DropdownMenuItem asChild className="text-destructive focus:text-destructive">
+              <DropdownMenuItem
+                asChild
+                className="text-destructive focus:text-destructive"
+              >
                 <button type="submit" className="w-full cursor-default">
                   <LogOut className="mr-2 h-4 w-4" /> Cerrar sesión
                 </button>

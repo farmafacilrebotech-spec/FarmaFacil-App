@@ -5,6 +5,7 @@ import {
   destinationForAppAccess,
   resolveAppAccess,
 } from '@/lib/auth/access';
+import { listAuthorizedPharmaciesForProfile } from '@/lib/pharmacies/tenant';
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { PendingInvitationsList } from '@/components/auth/pending-invitations-list';
@@ -14,7 +15,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Estado explícito multi-farmacia (V1).
- * No elige una farmacia en silencio; lista solo memberships active del usuario.
+ * Lista solo memberships active del usuario (con nombre real).
  */
 export default async function SelectPharmacyPage() {
   const access = await resolveAppAccess();
@@ -35,30 +36,48 @@ export default async function SelectPharmacyPage() {
     redirect('/access-denied');
   }
 
+  const pharmacies = await listAuthorizedPharmaciesForProfile(
+    access.profile.id
+  );
+  const byId = new Map(pharmacies.map((p) => [p.id, p]));
+
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-      <BrandLogo size={44} showTagline />
+      <BrandLogo size={96} showTagline />
       <div className="mt-8 w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
         <h1 className="text-xl font-semibold text-foreground">
           Varias farmacias
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Tu cuenta tiene acceso a más de una farmacia. Elige a cuál entrar.
-          (El selector avanzado llegará en una fase posterior.)
         </p>
         <ul className="mt-6 space-y-2">
-          {access.memberships.map((m) => (
-            <li key={m.membershipId}>
-              <Button asChild variant="outline" className="w-full justify-start">
-                <Link href={`/f/${m.pharmacyId}/dashboard`}>
-                  Entrar · {m.roleName}
-                  <span className="ml-auto font-mono text-xs text-muted-foreground">
-                    {m.pharmacyId.slice(0, 8)}…
-                  </span>
-                </Link>
-              </Button>
-            </li>
-          ))}
+          {access.memberships.map((m) => {
+            const pharmacy = byId.get(m.pharmacyId);
+            const label = pharmacy?.name ?? 'Farmacia';
+            const location = [pharmacy?.city, pharmacy?.province]
+              .filter(Boolean)
+              .join(', ');
+            return (
+              <li key={m.membershipId}>
+                <Button
+                  asChild
+                  variant="outline"
+                  className="h-auto w-full justify-start py-3"
+                >
+                  <Link href={`/f/${m.pharmacyId}/dashboard`}>
+                    <span className="flex min-w-0 flex-col items-start text-left">
+                      <span className="truncate font-medium">{label}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {m.roleName}
+                        {location ? ` · ${location}` : ''}
+                      </span>
+                    </span>
+                  </Link>
+                </Button>
+              </li>
+            );
+          })}
         </ul>
         {access.pendingInvitations.length > 0 ? (
           <div className="mt-8 border-t border-border pt-6">

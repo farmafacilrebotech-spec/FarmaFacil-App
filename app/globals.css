@@ -110,9 +110,16 @@
   html {
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
+    /* Stack sans explícito: refuerza preflight + next/font. Evita que Safari
+       use Times cuando '__Inter_*' aún no está disponible (font-display: swap)
+       o cuando var(--font-inter) sin fallback invalidaría font-family. */
+    font-family: var(--font-inter, ui-sans-serif), ui-sans-serif, system-ui,
+      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+      Arial, sans-serif;
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: inherit;
     font-feature-settings: 'cv11', 'ss01';
     font-variation-settings: normal;
   }

@@ -57,6 +57,7 @@ export function PharmacyTenantShell({
           onMobileMenu={() => setMobileOpen(true)}
           pharmacy={pharmacy}
           user={user}
+          authorizedPharmacies={context.authorizedPharmacies}
         />
         <main className="min-w-0 flex-1 overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
           {context.pendingInvitations.length > 0 ? (

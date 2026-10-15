@@ -5,6 +5,8 @@ import { AuthError } from '@/components/auth/auth-error';
 import { Toaster } from '@/components/ui/sonner';
 import { resolvePlatformAccess } from '@/lib/auth/platform';
 import { displayNameFromIdentity } from '@/lib/format';
+import { listPharmacies } from '@/lib/pharmacies/queries';
+import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 
 export default async function AuthenticatedLayout({
   children,
@@ -35,6 +37,21 @@ export default async function AuthenticatedLayout({
     profile.email
   );
 
+  // Solo farmacias reales (RLS plataforma). Sin mocks.
+  let pharmacies: ShellPharmacyOption[] = [];
+  try {
+    const rows = await listPharmacies();
+    pharmacies = rows.map((p) => ({
+      id: p.id,
+      name: p.name,
+      city: p.city,
+      province: p.province,
+      logoColor: p.logo_color,
+    }));
+  } catch (err) {
+    console.error('[app-layout] listPharmacies', err);
+  }
+
   return (
     <>
       <AppShell
@@ -42,6 +59,7 @@ export default async function AuthenticatedLayout({
           name: displayName,
           email: profile.email,
         }}
+        pharmacies={pharmacies}
       >
         {children}
       </AppShell>

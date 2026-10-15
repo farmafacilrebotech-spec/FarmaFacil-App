@@ -139,7 +139,7 @@ function LoginForm() {
   return (
     <div className="animate-slide-up">
       <div className="mb-8 flex justify-center">
-        <BrandLogo size={44} showTagline />
+        <BrandLogo size={112} showTagline />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
@@ -182,7 +182,7 @@ function LoginForm() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@farmafacil.es"
+                placeholder="tu@email.es"
                 className="h-11 pl-9"
                 autoComplete="email"
                 required
@@ -269,7 +269,7 @@ export default function LoginPage() {
       fallback={
         <div className="animate-slide-up">
           <div className="mb-8 flex justify-center">
-            <BrandLogo size={44} showTagline />
+            <BrandLogo size={112} showTagline />
           </div>
           <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
             <p className="text-center text-sm text-muted-foreground">

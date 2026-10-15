@@ -7,9 +7,20 @@ const inter = Inter({
   subsets: ['latin'],
   variable: '--font-inter',
   display: 'swap',
-  // Safari aplica de forma inconsistente size-adjust/ascent-override del
-  // Arial fallback de next/font (~107%), hinchando tipografía vs Chrome.
+  // Sin size-adjust automático (hincha tipografía en Safari vs Chrome).
+  // fallback explícito sans: evita Times/serif mientras carga Inter o si falla.
   adjustFontFallback: false,
+  fallback: [
+    'ui-sans-serif',
+    'system-ui',
+    '-apple-system',
+    'BlinkMacSystemFont',
+    'Segoe UI',
+    'Roboto',
+    'Helvetica Neue',
+    'Arial',
+    'sans-serif',
+  ],
 });
 
 export const metadata: Metadata = {
@@ -23,16 +34,25 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: '/favicon.svg', type: 'image/svg+xml' },
-      { url: '/images/logos/farmafacil-logo.jpeg', type: 'image/jpeg' },
+      {
+        url: '/images/logos/farmafacil-favicon-16.png',
+        sizes: '16x16',
+        type: 'image/png',
+      },
+      {
+        url: '/images/logos/farmafacil-favicon-32.png',
+        sizes: '32x32',
+        type: 'image/png',
+      },
+      { url: '/favicon.png', type: 'image/png' },
     ],
-    apple: '/images/logos/farmafacil-mark.svg',
+    apple: '/images/logos/farmafacil-apple-touch.png',
   },
   openGraph: {
     title: 'FarmaFácil · Panel de gestión',
     description:
       'La plataforma de gestión definitiva para farmacias. Controla farmacias, clientes, catálogo, pedidos y contratos desde un único panel.',
-    images: ['/images/logos/farmafacil-logo.jpeg'],
+    images: ['/images/logos/farmafacil-logo-512.png'],
   },
 };
 
@@ -42,10 +62,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    // --font-inter DEBE vivir en <html>: el preflight de Tailwind fija
-    // font-family: var(--font-inter) en html. Si la variable solo está en
-    // body, html queda con fuente UA (Safari → tipografía distinta/más ancha).
-    <html lang="es" className={inter.variable} suppressHydrationWarning>
+    // --font-inter en <html>: el preflight de Tailwind usa var(--font-inter).
+    // inter.className + font-sans en html y body: stack sans coherente
+    // (Inter → system-ui) en Safari y Chrome, sin depender del UA serif.
+    <html
+      lang="es"
+      className={`${inter.variable} ${inter.className} font-sans antialiased`}
+      suppressHydrationWarning
+    >
       <body className={`${inter.className} font-sans antialiased`}>
         <ThemeProvider
           attribute="class"

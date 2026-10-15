@@ -15,6 +15,7 @@
     "test:invite-user-kind": "node --experimental-strip-types --test lib/pharmacies/invite-user-kind.test.ts",
     "test:membership-hierarchy": "node --experimental-strip-types --test lib/pharmacies/membership-hierarchy.test.ts",
     "test:tenant-subscription": "node --experimental-strip-types --test lib/pharmacies/tenant-subscription-summary.test.ts",
+    "test:shell-pharmacies": "node --experimental-strip-types --test lib/pharmacies/shell-pharmacies.test.ts",
     "test:kiosk-crypto": "node --experimental-strip-types --test lib/kiosk/crypto.test.ts",
     "test:kiosk-pairing": "node --experimental-strip-types --test lib/kiosk/pairing-rules.test.ts lib/kiosk/commercial-gate.test.ts lib/kiosk/pairing-rate-limit.test.ts lib/kiosk/session-cookie-path.test.ts lib/kiosk/device-immutability.test.ts lib/kiosk/entitlement-status.test.ts lib/kiosk/device-status-display.test.ts",
     "test:kiosk": "npm run test:kiosk-crypto && npm run test:kiosk-pairing",

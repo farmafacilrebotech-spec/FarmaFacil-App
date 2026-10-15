@@ -66,7 +66,7 @@ export function PharmacyTenantSidebar({
       >
         <div className="flex h-16 items-center justify-between px-4">
           <div className={cn(collapsed && 'lg:hidden')}>
-            <BrandLogo size={36} showTagline />
+            <BrandLogo size={44} />
           </div>
           <div className={cn('hidden', collapsed && 'lg:flex lg:justify-center')}>
             <BrandLogo variant="mark" size={36} />

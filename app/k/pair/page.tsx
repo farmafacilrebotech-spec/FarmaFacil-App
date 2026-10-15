@@ -39,7 +39,7 @@ export default function KioskPairPage() {
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-background px-4">
-      <BrandLogo size={44} showTagline />
+      <BrandLogo size={96} showTagline />
       <div className="mt-8 w-full max-w-md rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
           <TabletSmartphone className="h-7 w-7" />

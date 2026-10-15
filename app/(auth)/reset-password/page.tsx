@@ -80,7 +80,7 @@ export default function ResetPasswordPage() {
   return (
     <div className="animate-slide-up">
       <div className="mb-8 flex justify-center">
-        <BrandLogo size={44} showTagline />
+        <BrandLogo size={96} showTagline />
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
