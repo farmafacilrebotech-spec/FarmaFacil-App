@@ -6,6 +6,8 @@
 export type MembershipEmailRow = {
   id: string;
   status: string;
+  /** Distingue invitación cancelada (null) vs ex-miembro revocado (set). */
+  accepted_at?: string | null;
   profiles:
     | { email: string | null }
     | { email: string | null }[]
@@ -26,7 +28,7 @@ function unwrapProfile(
 export function findMembershipByEmailInPharmacy(
   rows: readonly MembershipEmailRow[],
   email: string
-): { id: string; status: string } | null {
+): { id: string; status: string; accepted_at: string | null } | null {
   const needle = email.trim().toLowerCase();
   if (!needle) return null;
 
@@ -34,7 +36,11 @@ export function findMembershipByEmailInPharmacy(
     const profile = unwrapProfile(row.profiles);
     const rowEmail = (profile?.email ?? '').trim().toLowerCase();
     if (rowEmail && rowEmail === needle) {
-      return { id: row.id, status: row.status };
+      return {
+        id: row.id,
+        status: row.status,
+        accepted_at: row.accepted_at ?? null,
+      };
     }
   }
   return null;

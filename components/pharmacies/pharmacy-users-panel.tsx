@@ -25,12 +25,18 @@ import {
   rolesForMemberEdit,
   type PharmacyUsersCapabilities,
 } from '@/lib/pharmacies/membership-capabilities';
-import { MEMBERSHIP_STATUS_LABELS } from '@/lib/pharmacies/labels';
 import { formatDateTime, initials } from '@/lib/format';
 import {
   interpretMembershipActionResult,
   type MembershipLifecycleLike,
 } from '@/lib/pharmacies/membership-ui-feedback';
+import {
+  formatMembershipListSummary,
+  membershipStatusLabel,
+  membershipStatusTone,
+  reinviteConfirmDescription,
+  summarizeMembershipList,
+} from '@/lib/pharmacies/membership-invite-state';
 import {
   cancelPharmacyInvitationAction,
   reactivatePharmacyMembershipAction,
@@ -41,10 +47,7 @@ import {
   suspendPharmacyMembershipAction,
 } from '@/app/(app)/farmacias/membership-actions';
 import { Button } from '@/components/ui/button';
-import {
-  StatusBadge,
-  toneForUserStatus,
-} from '@/components/shared/status-badge';
+import { StatusBadge } from '@/components/shared/status-badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { InviteUserDialog } from '@/components/pharmacies/invite-user-dialog';
 import { EditPharmacyUserDialog } from '@/components/pharmacies/edit-pharmacy-user-dialog';
@@ -79,7 +82,7 @@ type PanelFeedback =
   | null;
 
 const CONFIRM_COPY: Record<
-  ConfirmAction,
+  Exclude<ConfirmAction, 'reinvite'>,
   {
     title: string;
     description: string;
@@ -113,12 +116,6 @@ const CONFIRM_COPY: Record<
       'La invitación dejará de ser válida para completar el acceso a esta farmacia.',
     confirmLabel: 'Cancelar invitación',
     destructive: true,
-  },
-  reinvite: {
-    title: '¿Volver a invitar?',
-    description:
-      'Se creará de nuevo una invitación pendiente para esta farmacia (misma cuenta). El usuario deberá aceptarla; no se reactivará el acceso automáticamente.',
-    confirmLabel: 'Volver a invitar',
   },
   send_password_reset: {
     title: '¿Enviar acceso / Restablecer contraseña?',
@@ -263,7 +260,16 @@ function MemberActionsCell({
     }
   }
 
-  const copy = confirm ? CONFIRM_COPY[confirm] : null;
+  const copy =
+    confirm === 'reinvite'
+      ? {
+          title: '¿Volver a invitar?',
+          description: reinviteConfirmDescription(member.accepted_at),
+          confirmLabel: 'Volver a invitar',
+        }
+      : confirm
+        ? CONFIRM_COPY[confirm]
+        : null;
 
   return (
     <>
@@ -472,8 +478,8 @@ export function PharmacyUsersPanel({
     setMembers(initialMembers);
   }, [initialMembers]);
 
-  const invitedCount = members.filter((m) => m.status === 'invited').length;
-  const activeCount = members.filter((m) => m.status === 'active').length;
+  const listCounts = summarizeMembershipList(members);
+  const listSummary = formatMembershipListSummary(listCounts);
 
   function handleActionResult(result: MembershipLifecycleLike) {
     // Un solo mensaje junto al panel Usuarios (sin toast ni banner padre).
@@ -501,11 +507,7 @@ export function PharmacyUsersPanel({
           <h3 className="text-base font-semibold text-foreground">
             Usuarios con acceso
           </h3>
-          <p className="text-sm text-muted-foreground">
-            {members.length === 0
-              ? 'Todavía no hay usuarios en esta farmacia.'
-              : `${members.length} usuario${members.length === 1 ? '' : 's'} · ${activeCount} activo${activeCount === 1 ? '' : 's'} · ${invitedCount} invitado${invitedCount === 1 ? '' : 's'}`}
-          </p>
+          <p className="text-sm text-muted-foreground">{listSummary}</p>
         </div>
         {capabilities.canInvite ? (
           <Button
@@ -586,8 +588,10 @@ export function PharmacyUsersPanel({
                         </span>
                       </td>
                       <td className="px-4 py-3.5">
-                        <StatusBadge tone={toneForUserStatus(m.status)}>
-                          {MEMBERSHIP_STATUS_LABELS[m.status] ?? m.status}
+                        <StatusBadge
+                          tone={membershipStatusTone(m.status, m.accepted_at)}
+                        >
+                          {membershipStatusLabel(m.status, m.accepted_at)}
                         </StatusBadge>
                       </td>
                       <td className="hidden px-4 py-3.5 text-muted-foreground lg:table-cell">

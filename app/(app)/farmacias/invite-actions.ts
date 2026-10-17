@@ -8,10 +8,16 @@ import {
   sendNewUserPharmacyInviteEmail,
 } from '@/lib/email/pharmacy-invitation';
 import { preparePharmacyInviteAuthLink } from '@/lib/pharmacies/invite-auth';
-import { findMembershipByEmailInPharmacy } from '@/lib/pharmacies/invite-membership-lookup';
+import {
+  inviteBlockMessageForMembership,
+  resolveInviteAgainstExistingMembership,
+} from '@/lib/pharmacies/membership-invite-state';
 import type { PharmacyRoleKey } from '@/lib/pharmacies/types';
 import { requirePharmacyMembershipManage } from '@/lib/pharmacies/membership-authz';
-import { canAssignRole } from '@/lib/pharmacies/membership-hierarchy';
+import {
+  canAssignRole,
+  canManageTargetRole,
+} from '@/lib/pharmacies/membership-hierarchy';
 
 export type InvitePharmacyUserResult =
   | {
@@ -21,6 +27,8 @@ export type InvitePharmacyUserResult =
       invitationEmailSent: boolean;
       /** new = primer acceso; existing = magic link a invitaciones */
       inviteKind: 'new' | 'existing';
+      /** true si se reutilizó una membership revoked (cancelada o baja) */
+      reusedMembership?: boolean;
     }
   | {
       ok: false;
@@ -36,22 +44,17 @@ const ALLOWED_ROLE_KEYS: PharmacyRoleKey[] = [
   'STAFF',
 ];
 
-const MEMBERSHIP_STATUS_MESSAGES: Record<string, string> = {
-  invited:
-    'Este email ya tiene una invitación pendiente en esta farmacia.',
-  active: 'Este email ya es miembro activo de esta farmacia.',
-  suspended:
-    'Este email pertenece a un miembro suspendido de esta farmacia.',
-  revoked:
-    'Este email pertenece a un miembro con acceso revocado en esta farmacia.',
-};
-
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
 }
 
 /**
@@ -128,13 +131,135 @@ async function insertMembershipWithProfileRetry(params: {
 }
 
 /**
+ * Membership en ESTA farmacia por profile_id (sin embed de profiles).
+ * Necesario tras cancelar/revocar: ff_can_view_profile excluye revoked y el
+ * lookup por email con join a profiles falla para actores tenant.
+ */
+async function findMembershipByProfileInPharmacy(params: {
+  supabase: ReturnType<typeof createClient>;
+  pharmacyId: string;
+  profileId: string;
+}): Promise<{
+  id: string;
+  status: string;
+  accepted_at: string | null;
+  roleKey: PharmacyRoleKey | null;
+  roleId: string | null;
+} | null> {
+  const { data, error } = await params.supabase
+    .from('pharmacy_memberships')
+    .select(
+      `
+      id,
+      status,
+      accepted_at,
+      role_id,
+      roles!pharmacy_memberships_role_id_fkey ( key )
+    `
+    )
+    .eq('pharmacy_id', params.pharmacyId)
+    .eq('profile_id', params.profileId)
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      '[invite] membership by profile',
+      error.code,
+      error.message
+    );
+    return null;
+  }
+  if (!data) return null;
+
+  const role = unwrapOne(
+    data.roles as { key: string } | { key: string }[] | null
+  );
+  const roleKey =
+    role && ALLOWED_ROLE_KEYS.includes(role.key as PharmacyRoleKey)
+      ? (role.key as PharmacyRoleKey)
+      : null;
+
+  return {
+    id: data.id as string,
+    status: data.status as string,
+    accepted_at: (data.accepted_at as string | null) ?? null,
+    roleKey,
+    roleId: (data.role_id as string | null) ?? null,
+  };
+}
+
+async function transitionReinviteViaRpc(params: {
+  supabase: ReturnType<typeof createClient>;
+  pharmacyId: string;
+  membershipId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await params.supabase.rpc(
+    'ff_transition_pharmacy_membership_v1',
+    {
+      p_pharmacy_id: params.pharmacyId,
+      p_membership_id: params.membershipId,
+      p_action: 'reinvite',
+    }
+  );
+
+  if (error) {
+    console.error(
+      '[invite] reinvite rpc',
+      error.code,
+      error.message
+    );
+    const msg = (error.message || '').toLowerCase();
+    if (
+      msg.includes('forbidden') ||
+      msg.includes('permission') ||
+      error.code === '42501'
+    ) {
+      return {
+        ok: false,
+        error: 'No tienes permiso para gestionar usuarios de farmacia.',
+      };
+    }
+    if (msg.includes('solo se puede volver a invitar') || msg.includes('invalid_state')) {
+      return {
+        ok: false,
+        error:
+          'El estado de la membresía ha cambiado. Recarga e inténtalo de nuevo.',
+      };
+    }
+    return {
+      ok: false,
+      error: 'No se ha podido volver a abrir la invitación.',
+    };
+  }
+
+  let payload: Record<string, unknown> | null = null;
+  try {
+    if (typeof data === 'string') {
+      payload = JSON.parse(data) as Record<string, unknown>;
+    } else if (data && typeof data === 'object') {
+      payload = data as Record<string, unknown>;
+    }
+  } catch {
+    payload = null;
+  }
+  if (!payload || String(payload.status) !== 'ok') {
+    return {
+      ok: false,
+      error: 'No se ha podido volver a abrir la invitación.',
+    };
+  }
+  return { ok: true };
+}
+
+/**
  * Invita a un usuario a una farmacia.
  *
  * Autorización: SuperAdmin (platform.users.write) O memberships.manage
  * (OWNER/ADMIN) + jerarquía de roles + farmacia operable.
  *
+ * Si ya existe membership revoked (invitación cancelada o baja), reutiliza la
+ * misma fila vía RPC `reinvite` (revoked→invited). No reactiva a active.
  * Auth Admin: solo generateLink (no inviteUserByEmail SMTP).
- * Membership: cliente autenticado + RLS. No requiere SELECT del perfil nuevo.
  * Email: Resend con token_hash hacia el dominio canónico.
  */
 export async function invitePharmacyUserAction(input: {
@@ -200,53 +325,6 @@ export async function invitePharmacyUserAction(input: {
     return { ok: false, error: 'El rol seleccionado no existe.' };
   }
 
-  // Duplicado en ESTA farmacia.
-  // FK explícita a profile_id: pharmacy_memberships tiene varias FK a profiles
-  // (profile_id, invited_by, updated_by). `profiles!inner` sin hint falla en
-  // PostgREST (embed ambiguo) → error «No se ha podido comprobar la membresía…».
-  // Misma convención que listPharmacyMembers.
-  const { data: membershipRows, error: memLookupError } = await supabase
-    .from('pharmacy_memberships')
-    .select(
-      `
-      id,
-      status,
-      profiles!pharmacy_memberships_profile_id_fkey (
-        email
-      )
-    `
-    )
-    .eq('pharmacy_id', pharmacyId);
-
-  if (memLookupError) {
-    console.error(
-      '[invite] membership lookup',
-      memLookupError.code,
-      memLookupError.message
-    );
-    return {
-      ok: false,
-      error: 'No se ha podido comprobar la membresía existente.',
-    };
-  }
-
-  const existingMembership = findMembershipByEmailInPharmacy(
-    membershipRows ?? [],
-    email
-  );
-
-  if (existingMembership) {
-    const status = existingMembership.status;
-    return {
-      ok: false,
-      error:
-        MEMBERSHIP_STATUS_MESSAGES[status] ??
-        'Este email ya tiene acceso registrado en esta farmacia.',
-      code: 'already_member',
-      existingStatus: status,
-    };
-  }
-
   const appBaseUrl = getAppBaseUrl();
   if (!appBaseUrl) {
     return {
@@ -256,6 +334,8 @@ export async function invitePharmacyUserAction(input: {
     };
   }
 
+  // Auth primero → userId estable. Luego membership por profile_id (sin
+  // depender de profiles RLS, que oculta revoked a peers de farmacia).
   const authLink = await preparePharmacyInviteAuthLink({
     email,
     fullName,
@@ -264,6 +344,108 @@ export async function invitePharmacyUserAction(input: {
 
   if (!authLink.ok) {
     return { ok: false, error: authLink.error };
+  }
+
+  const existing = await findMembershipByProfileInPharmacy({
+    supabase,
+    pharmacyId,
+    profileId: authLink.userId,
+  });
+
+  // Si el SELECT falló por error de red, existing es null y el insert puede
+  // chocar con 23505; el fallback más abajo intenta reinvite.
+  const decision = resolveInviteAgainstExistingMembership(existing);
+
+  if (decision.kind === 'block') {
+    return {
+      ok: false,
+      error: inviteBlockMessageForMembership(
+        decision.status,
+        decision.acceptedAt
+      ),
+      code: 'already_member',
+      existingStatus: decision.status,
+    };
+  }
+
+  if (decision.kind === 'reinvite') {
+    if (
+      existing?.roleKey &&
+      !canManageTargetRole(auth.actor, existing.roleKey)
+    ) {
+      return {
+        ok: false,
+        error: 'No puedes gestionar el acceso de un usuario con ese rol.',
+      };
+    }
+
+    // Actualizar rol si el diálogo pide otro (misma fila; sin duplicar).
+    if (
+      existing &&
+      existing.roleId &&
+      existing.roleId !== (role.id as string)
+    ) {
+      const { error: roleUpdateError } = await supabase
+        .from('pharmacy_memberships')
+        .update({
+          role_id: role.id as string,
+          updated_by: auth.actorId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', decision.membershipId)
+        .eq('pharmacy_id', pharmacyId)
+        .eq('status', 'revoked');
+
+      if (roleUpdateError) {
+        console.error(
+          '[invite] reinvite role update',
+          roleUpdateError.code,
+          roleUpdateError.message
+        );
+        return {
+          ok: false,
+          error: 'No se ha podido actualizar el rol antes de volver a invitar.',
+        };
+      }
+    }
+
+    const transitioned = await transitionReinviteViaRpc({
+      supabase,
+      pharmacyId,
+      membershipId: decision.membershipId,
+    });
+
+    if (!transitioned.ok) {
+      return { ok: false, error: transitioned.error };
+    }
+
+    // Usuario ya tenía cuenta (cancelación / baja): email de farmacia nueva.
+    // No conceder active: reinvite deja invited → requiere aceptación.
+    let invitationEmailSent = false;
+    const sent = await sendExistingUserPharmacyInviteEmail({
+      to: email,
+      pharmacyName,
+      appBaseUrl,
+      recipientName: fullName,
+      hashedToken: authLink.hashedToken,
+      otpType: authLink.otpType,
+    });
+    invitationEmailSent = sent.ok;
+    if (!sent.ok) {
+      console.error('[invite] reinvite email', sent.error, sent.code);
+    }
+
+    revalidatePath(`/farmacias/${pharmacyId}`);
+    revalidatePath(`/f/${pharmacyId}/usuarios`);
+    revalidatePath('/auth/invitations');
+
+    return {
+      ok: true,
+      membershipId: decision.membershipId,
+      invitationEmailSent,
+      inviteKind: 'existing',
+      reusedMembership: true,
+    };
   }
 
   const inserted = await insertMembershipWithProfileRetry({
@@ -275,6 +457,54 @@ export async function invitePharmacyUserAction(input: {
   });
 
   if (!inserted.ok) {
+    // Carrera / lookup fallido: si la fila es revoked, reutilizar.
+    if (inserted.error.includes('ya tiene una membresía')) {
+      const again = await findMembershipByProfileInPharmacy({
+        supabase,
+        pharmacyId,
+        profileId: authLink.userId,
+      });
+      const againDecision = resolveInviteAgainstExistingMembership(again);
+      if (againDecision.kind === 'reinvite') {
+        const transitioned = await transitionReinviteViaRpc({
+          supabase,
+          pharmacyId,
+          membershipId: againDecision.membershipId,
+        });
+        if (transitioned.ok) {
+          const sent = await sendExistingUserPharmacyInviteEmail({
+            to: email,
+            pharmacyName,
+            appBaseUrl,
+            recipientName: fullName,
+            hashedToken: authLink.hashedToken,
+            otpType: authLink.otpType,
+          });
+          revalidatePath(`/farmacias/${pharmacyId}`);
+          revalidatePath(`/f/${pharmacyId}/usuarios`);
+          revalidatePath('/auth/invitations');
+          return {
+            ok: true,
+            membershipId: againDecision.membershipId,
+            invitationEmailSent: sent.ok,
+            inviteKind: 'existing',
+            reusedMembership: true,
+          };
+        }
+      }
+      if (againDecision.kind === 'block') {
+        return {
+          ok: false,
+          error: inviteBlockMessageForMembership(
+            againDecision.status,
+            againDecision.acceptedAt
+          ),
+          code: 'already_member',
+          existingStatus: againDecision.status,
+        };
+      }
+    }
+
     return {
       ok: false,
       error: `${inserted.error} El usuario de Auth puede haberse preparado; reintenta para completar solo el acceso a la farmacia.`,

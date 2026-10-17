@@ -21,6 +21,12 @@ export const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
 export const DEFAULT_PRIMARY_COLOR = '#2EC4C7';
 export const DEFAULT_SECONDARY_COLOR = '#0EA5E9';
 
+/**
+ * Etiquetas base por status. Para `revoked`, usar siempre
+ * `membershipStatusLabel(status, accepted_at)`:
+ * - revoked + accepted_at null → «Invitación cancelada»
+ * - revoked + accepted_at set → «Revocado»
+ */
 export const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
   invited: 'Invitado',
   active: 'Activo',

@@ -77,7 +77,11 @@ export function InviteUserDialog({
       }
 
       let message: string;
-      if (result.inviteKind === 'existing') {
+      if (result.reusedMembership) {
+        message = result.invitationEmailSent
+          ? 'Invitación reabierta. El usuario vuelve a estar pendiente de aceptar el acceso a esta farmacia.'
+          : 'Invitación reabierta (pendiente de aceptación). No se pudo enviar el email; usa «Reenviar invitación».';
+      } else if (result.inviteKind === 'existing') {
         message = result.invitationEmailSent
           ? 'Usuario FarmaFácil invitado a esta farmacia. Se le ha enviado un email para acceder y aceptar la invitación.'
           : 'Usuario FarmaFácil registrado como Invitado en esta farmacia. No se pudo enviar el email; usa «Reenviar invitación».';

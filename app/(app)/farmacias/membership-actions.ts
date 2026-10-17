@@ -661,7 +661,8 @@ export async function reinvitePharmacyMembershipAction(input: {
   if (loaded.membership.status !== 'revoked') {
     return {
       ok: false,
-      error: 'Solo se puede volver a invitar a un usuario con acceso revocado.',
+      error:
+        'Solo se puede volver a invitar tras cancelar la invitación o revocar el acceso.',
       code: 'invalid_state',
     };
   }

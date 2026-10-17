@@ -375,6 +375,7 @@ type MemberRow = {
   id: string;
   status: string;
   invited_at: string | null;
+  accepted_at: string | null;
   created_at: string;
   profiles:
     | { id: string; email: string; full_name: string | null }
@@ -392,7 +393,14 @@ function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
 }
 
 /**
- * Miembros de una farmacia (RLS: SuperAdmin con platform.users.read/write).
+ * Miembros de una farmacia (misma query para SuperAdmin y panel tenant).
+ *
+ * Incluye revoked (historial). El embed de profiles exige migración 039:
+ * peers revoked visibles solo con memberships.manage (OWNER/ADMIN).
+ * Sin 039, OWNER/ADMIN omiten filas revoked (perfil null → continue).
+ * Plataforma (users.read/write) ya ve perfiles revoked sin 039.
+ *
+ * Etiqueta UI: membershipStatusLabel(status, accepted_at).
  */
 export async function listPharmacyMembers(
   pharmacyId: string
@@ -406,6 +414,7 @@ export async function listPharmacyMembers(
       id,
       status,
       invited_at,
+      accepted_at,
       created_at,
       profiles!pharmacy_memberships_profile_id_fkey (
         id,
@@ -432,11 +441,13 @@ export async function listPharmacyMembers(
   for (const row of (data as MemberRow[] | null) ?? []) {
     const profile = unwrapOne(row.profiles);
     const role = unwrapOne(row.roles);
+    // Sin perfil visible (RLS pre-039 en revoked) no se muestra la fila.
     if (!profile || !role) continue;
     members.push({
       id: row.id,
       status: row.status as MembershipStatus,
       invited_at: row.invited_at,
+      accepted_at: row.accepted_at,
       created_at: row.created_at,
       profile: {
         id: profile.id,

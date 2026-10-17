@@ -183,6 +183,8 @@ export interface PharmacyMember {
   id: string;
   status: MembershipStatus;
   invited_at: string | null;
+  /** null = nunca aceptó (p.ej. invitación cancelada); set = perteneció a la farmacia. */
+  accepted_at: string | null;
   created_at: string;
   profile: {
     id: string;
