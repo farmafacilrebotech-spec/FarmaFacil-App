@@ -52,11 +52,15 @@ function LoginForm() {
   const callbackErrorMessage =
     errorParam === 'missing_code'
       ? 'El enlace de invitación no es válido o está incompleto. Solicita una nueva invitación.'
-      : errorParam === 'auth_callback'
-        ? 'No se ha podido validar el enlace de acceso. Solicita una nueva invitación o inténtalo de nuevo.'
-        : errorParam === 'forbidden'
-          ? 'Tu cuenta no tiene acceso autorizado a FarmaFácil.'
-          : null;
+      : errorParam === 'otp_expired'
+        ? 'El enlace de acceso ha caducado. Solicita una nueva invitación e inténtalo de nuevo.'
+        : errorParam === 'otp_used'
+          ? 'Este enlace de acceso ya se ha utilizado. Si no completaste el alta, solicita una nueva invitación.'
+          : errorParam === 'auth_callback'
+            ? 'No se ha podido validar el enlace de acceso. Solicita una nueva invitación o inténtalo de nuevo.'
+            : errorParam === 'forbidden'
+              ? 'Tu cuenta no tiene acceso autorizado a FarmaFácil.'
+              : null;
 
   const inviteHint =
     hintParam === 'invite'

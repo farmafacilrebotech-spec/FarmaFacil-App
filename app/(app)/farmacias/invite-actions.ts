@@ -2,9 +2,13 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
+import { getAppBaseUrl } from '@/lib/auth/app-url';
+import {
+  sendExistingUserPharmacyInviteEmail,
+  sendNewUserPharmacyInviteEmail,
+} from '@/lib/email/pharmacy-invitation';
+import { preparePharmacyInviteAuthLink } from '@/lib/pharmacies/invite-auth';
 import type { PharmacyRoleKey } from '@/lib/pharmacies/types';
-import { sendExistingUserPharmacyInviteEmail } from '@/lib/email/pharmacy-invitation';
 import { requirePharmacyMembershipManage } from '@/lib/pharmacies/membership-authz';
 import { canAssignRole } from '@/lib/pharmacies/membership-hierarchy';
 
@@ -12,19 +16,15 @@ export type InvitePharmacyUserResult =
   | {
       ok: true;
       membershipId: string;
-      /** true si se envió email (Auth invite o FarmaFácil) */
+      /** true solo si Resend confirmó el envío */
       invitationEmailSent: boolean;
-      /** new = inviteUserByEmail; existing = email propio FarmaFácil */
+      /** new = primer acceso; existing = magic link a invitaciones */
       inviteKind: 'new' | 'existing';
     }
   | {
       ok: false;
       error: string;
-      /**
-       * Auth invite OK pero falló membership.
-       * No se borra el usuario Auth; reintentar suele reconciliar.
-       */
-      code?: 'auth_ok_membership_failed' | 'already_member';
+      code?: 'auth_ok_membership_failed' | 'already_member' | 'email_failed';
       existingStatus?: string;
     };
 
@@ -49,49 +49,15 @@ function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-/** URL de app desde entorno (nunca desde el navegador). */
-function getAppBaseUrl(): string | null {
-  const configured =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
-    process.env.APP_URL?.trim();
-
-  if (process.env.NODE_ENV === 'production') {
-    // Producción: obligatoria y no localhost.
-    if (!configured) return null;
-    if (/localhost|127\.0\.0\.1/i.test(configured)) return null;
-    return configured.replace(/\/$/, '');
-  }
-
-  if (configured) return configured.replace(/\/$/, '');
-  return 'http://localhost:3000';
-}
-
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function loadProfileById(
-  supabase: ReturnType<typeof createClient>,
-  profileId: string
-): Promise<{ id: string; email: string; full_name: string | null } | null> {
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, full_name')
-      .eq('id', profileId)
-      .maybeSingle();
-
-    if (error) {
-      console.error('[invite] profile by id', error.code, error.message);
-      return null;
-    }
-    if (data) return data;
-    await sleep(200);
-  }
-  return null;
-}
-
-async function insertMembership(params: {
+/**
+ * Inserta membership invited. Reintenta si el perfil aún no existe
+ * (trigger on auth.users) — sin SELECT sobre profiles (RLS).
+ */
+async function insertMembershipWithProfileRetry(params: {
   supabase: ReturnType<typeof createClient>;
   pharmacyId: string;
   profileId: string;
@@ -99,48 +65,65 @@ async function insertMembership(params: {
   actorId: string;
 }): Promise<{ ok: true; membershipId: string } | { ok: false; error: string }> {
   const now = new Date().toISOString();
-  const { data, error } = await params.supabase
-    .from('pharmacy_memberships')
-    .insert({
-      pharmacy_id: params.pharmacyId,
-      profile_id: params.profileId,
-      role_id: params.roleId,
-      status: 'invited',
-      invited_by: params.actorId,
-      updated_by: params.actorId,
-      invited_at: now,
-    })
-    .select('id')
-    .maybeSingle();
 
-  if (error) {
-    console.error('[invite] membership insert', error.code, error.message);
-    if (error.code === '42501') {
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const { data, error } = await params.supabase
+      .from('pharmacy_memberships')
+      .insert({
+        pharmacy_id: params.pharmacyId,
+        profile_id: params.profileId,
+        role_id: params.roleId,
+        status: 'invited',
+        invited_by: params.actorId,
+        updated_by: params.actorId,
+        invited_at: now,
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (!error && data?.id) {
+      return { ok: true, membershipId: data.id as string };
+    }
+
+    if (error) {
+      console.error(
+        '[invite] membership insert',
+        error.code,
+        error.message,
+        `attempt=${attempt + 1}`
+      );
+
+      if (error.code === '42501') {
+        return {
+          ok: false,
+          error: 'No tienes permiso para gestionar usuarios de farmacia.',
+        };
+      }
+      if (error.code === '23505') {
+        return {
+          ok: false,
+          error: 'Este usuario ya tiene una membresía en esta farmacia.',
+        };
+      }
+      // FK: perfil aún no materializado por el trigger
+      if (error.code === '23503' && attempt < 5) {
+        await sleep(150 * (attempt + 1));
+        continue;
+      }
+
       return {
         ok: false,
-        error: 'No tienes permiso para gestionar usuarios de farmacia.',
+        error: 'No se ha podido registrar el acceso a la farmacia.',
       };
     }
-    if (error.code === '23505') {
-      return {
-        ok: false,
-        error: 'Este usuario ya tiene una membresía en esta farmacia.',
-      };
-    }
-    return {
-      ok: false,
-      error: 'No se ha podido registrar el acceso a la farmacia.',
-    };
+
+    await sleep(150 * (attempt + 1));
   }
 
-  if (!data?.id) {
-    return {
-      ok: false,
-      error: 'No se ha podido registrar el acceso a la farmacia.',
-    };
-  }
-
-  return { ok: true, membershipId: data.id as string };
+  return {
+    ok: false,
+    error: 'No se ha podido registrar el acceso a la farmacia.',
+  };
 }
 
 /**
@@ -148,11 +131,10 @@ async function insertMembership(params: {
  *
  * Autorización: SuperAdmin (platform.users.write) O memberships.manage
  * (OWNER/ADMIN) + jerarquía de roles + farmacia operable.
- * service_role: solo Auth Admin inviteUserByEmail.
- * Memberships/profiles/roles: cliente autenticado + RLS + trigger 037.
  *
- * Auth y PostgreSQL no comparten transacción. Si Auth OK y membership falla,
- * no se borra el usuario Auth; el reintento crea solo la membership.
+ * Auth Admin: solo generateLink (no inviteUserByEmail SMTP).
+ * Membership: cliente autenticado + RLS. No requiere SELECT del perfil nuevo.
+ * Email: Resend con token_hash hacia el dominio canónico.
  */
 export async function invitePharmacyUserAction(input: {
   pharmacyId: string;
@@ -190,7 +172,6 @@ export async function invitePharmacyUserAction(input: {
     };
   }
 
-  const profile = { id: auth.actorId };
   const supabase = createClient();
 
   const { data: pharmacy, error: pharmacyError } = await supabase
@@ -218,100 +199,34 @@ export async function invitePharmacyUserAction(input: {
     return { ok: false, error: 'El rol seleccionado no existe.' };
   }
 
-  // Usuario ya existente (email solo identifica; no autoriza).
-  const { data: existingProfile, error: existingError } = await supabase
-    .from('profiles')
-    .select('id, email, full_name')
-    .eq('email', email)
+  // Duplicado en ESTA farmacia (sin depender de SELECT global de profiles).
+  const { data: existingMembership, error: memLookupError } = await supabase
+    .from('pharmacy_memberships')
+    .select('id, status, profiles!inner(email)')
+    .eq('pharmacy_id', pharmacyId)
+    .eq('profiles.email', email)
     .maybeSingle();
 
-  if (existingError) {
-    console.error('[invite] profile by email', existingError.message);
+  if (memLookupError) {
+    console.error('[invite] membership lookup', memLookupError.message);
     return {
       ok: false,
-      error: 'No se ha podido comprobar si el usuario ya existe.',
+      error: 'No se ha podido comprobar la membresía existente.',
     };
   }
 
-  if (existingProfile) {
-    const { data: existingMembership, error: memLookupError } = await supabase
-      .from('pharmacy_memberships')
-      .select('id, status')
-      .eq('pharmacy_id', pharmacyId)
-      .eq('profile_id', existingProfile.id)
-      .maybeSingle();
-
-    if (memLookupError) {
-      console.error('[invite] membership lookup', memLookupError.message);
-      return {
-        ok: false,
-        error: 'No se ha podido comprobar la membresía existente.',
-      };
-    }
-
-    if (existingMembership) {
-      const status = existingMembership.status as string;
-      return {
-        ok: false,
-        error:
-          MEMBERSHIP_STATUS_MESSAGES[status] ??
-          'Este email ya tiene acceso registrado en esta farmacia.',
-        code: 'already_member',
-        existingStatus: status,
-      };
-    }
-
-    if (!existingProfile.full_name && fullName) {
-      await supabase
-        .from('profiles')
-        .update({ full_name: fullName })
-        .eq('id', existingProfile.id)
-        .is('full_name', null);
-    }
-
-    const inserted = await insertMembership({
-      supabase,
-      pharmacyId,
-      profileId: existingProfile.id,
-      roleId: role.id as string,
-      actorId: profile.id,
-    });
-
-    if (!inserted.ok) {
-      return { ok: false, error: inserted.error };
-    }
-
-    // Usuario FarmaFácil existente: email propio (no inviteUserByEmail / no password).
-    const appBaseUrl = getAppBaseUrl();
-    let invitationEmailSent = false;
-    if (appBaseUrl) {
-      const sent = await sendExistingUserPharmacyInviteEmail({
-        to: email,
-        pharmacyName,
-        appBaseUrl,
-        recipientName: existingProfile.full_name ?? fullName,
-      });
-      invitationEmailSent = sent.ok;
-      if (!sent.ok) {
-        console.error('[invite] existing-user email', sent.error, sent.code);
-      }
-    } else {
-      console.error(
-        '[invite] existing-user email skipped: APP URL no válida'
-      );
-    }
-
-    revalidatePath(`/farmacias/${pharmacyId}`);
-  revalidatePath(`/f/${pharmacyId}/usuarios`);
+  if (existingMembership) {
+    const status = existingMembership.status as string;
     return {
-      ok: true,
-      membershipId: inserted.membershipId,
-      invitationEmailSent,
-      inviteKind: 'existing',
+      ok: false,
+      error:
+        MEMBERSHIP_STATUS_MESSAGES[status] ??
+        'Este email ya tiene acceso registrado en esta farmacia.',
+      code: 'already_member',
+      existingStatus: status,
     };
   }
 
-  // Usuario nuevo: Auth Admin
   const appBaseUrl = getAppBaseUrl();
   if (!appBaseUrl) {
     return {
@@ -321,87 +236,69 @@ export async function invitePharmacyUserAction(input: {
     };
   }
 
-  // PKCE (@supabase/ssr): el email debe aterrizar en /auth/callback?code=…
-  // y de ahí a /first-access con cookies SSR ya establecidas.
-  const redirectTo = `${appBaseUrl}/auth/callback?next=/first-access`;
+  const authLink = await preparePharmacyInviteAuthLink({
+    email,
+    fullName,
+    appBaseUrl,
+  });
 
-  let invitedUserId: string;
-  try {
-    const admin = createAdminClient();
-    const { data: inviteData, error: inviteError } =
-      await admin.auth.admin.inviteUserByEmail(email, {
-        data: { full_name: fullName },
-        redirectTo,
-      });
-
-    if (inviteError) {
-      const msg = inviteError.message.toLowerCase();
-      if (
-        msg.includes('already') ||
-        msg.includes('registered') ||
-        msg.includes('exists')
-      ) {
-        return {
-          ok: false,
-          error:
-            'Este email ya está registrado en FarmaFácil. Si no aparece en la lista, espera un momento y vuelve a intentar la invitación para crear solo la membresía.',
-        };
-      }
-      console.error('[invite] inviteUserByEmail', inviteError.message);
-      return {
-        ok: false,
-        error: 'No se ha podido enviar la invitación por email.',
-      };
-    }
-
-    if (!inviteData.user?.id) {
-      return {
-        ok: false,
-        error: 'No se ha podido crear el usuario de invitación.',
-      };
-    }
-    invitedUserId = inviteData.user.id;
-  } catch (err) {
-    console.error('[invite] admin client', err);
-    return {
-      ok: false,
-      error:
-        'No se ha podido completar la invitación (configuración Admin incompleta).',
-    };
+  if (!authLink.ok) {
+    return { ok: false, error: authLink.error };
   }
 
-  const newProfile = await loadProfileById(supabase, invitedUserId);
-  if (!newProfile) {
-    return {
-      ok: false,
-      error:
-        'La invitación de acceso se ha enviado, pero no se ha podido localizar el perfil para registrar la farmacia. Reintenta la invitación en unos segundos; no se ha creado la membresía.',
-      code: 'auth_ok_membership_failed',
-    };
-  }
-
-  const inserted = await insertMembership({
+  const inserted = await insertMembershipWithProfileRetry({
     supabase,
     pharmacyId,
-    profileId: newProfile.id,
+    profileId: authLink.userId,
     roleId: role.id as string,
-    actorId: profile.id,
+    actorId: auth.actorId,
   });
 
   if (!inserted.ok) {
     return {
       ok: false,
-      error: `${inserted.error} La invitación por email puede haberse enviado; reintenta para completar solo el acceso a la farmacia. No se ha borrado el usuario de Auth.`,
+      error: `${inserted.error} El usuario de Auth puede haberse preparado; reintenta para completar solo el acceso a la farmacia.`,
       code: 'auth_ok_membership_failed',
     };
   }
 
+  // Email solo tras membership OK. No afirmar envío sin confirmación de Resend.
+  let invitationEmailSent = false;
+  if (authLink.kind === 'new') {
+    const sent = await sendNewUserPharmacyInviteEmail({
+      to: email,
+      pharmacyName,
+      appBaseUrl,
+      recipientName: fullName,
+      hashedToken: authLink.hashedToken,
+      otpType: authLink.otpType,
+    });
+    invitationEmailSent = sent.ok;
+    if (!sent.ok) {
+      console.error('[invite] new-user email', sent.error, sent.code);
+    }
+  } else {
+    const sent = await sendExistingUserPharmacyInviteEmail({
+      to: email,
+      pharmacyName,
+      appBaseUrl,
+      recipientName: fullName,
+      hashedToken: authLink.hashedToken,
+      otpType: authLink.otpType,
+    });
+    invitationEmailSent = sent.ok;
+    if (!sent.ok) {
+      console.error('[invite] existing-user email', sent.error, sent.code);
+    }
+  }
+
   revalidatePath(`/farmacias/${pharmacyId}`);
   revalidatePath(`/f/${pharmacyId}/usuarios`);
+
   return {
     ok: true,
     membershipId: inserted.membershipId,
-    invitationEmailSent: true,
-    inviteKind: 'new',
+    invitationEmailSent,
+    inviteKind: authLink.kind,
   };
 }

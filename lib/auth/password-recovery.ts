@@ -1,21 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
+import { getAppBaseUrl } from '@/lib/auth/app-url';
 
-/**
- * URL pública de la app (nunca desde el navegador).
- * En producción exige NEXT_PUBLIC_APP_URL / APP_URL y rechaza localhost.
- */
+/** @deprecated Prefer getAppBaseUrl — se mantiene el nombre por callers existentes. */
 export function getPasswordRecoveryAppUrl(): string | null {
-  const configured =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.APP_URL?.trim();
-
-  if (process.env.NODE_ENV === 'production') {
-    if (!configured) return null;
-    if (/localhost|127\.0\.0\.1/i.test(configured)) return null;
-    return configured.replace(/\/$/, '');
-  }
-
-  if (configured) return configured.replace(/\/$/, '');
-  return 'http://localhost:3000';
+  return getAppBaseUrl();
 }
 
 export type PasswordRecoveryRequestResult =

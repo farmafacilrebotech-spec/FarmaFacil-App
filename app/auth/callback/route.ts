@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import type { EmailOtpType } from '@supabase/supabase-js';
+import { classifyAuthCallbackError } from '@/lib/pharmacies/invite-auth-logic';
 
 /**
  * Destinos internos permitidos tras el callback de Auth (allowlist).
@@ -79,13 +80,13 @@ const ALLOWED_OTP: EmailOtpType[] = ['invite', 'magiclink', 'email'];
 /**
  * Callback Auth SSR.
  *
- * Usuario NUEVO (inviteUserByEmail):
+ * Usuario NUEVO (generateLink invite + Resend):
  *   ?token_hash=...&type=invite&next=/first-access
  *
  * Usuario EXISTENTE (magic link FarmaFácil, token_hash SSR):
  *   ?token_hash=...&type=magiclink|email&next=/auth/invitations?for=email
  *
- * PKCE:
+ * PKCE (legacy / redirect Supabase):
  *   ?code=... → exchangeCodeForSession
  *
  * No trata recovery aquí: recovery no está en la allowlist de OTP.
@@ -114,7 +115,8 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('[auth/callback] verifyOtp', error.message);
-      return redirectToLogin(request, 'auth_callback');
+      const { code: errorCode } = classifyAuthCallbackError(error.message);
+      return redirectToLogin(request, errorCode);
     }
 
     return getResponse();
@@ -128,7 +130,8 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('[auth/callback] exchangeCodeForSession', error.message);
-      return redirectToLogin(request, 'auth_callback');
+      const { code: errorCode } = classifyAuthCallbackError(error.message);
+      return redirectToLogin(request, errorCode);
     }
 
     return getResponse();

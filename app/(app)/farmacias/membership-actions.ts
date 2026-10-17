@@ -3,8 +3,13 @@
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { getAppBaseUrl } from '@/lib/auth/app-url';
 import type { MembershipStatus, PharmacyRoleKey } from '@/lib/pharmacies/types';
-import { sendExistingUserPharmacyInviteEmail } from '@/lib/email/pharmacy-invitation';
+import {
+  sendExistingUserPharmacyInviteEmail,
+  sendNewUserPharmacyInviteEmail,
+} from '@/lib/email/pharmacy-invitation';
+import { preparePharmacyInviteAuthLink } from '@/lib/pharmacies/invite-auth';
 import { resolvePharmacyInviteUserKind } from '@/lib/pharmacies/invite-user-kind';
 import { requestPasswordRecoveryEmail } from '@/lib/auth/password-recovery';
 import {
@@ -33,21 +38,6 @@ type MembershipRow = {
 function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
   if (value == null) return null;
   return Array.isArray(value) ? (value[0] ?? null) : value;
-}
-
-/** URL de app desde entorno (nunca desde el navegador). */
-function getAppBaseUrl(): string | null {
-  const configured =
-    process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.APP_URL?.trim();
-
-  if (process.env.NODE_ENV === 'production') {
-    if (!configured) return null;
-    if (/localhost|127\.0\.0\.1/i.test(configured)) return null;
-    return configured.replace(/\/$/, '');
-  }
-
-  if (configured) return configured.replace(/\/$/, '');
-  return 'http://localhost:3000';
 }
 
 async function loadMembershipForPharmacy(
@@ -500,8 +490,8 @@ export async function cancelPharmacyInvitationAction(input: {
 
 /**
  * Reenvía la invitación pendiente SIN crear otra membership.
- * - Usuario nuevo (alta pendiente): inviteUserByEmail (Auth).
- * - Usuario FarmaFácil existente: email propio «Te han invitado a {farmacia}».
+ * - Usuario nuevo (alta pendiente): generateLink(invite) + Resend → /first-access.
+ * - Usuario FarmaFácil existente: generateLink(magiclink) + Resend → /auth/invitations.
  */
 export async function resendPharmacyInvitationAction(input: {
   pharmacyId: string;
@@ -559,7 +549,7 @@ export async function resendPharmacyInvitationAction(input: {
       : 'tu farmacia';
 
   const email = loaded.membership.email;
-  const fullName = loaded.membership.fullName?.trim() || undefined;
+  const fullName = loaded.membership.fullName?.trim() || email;
   const kindResult = await resolvePharmacyInviteUserKind(
     loaded.membership.profileId
   );
@@ -568,103 +558,48 @@ export async function resendPharmacyInvitationAction(input: {
     return { ok: false, error: kindResult.error };
   }
 
-  // Usuario FarmaFácil reutilizable (otra farmacia / cuenta ya establecida):
-  // siempre plantilla V2 + magic link token_hash → /auth/invitations.
-  if (kindResult.kind === 'existing') {
-    const sent = await sendExistingUserPharmacyInviteEmail({
-      to: email,
-      pharmacyName,
-      appBaseUrl,
-      recipientName: fullName,
-    });
+  // generateLink + Resend (token_hash SSR). No inviteUserByEmail SMTP.
+  const authLink = await preparePharmacyInviteAuthLink({
+    email,
+    fullName,
+    appBaseUrl,
+  });
 
-    if (!sent.ok) {
-      return { ok: false, error: sent.error };
-    }
-
-    const now = new Date().toISOString();
-    await supabase
-      .from('pharmacy_memberships')
-      .update({
-        invited_at: now,
-        updated_by: auth.actorId,
-        updated_at: now,
-      })
-      .eq('id', membershipId)
-      .eq('pharmacy_id', pharmacyId)
-      .eq('status', 'invited');
-
-  revalidateMembershipPaths(pharmacyId);
-    return {
-      ok: true,
-      message: `Invitación reenviada: se ha notificado el acceso a ${pharmacyName}.`,
-    };
+  if (!authLink.ok) {
+    return { ok: false, error: authLink.error };
   }
 
-  // Usuario nuevo: solo alta Auth pendiente → inviteUserByEmail (Supabase Auth).
-  // Si Auth indica que el usuario ya existe, no usar HTML inline: es existing → V2.
-  const redirectTo = `${appBaseUrl}/auth/callback?next=/first-access`;
+  // Preferir kind de memberships (invite-user-kind): si ya tiene cuenta usable
+  // en FarmaFácil, el email debe ser magiclink → /auth/invitations.
+  const emailKind =
+    kindResult.kind === 'existing' ? 'existing' : authLink.kind;
 
-  try {
-    const admin = createAdminClient();
-    const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(
-      email,
-      {
-        data: fullName ? { full_name: fullName } : undefined,
-        redirectTo,
-      }
-    );
-
-    if (inviteError) {
-      const msg = inviteError.message.toLowerCase();
-      if (
-        msg.includes('already') ||
-        msg.includes('registered') ||
-        msg.includes('exists')
-      ) {
-        // Auth ya tiene cuenta reutilizable: flujo segunda farmacia (V2), nunca HTML antiguo.
-        const sent = await sendExistingUserPharmacyInviteEmail({
+  const sent =
+    emailKind === 'existing'
+      ? await sendExistingUserPharmacyInviteEmail({
           to: email,
           pharmacyName,
           appBaseUrl,
           recipientName: fullName,
+          // Solo reutilizar token si Auth ya generó magiclink (mismo tipo OTP).
+          ...(authLink.kind === 'existing'
+            ? {
+                hashedToken: authLink.hashedToken,
+                otpType: authLink.otpType,
+              }
+            : {}),
+        })
+      : await sendNewUserPharmacyInviteEmail({
+          to: email,
+          pharmacyName,
+          appBaseUrl,
+          recipientName: fullName,
+          hashedToken: authLink.hashedToken,
+          otpType: authLink.otpType,
         });
-        if (!sent.ok) {
-          return { ok: false, error: sent.error };
-        }
 
-        const now = new Date().toISOString();
-        await supabase
-          .from('pharmacy_memberships')
-          .update({
-            invited_at: now,
-            updated_by: auth.actorId,
-            updated_at: now,
-          })
-          .eq('id', membershipId)
-          .eq('pharmacy_id', pharmacyId)
-          .eq('status', 'invited');
-
-  revalidateMembershipPaths(pharmacyId);
-        return {
-          ok: true,
-          message: `Invitación reenviada: se ha notificado el acceso a ${pharmacyName}.`,
-        };
-      }
-
-      console.error('[membership] resend invite', inviteError.message);
-      return {
-        ok: false,
-        error: 'No se ha podido reenviar la invitación por email.',
-      };
-    }
-  } catch (err) {
-    console.error('[membership] resend admin client', err);
-    return {
-      ok: false,
-      error:
-        'No se ha podido reenviar la invitación (configuración Admin incompleta).',
-    };
+  if (!sent.ok) {
+    return { ok: false, error: sent.error };
   }
 
   const now = new Date().toISOString();
@@ -686,7 +621,10 @@ export async function resendPharmacyInvitationAction(input: {
   revalidateMembershipPaths(pharmacyId);
   return {
     ok: true,
-    message: 'Invitación reenviada por email (alta de usuario nuevo).',
+    message:
+      emailKind === 'existing'
+        ? `Invitación reenviada: se ha notificado el acceso a ${pharmacyName}.`
+        : 'Invitación reenviada por email (alta de usuario nuevo).',
   };
 }
 

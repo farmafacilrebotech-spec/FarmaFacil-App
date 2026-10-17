@@ -83,8 +83,8 @@ export function InviteUserDialog({
           : 'Usuario FarmaFácil registrado como Invitado en esta farmacia. No se pudo enviar el email; usa «Reenviar invitación».';
       } else {
         message = result.invitationEmailSent
-          ? 'Invitación enviada. El usuario aparece como Invitado.'
-          : 'Acceso registrado. El usuario aparece como Invitado.';
+          ? 'Invitación enviada. El usuario aparece como Invitado y recibirá un email para completar el acceso.'
+          : 'Acceso registrado como Invitado, pero el email no se ha podido enviar. Usa «Reenviar invitación».';
       }
 
       onSuccess(message);
