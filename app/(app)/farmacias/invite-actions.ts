@@ -8,6 +8,7 @@ import {
   sendNewUserPharmacyInviteEmail,
 } from '@/lib/email/pharmacy-invitation';
 import { preparePharmacyInviteAuthLink } from '@/lib/pharmacies/invite-auth';
+import { findMembershipByEmailInPharmacy } from '@/lib/pharmacies/invite-membership-lookup';
 import type { PharmacyRoleKey } from '@/lib/pharmacies/types';
 import { requirePharmacyMembershipManage } from '@/lib/pharmacies/membership-authz';
 import { canAssignRole } from '@/lib/pharmacies/membership-hierarchy';
@@ -199,24 +200,43 @@ export async function invitePharmacyUserAction(input: {
     return { ok: false, error: 'El rol seleccionado no existe.' };
   }
 
-  // Duplicado en ESTA farmacia (sin depender de SELECT global de profiles).
-  const { data: existingMembership, error: memLookupError } = await supabase
+  // Duplicado en ESTA farmacia.
+  // FK explícita a profile_id: pharmacy_memberships tiene varias FK a profiles
+  // (profile_id, invited_by, updated_by). `profiles!inner` sin hint falla en
+  // PostgREST (embed ambiguo) → error «No se ha podido comprobar la membresía…».
+  // Misma convención que listPharmacyMembers.
+  const { data: membershipRows, error: memLookupError } = await supabase
     .from('pharmacy_memberships')
-    .select('id, status, profiles!inner(email)')
-    .eq('pharmacy_id', pharmacyId)
-    .eq('profiles.email', email)
-    .maybeSingle();
+    .select(
+      `
+      id,
+      status,
+      profiles!pharmacy_memberships_profile_id_fkey (
+        email
+      )
+    `
+    )
+    .eq('pharmacy_id', pharmacyId);
 
   if (memLookupError) {
-    console.error('[invite] membership lookup', memLookupError.message);
+    console.error(
+      '[invite] membership lookup',
+      memLookupError.code,
+      memLookupError.message
+    );
     return {
       ok: false,
       error: 'No se ha podido comprobar la membresía existente.',
     };
   }
 
+  const existingMembership = findMembershipByEmailInPharmacy(
+    membershipRows ?? [],
+    email
+  );
+
   if (existingMembership) {
-    const status = existingMembership.status as string;
+    const status = existingMembership.status;
     return {
       ok: false,
       error:
