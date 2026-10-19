@@ -1,7 +1,10 @@
 import { redirect } from 'next/navigation';
 
+import { KioskCartProvider } from '@/components/kiosk/kiosk-cart-provider';
+import { KioskCatalogView } from '@/components/kiosk/kiosk-catalog-view';
+import { searchKioskCatalog } from '@/lib/kiosk/catalog';
 import { requireValidKioskDeviceSession } from '@/lib/kiosk/device-session';
-import { KioskComingSoon } from '@/components/kiosk/kiosk-coming-soon';
+import { loadKioskHomeContext } from '@/lib/kiosk/home-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,10 +14,16 @@ export default async function KioskCatalogPage() {
     redirect(session.reason === 'commercially_blocked' ? '/k' : '/k/pair');
   }
 
+  const home = await loadKioskHomeContext(session.session);
+  const initial = await searchKioskCatalog({ query: '', limit: 40 });
+  const initialItems = initial.ok ? initial.items : [];
+
   return (
-    <KioskComingSoon
-      title="Buscar producto"
-      description="El catálogo táctil del kiosko estará disponible en la siguiente fase. Los productos se mostrarán solo de la farmacia vinculada a esta tablet."
-    />
+    <KioskCartProvider pharmacyId={session.session.pharmacyId}>
+      <KioskCatalogView
+        pharmacyName={home.pharmacyName || session.session.displayName}
+        initialItems={initialItems}
+      />
+    </KioskCartProvider>
   );
 }

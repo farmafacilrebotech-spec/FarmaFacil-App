@@ -57,3 +57,15 @@ export function assertPaymentStatusTransition(
   }
   return { ok: true };
 }
+
+export function nextOrderStatusOptions(from: OrderStatus): OrderStatus[] {
+  return (Object.keys(ORDER_EDGES) as OrderStatus[]).filter(
+    (to) => to !== from && isOrderStatusTransitionAllowed(from, to)
+  );
+}
+
+export function nextPaymentStatusOptions(from: PaymentStatus): PaymentStatus[] {
+  return (Object.keys(PAYMENT_EDGES) as PaymentStatus[]).filter(
+    (to) => to !== from && isPaymentStatusTransitionAllowed(from, to)
+  );
+}
