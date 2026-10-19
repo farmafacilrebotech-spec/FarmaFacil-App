@@ -9,6 +9,7 @@ import {
 import { listPharmacyProducts } from '@/lib/pharmacies/products';
 import { listPharmacyKioskDevices } from '@/lib/kiosk/devices';
 import { getPharmacyKioskEntitlement } from '@/lib/kiosk/entitlement';
+import { loadOrEnsurePharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
 import { PharmacyDetailClient } from '@/components/pharmacies/pharmacy-detail-client';
 import { getCurrentProfile } from '@/lib/auth/platform';
 import { buildPharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
@@ -29,6 +30,7 @@ export default async function PharmacyDetailPage({
     kiosk,
     kioskEnt,
     profileResult,
+    homeQr,
   ] = await Promise.all([
     getPharmacyById(params.id),
     listActivePlans(),
@@ -38,6 +40,7 @@ export default async function PharmacyDetailPage({
     listPharmacyKioskDevices(params.id),
     getPharmacyKioskEntitlement(params.id),
     getCurrentProfile(),
+    loadOrEnsurePharmacyHomeEntrypoint(params.id),
   ]);
 
   if (!pharmacy) {
@@ -65,6 +68,8 @@ export default async function PharmacyDetailPage({
       kioskCommercialUiState={kioskEnt.uiState}
       kioskEntitlement={kioskEnt.entitlement}
       kioskModuleUsable={kioskEnt.moduleUsable}
+      homeEntrypoint={homeQr.ok ? homeQr.entrypoint : null}
+      homeEntrypointError={homeQr.ok ? null : homeQr.error}
     />
   );
 }

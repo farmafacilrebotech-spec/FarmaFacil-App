@@ -25,6 +25,11 @@ function isPublicKioskRoute(pathname: string): boolean {
   return pathname === '/k' || pathname.startsWith('/k/');
 }
 
+/** Destino público del QR de farmacia (no autentica). */
+function isPublicEntrypointRoute(pathname: string): boolean {
+  return pathname === '/e' || pathname.startsWith('/e/');
+}
+
 /**
  * Cualquier redirect debe preservar las cookies que updateSession
  * acaba de refrescar. Si se pierden, el Server Component no ve sesión
@@ -55,7 +60,10 @@ export async function middleware(request: NextRequest) {
 
   const isAuthRoute = AUTH_ROUTES.has(pathname);
   const isPublicRoute =
-    isAuthRoute || isPublicLegalRoute(pathname) || isPublicKioskRoute(pathname);
+    isAuthRoute ||
+    isPublicLegalRoute(pathname) ||
+    isPublicKioskRoute(pathname) ||
+    isPublicEntrypointRoute(pathname);
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();

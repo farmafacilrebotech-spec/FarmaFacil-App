@@ -3,10 +3,10 @@
 import * as React from 'react';
 
 /**
- * Deterministic pseudo-QR pattern generator.
- * Generates a grid of modules from the input string hash.
- * This is NOT a real scannable QR code — it's a visual placeholder
- * with the correct QR structure (finder patterns, alignment, data modules).
+ * @deprecated Pseudo-QR visual (NO escaneable).
+ * Usar `ScannableQr` / `lib/pharmacies/qr-download` para el QR oficial.
+ *
+ * Deterministic pseudo-QR pattern generator (legacy demo).
  */
 function generateMatrix(data: string, size = 25): boolean[][] {
   // Hash the data into a seeded PRNG

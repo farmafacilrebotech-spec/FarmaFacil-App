@@ -21,6 +21,9 @@
     "test:kiosk-crypto": "node --experimental-strip-types --test lib/kiosk/crypto.test.ts",
     "test:kiosk-pairing": "node --experimental-strip-types --test lib/kiosk/pairing-rules.test.ts lib/kiosk/commercial-gate.test.ts lib/kiosk/pairing-rate-limit.test.ts lib/kiosk/session-cookie-path.test.ts lib/kiosk/device-immutability.test.ts lib/kiosk/entitlement-status.test.ts lib/kiosk/device-status-display.test.ts",
     "test:kiosk": "npm run test:kiosk-crypto && npm run test:kiosk-pairing",
+    "test:orders": "node --experimental-strip-types --test lib/orders/transitions.test.ts lib/orders/cart-validation.test.ts lib/orders/create-order-gates.test.ts",
+    "test:kiosk-home": "node --experimental-strip-types --test lib/kiosk/entrypoint-url.test.ts",
+    "test:pharmacy-qr": "node --experimental-strip-types --test lib/pharmacies/entrypoint-public-id.test.ts lib/pharmacies/qr-download.test.ts",
     "staging:assert": "node scripts/assert-staging-target.mjs",
     "staging:assert:filled": "node scripts/assert-staging-target.mjs --require-filled",
     "staging:ping": "node scripts/staging-ping.mjs",
@@ -75,6 +78,7 @@
     "next": "13.5.1",
     "next-themes": "^0.3.0",
     "postcss": "8.4.30",
+    "qrcode": "^1.5.4",
     "react": "18.2.0",
     "react-day-picker": "^8.10.1",
     "react-dom": "18.2.0",
@@ -89,5 +93,8 @@
     "typescript": "5.2.2",
     "vaul": "^0.9.9",
     "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/qrcode": "^1.5.6"
   }
 }
