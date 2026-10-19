@@ -95,15 +95,23 @@ export function KioskCartProvider({
     return () => window.clearInterval(id);
   }, [hydrated, cart.lines.length]);
 
+  // Throttle: evita re-render + sessionStorage en cada toque (idle sigue actualizándose).
+  const lastActivityWriteAt = React.useRef(0);
   const touchActivity = React.useCallback(() => {
-    setCart((prev) => ({ ...prev, updatedAt: Date.now() }));
+    const now = Date.now();
+    if (now - lastActivityWriteAt.current < 4_000) return;
+    lastActivityWriteAt.current = now;
+    setCart((prev) => {
+      if (now - prev.updatedAt < 4_000) return prev;
+      return { ...prev, updatedAt: now };
+    });
   }, []);
 
   React.useEffect(() => {
     function onActivity() {
       touchActivity();
     }
-    window.addEventListener('pointerdown', onActivity);
+    window.addEventListener('pointerdown', onActivity, { passive: true });
     window.addEventListener('keydown', onActivity);
     return () => {
       window.removeEventListener('pointerdown', onActivity);

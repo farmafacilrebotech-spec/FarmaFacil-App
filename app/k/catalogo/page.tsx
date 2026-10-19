@@ -14,8 +14,11 @@ export default async function KioskCatalogPage() {
     redirect(session.reason === 'commercially_blocked' ? '/k' : '/k/pair');
   }
 
-  const home = await loadKioskHomeContext(session.session);
-  const initial = await searchKioskCatalog({ query: '', limit: 40 });
+  // Home y catálogo son independientes tras validar sesión (menos latencia en serie).
+  const [home, initial] = await Promise.all([
+    loadKioskHomeContext(session.session),
+    searchKioskCatalog({ query: '', limit: 40 }),
+  ]);
   const initialItems = initial.ok ? initial.items : [];
 
   return (
