@@ -60,6 +60,10 @@ const TILES: Tile[] = [
   },
 ];
 
+/**
+ * Media query kiosko 21,5" portrait (literales completos para Tailwind JIT).
+ * orientation + altura + ancho: no afecta a móviles ni landscape.
+ */
 export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
   const [showQr, setShowQr] = React.useState(false);
 
@@ -73,38 +77,129 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
   }, [showQr]);
 
   return (
-    <div className="relative flex min-h-[100dvh] flex-col bg-[#2EC4C7] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10">
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center lg:max-w-5xl">
-        <BrandLogo size={132} className="drop-shadow-sm" />
+    <div
+      className={cn(
+        'relative flex min-h-[100dvh] flex-col bg-[#2EC4C7] px-5 py-6 sm:px-8 sm:py-8',
+        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[100dvh]',
+        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
+        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:overflow-hidden',
+        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:px-8',
+        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:py-5'
+      )}
+    >
+      <div
+        className={cn(
+          'mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center',
+          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-w-none',
+          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
+          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:justify-center',
+          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:gap-4'
+        )}
+      >
+        <header
+          className={cn(
+            'flex shrink-0 flex-col items-center text-center',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-h-[22dvh]'
+          )}
+        >
+          <BrandLogo size={88} className="drop-shadow-sm" />
 
-        <h1 className="mt-5 text-center text-3xl font-bold tracking-tight text-white sm:mt-6 sm:text-4xl lg:mt-8 lg:text-5xl">
-          Bienvenido a FarmaFácil
-        </h1>
-        <p className="mt-2 text-center text-lg font-medium text-white/90 sm:text-xl lg:mt-3 lg:text-2xl">
-          ¿Qué necesitas hoy?
-        </p>
-        {home.pharmacyName ? (
-          <p className="mt-1 text-center text-sm text-white/75 lg:mt-2 lg:text-base">
-            {home.pharmacyName}
+          <h1
+            className={cn(
+              'mt-4 text-center text-3xl font-bold tracking-tight text-white sm:mt-5 sm:text-4xl',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-3',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(1.75rem,3.2dvh,2.75rem)]',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:leading-tight'
+            )}
+          >
+            Bienvenido a FarmaFácil
+          </h1>
+          <p
+            className={cn(
+              'mt-2 text-center text-lg font-medium text-white/90 sm:text-xl',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-1.5',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(1rem,2.1dvh,1.5rem)]'
+            )}
+          >
+            ¿Qué necesitas hoy?
           </p>
-        ) : null}
+          {home.pharmacyName ? (
+            <p
+              className={cn(
+                'mt-1 text-center text-sm text-white/75',
+                '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-1',
+                '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(0.8125rem,1.5dvh,1.125rem)]'
+              )}
+            >
+              {home.pharmacyName}
+            </p>
+          ) : null}
+        </header>
 
-        <div className="mt-7 grid w-full grid-cols-2 gap-3 sm:mt-8 sm:gap-5 lg:mt-10 lg:gap-6">
+        {/*
+          Grid 2×2. En kiosko portrait (~70dvh, ancho acotado):
+          cada celda queda más alta que ancha (ratio alto/ancho > 1).
+        */}
+        <div
+          className={cn(
+            'mt-7 grid w-full grid-cols-2 gap-3 sm:mt-8 sm:gap-5',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-4',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mx-auto',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[70dvh]',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-h-[calc(100dvh-24dvh)]',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-full',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-w-[min(90vw,38rem)]',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:flex-none',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:grid-rows-2',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:gap-5',
+            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:self-center'
+          )}
+        >
           {TILES.map((tile) => {
             const Icon = tile.icon;
             const body = (
               <>
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2EC4C7]/15 text-[#1a9a9d] sm:h-14 sm:w-14 lg:h-20 lg:w-20 lg:rounded-3xl">
+                <span
+                  className={cn(
+                    'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#2EC4C7]/15 text-[#1a9a9d] sm:h-14 sm:w-14',
+                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[clamp(4.5rem,9dvh,6.5rem)]',
+                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-[clamp(4.5rem,9dvh,6.5rem)]',
+                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:rounded-3xl'
+                  )}
+                >
                   <Icon
-                    className="h-6 w-6 sm:h-7 sm:w-7 lg:h-10 lg:w-10"
+                    className={cn(
+                      'h-6 w-6 sm:h-7 sm:w-7',
+                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[clamp(2.25rem,4.5dvh,3.25rem)]',
+                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-[clamp(2.25rem,4.5dvh,3.25rem)]'
+                    )}
                     aria-hidden
                   />
                 </span>
-                <span className="mt-3 text-left sm:mt-4 lg:mt-5">
-                  <span className="block text-base font-semibold leading-snug text-slate-900 sm:text-xl lg:text-2xl lg:leading-tight">
+                <span
+                  className={cn(
+                    'mt-3 text-left sm:mt-4',
+                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-[clamp(0.75rem,2dvh,1.25rem)]',
+                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-center'
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'block text-base font-semibold leading-snug text-slate-900 sm:text-xl',
+                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(1.125rem,2.6dvh,1.75rem)]',
+                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:leading-tight'
+                    )}
+                  >
                     {tile.title}
                   </span>
-                  <span className="mt-1 block text-xs text-slate-500 sm:text-sm lg:mt-2 lg:text-base">
+                  <span
+                    className={cn(
+                      'mt-1 block text-xs text-slate-500 sm:text-sm',
+                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-2',
+                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(0.8125rem,1.8dvh,1.125rem)]'
+                    )}
+                  >
                     {tile.subtitle}
                   </span>
                 </span>
@@ -113,8 +208,15 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
 
             const className = cn(
               'flex min-h-[132px] flex-col items-start rounded-3xl bg-white p-4 text-left shadow-lg shadow-black/10 transition sm:min-h-[148px] sm:p-6',
-              'lg:min-h-[220px] lg:rounded-[2rem] lg:p-8 xl:min-h-[240px]',
-              'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70'
+              'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-full',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-full',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:items-center',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:justify-center',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-center',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:rounded-[1.75rem]',
+              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:p-[clamp(1rem,2.5dvh,1.75rem)]'
             );
 
             if (tile.id === 'account') {
