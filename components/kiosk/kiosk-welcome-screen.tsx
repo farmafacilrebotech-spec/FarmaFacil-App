@@ -73,11 +73,11 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
   }, [showQr]);
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-[#2EC4C7] px-5 pb-10 pt-8 sm:px-8">
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center">
-        <BrandLogo size={120} className="drop-shadow-sm" />
+    <div className="relative flex min-h-[100dvh] flex-col bg-[#2EC4C7] px-5 py-6 sm:px-8 sm:py-8">
+      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center">
+        <BrandLogo size={112} className="drop-shadow-sm" />
 
-        <h1 className="mt-6 text-center text-3xl font-bold tracking-tight text-white sm:text-4xl">
+        <h1 className="mt-5 text-center text-3xl font-bold tracking-tight text-white sm:mt-6 sm:text-4xl">
           Bienvenido a FarmaFácil
         </h1>
         <p className="mt-2 text-center text-lg font-medium text-white/90 sm:text-xl">
@@ -89,19 +89,19 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
           </p>
         ) : null}
 
-        <div className="mt-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
+        <div className="mt-7 grid w-full grid-cols-2 gap-3 sm:mt-8 sm:gap-5">
           {TILES.map((tile) => {
             const Icon = tile.icon;
             const body = (
               <>
-                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#2EC4C7]/15 text-[#1a9a9d]">
-                  <Icon className="h-7 w-7" aria-hidden />
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2EC4C7]/15 text-[#1a9a9d] sm:h-14 sm:w-14">
+                  <Icon className="h-6 w-6 sm:h-7 sm:w-7" aria-hidden />
                 </span>
-                <span className="mt-4 text-left">
-                  <span className="block text-xl font-semibold text-slate-900">
+                <span className="mt-3 text-left sm:mt-4">
+                  <span className="block text-base font-semibold leading-snug text-slate-900 sm:text-xl">
                     {tile.title}
                   </span>
-                  <span className="mt-1 block text-sm text-slate-500">
+                  <span className="mt-1 block text-xs text-slate-500 sm:text-sm">
                     {tile.subtitle}
                   </span>
                 </span>
@@ -109,7 +109,7 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
             );
 
             const className = cn(
-              'flex min-h-[148px] flex-col items-start rounded-3xl bg-white p-6 text-left shadow-lg shadow-black/10 transition',
+              'flex min-h-[132px] flex-col items-start rounded-3xl bg-white p-4 text-left shadow-lg shadow-black/10 transition sm:min-h-[148px] sm:p-6',
               'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70'
             );
 
@@ -196,11 +196,6 @@ function PharmacyAccountQrModal({
           <div className="mt-6 flex min-h-[280px] w-full flex-col items-center justify-center">
             {entrypoint ? (
               <>
-                {/*
-                  Preferimos QR generado desde public_id (URL pública).
-                  qr_asset_path en Storage se usará cuando el alta de farmacias
-                  publique el asset; no inventamos un path paralelo.
-                */}
                 <ScannableQr
                   value={entrypoint.publicUrl}
                   size={280}

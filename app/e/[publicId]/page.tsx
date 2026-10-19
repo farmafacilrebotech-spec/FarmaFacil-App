@@ -28,7 +28,9 @@ export default async function PublicPharmacyEntrypointPage({
           <p className="mt-2 text-sm text-muted-foreground">
             {resolved.reason === 'inactive'
               ? 'Este código QR está desactivado o ha caducado.'
-              : 'No hemos encontrado una farmacia asociada a este código.'}
+              : resolved.reason === 'error'
+                ? 'No se ha podido verificar este código en este momento. Inténtalo de nuevo en unos minutos.'
+                : 'No hemos encontrado una farmacia asociada a este código.'}
           </p>
           <Link
             href="/login"

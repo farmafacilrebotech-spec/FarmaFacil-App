@@ -92,9 +92,9 @@ export function KioskCatalogView({
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#e8f7f7]">
-      <header className="sticky top-0 z-20 border-b border-[#2EC4C7]/25 bg-[#2EC4C7] px-4 pb-4 pt-5 text-white shadow-md sm:px-6">
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
+    <div className="flex min-h-[100dvh] flex-col bg-[#e8f7f7]">
+      <header className="sticky top-0 z-20 border-b border-[#2EC4C7]/25 bg-[#2EC4C7] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 sm:pt-5">
+        <div className="mx-auto flex w-full max-w-5xl items-center gap-3">
           <Link
             href="/k"
             className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 active:scale-95"
@@ -103,7 +103,7 @@ export function KioskCatalogView({
             <ArrowLeft className="h-7 w-7" />
           </Link>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-2xl font-bold tracking-tight">
+            <h1 className="truncate text-xl font-bold tracking-tight sm:text-2xl">
               Buscar producto
             </h1>
             <p className="truncate text-sm text-white/80">{pharmacyName}</p>
@@ -122,7 +122,7 @@ export function KioskCatalogView({
           </Link>
         </div>
 
-        <div className="mx-auto mt-4 w-full max-w-3xl">
+        <div className="mx-auto mt-3 w-full max-w-5xl sm:mt-4">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-4 top-1/2 h-6 w-6 -translate-y-1/2 text-slate-400" />
             <input
@@ -132,15 +132,15 @@ export function KioskCatalogView({
               placeholder="Nombre, marca o código"
               autoCapitalize="off"
               autoCorrect="off"
-              className="h-16 w-full rounded-2xl border-0 bg-white pl-14 pr-4 text-xl text-slate-900 shadow-inner outline-none ring-0 placeholder:text-slate-400 focus:ring-4 focus:ring-white/50"
+              className="h-14 w-full rounded-2xl border-0 bg-white pl-14 pr-4 text-lg text-slate-900 shadow-inner outline-none ring-0 placeholder:text-slate-400 focus:ring-4 focus:ring-white/50 sm:h-16 sm:text-xl"
             />
           </label>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-5 sm:px-6">
+      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-4 sm:px-6 sm:py-5">
         {error ? (
-          <p className="rounded-2xl bg-white px-5 py-4 text-base text-red-700 shadow">
+          <p className="mb-4 rounded-2xl bg-white px-5 py-4 text-base text-red-700 shadow">
             {error}
           </p>
         ) : null}
@@ -161,66 +161,62 @@ export function KioskCatalogView({
           </div>
         ) : null}
 
-        <ul className="space-y-3">
+        <ul className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
           {items.map((product) => {
             const justAdded = flashId === product.id;
             return (
-              <li key={product.id}>
+              <li key={product.id} className="min-w-0">
                 <article
                   className={cn(
-                    'flex gap-4 rounded-3xl bg-white p-4 shadow-sm sm:p-5',
+                    'flex h-full flex-col rounded-2xl bg-white p-3 shadow-sm sm:rounded-3xl sm:p-4',
                     !product.available && 'opacity-70'
                   )}
                 >
-                  <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
-                    <Package className="h-10 w-10" aria-hidden />
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-400 sm:h-20 sm:w-20 sm:rounded-2xl">
+                    <Package className="h-8 w-8 sm:h-9 sm:w-9" aria-hidden />
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h2 className="text-xl font-semibold leading-snug text-slate-900">
-                      {product.name}
-                    </h2>
-                    {product.brand ? (
-                      <p className="mt-1 text-sm text-slate-500">{product.brand}</p>
-                    ) : null}
-                    <div className="mt-2 flex flex-wrap items-center gap-2">
-                      <span className="text-2xl font-bold text-[#1a9a9d]">
-                        {formatEuro(product.price)}
-                      </span>
-                      <span
-                        className={cn(
-                          'rounded-full px-3 py-1 text-xs font-semibold',
-                          product.available
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-amber-50 text-amber-800'
-                        )}
-                      >
-                        {product.available
-                          ? `Disponible · ${product.stock}`
-                          : 'Sin stock'}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      disabled={!product.available}
-                      onClick={() => onAdd(product)}
-                      className={cn(
-                        'mt-3 flex h-14 w-full items-center justify-center gap-2 rounded-2xl text-lg font-semibold shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50',
-                        justAdded
-                          ? 'bg-emerald-600 text-white'
-                          : 'bg-[#2EC4C7] text-white'
-                      )}
-                    >
-                      {justAdded ? (
-                        <>
-                          <Check className="h-6 w-6" /> Añadido
-                        </>
-                      ) : (
-                        <>
-                          <ShoppingCart className="h-6 w-6" /> Añadir
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  <h2 className="mt-3 line-clamp-2 min-h-[2.75rem] text-center text-sm font-semibold leading-snug text-slate-900 sm:min-h-[3.25rem] sm:text-base">
+                    {product.name}
+                  </h2>
+                  <p className="mt-1 line-clamp-1 text-center text-xs text-slate-500">
+                    {product.brand || '\u00A0'}
+                  </p>
+                  <p className="mt-2 text-center text-lg font-bold text-[#1a9a9d] sm:text-xl">
+                    {formatEuro(product.price)}
+                  </p>
+                  <span
+                    className={cn(
+                      'mx-auto mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold sm:text-xs',
+                      product.available
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : 'bg-amber-50 text-amber-800'
+                    )}
+                  >
+                    {product.available
+                      ? `Disponible · ${product.stock}`
+                      : 'Sin stock'}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={!product.available}
+                    onClick={() => onAdd(product)}
+                    className={cn(
+                      'mt-3 flex h-12 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:mt-auto sm:h-14 sm:rounded-2xl sm:text-base',
+                      justAdded
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-[#2EC4C7] text-white'
+                    )}
+                  >
+                    {justAdded ? (
+                      <>
+                        <Check className="h-5 w-5" /> Añadido
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingCart className="h-5 w-5" /> Añadir
+                      </>
+                    )}
+                  </button>
                 </article>
               </li>
             );

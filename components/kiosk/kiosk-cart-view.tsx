@@ -129,11 +129,11 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
 
   if (ticket) {
     return (
-      <div className="min-h-screen bg-[#e8f7f7] print:bg-white">
-        <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col px-4 py-6 sm:px-6 print:max-w-none print:px-0 print:py-0">
-          <div className="mb-4 text-center print:hidden">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#e8f7f7] print:block print:bg-white">
+        <div className="mx-auto flex w-full max-w-lg flex-col px-4 py-8 sm:px-6 print:max-w-none print:px-0 print:py-0">
+          <div className="mb-5 text-center print:hidden">
             <p className="text-sm font-medium text-[#1a9a9d]">Pedido creado</p>
-            <h1 className="text-2xl font-bold text-slate-900">
+            <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">
               Pasa por mostrador
             </h1>
           </div>
@@ -168,9 +168,9 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-[#e8f7f7]">
-      <header className="sticky top-0 z-20 border-b border-[#2EC4C7]/25 bg-[#2EC4C7] px-4 pb-5 pt-5 text-white shadow-md sm:px-6">
-        <div className="mx-auto flex w-full max-w-3xl items-center gap-3">
+    <div className="flex min-h-[100dvh] flex-col bg-[#e8f7f7]">
+      <header className="sticky top-0 z-20 border-b border-[#2EC4C7]/25 bg-[#2EC4C7] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 sm:pb-5 sm:pt-5">
+        <div className="mx-auto flex w-full max-w-xl items-center gap-3">
           <Link
             href="/k/catalogo"
             className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/15 active:scale-95"
@@ -185,21 +185,23 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 py-5 sm:px-6">
+      <main className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 py-5 sm:px-6">
         {cart.lines.length === 0 ? (
-          <div className="rounded-3xl bg-white px-6 py-16 text-center shadow">
-            <p className="text-xl font-semibold text-slate-800">
-              El carrito está vacío
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              Añade productos desde el buscador.
-            </p>
-            <Link
-              href="/k/catalogo"
-              className="mt-8 inline-flex h-14 items-center justify-center rounded-2xl bg-[#2EC4C7] px-8 text-base font-semibold text-white"
-            >
-              Buscar producto
-            </Link>
+          <div className="flex flex-1 flex-col items-center justify-center">
+            <div className="w-full rounded-3xl bg-white px-6 py-14 text-center shadow">
+              <p className="text-xl font-semibold text-slate-800">
+                El carrito está vacío
+              </p>
+              <p className="mt-2 text-sm text-slate-500">
+                Añade productos desde el buscador.
+              </p>
+              <Link
+                href="/k/catalogo"
+                className="mt-8 inline-flex h-14 w-full items-center justify-center rounded-2xl bg-[#2EC4C7] px-8 text-base font-semibold text-white"
+              >
+                Buscar producto
+              </Link>
+            </div>
           </div>
         ) : (
           <>
