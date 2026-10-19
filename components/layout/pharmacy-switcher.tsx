@@ -17,6 +17,7 @@ import {
   pharmacySwitcherMode,
   type ShellPharmacyOption,
 } from '@/lib/pharmacies/shell-pharmacies';
+import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
 
 type PharmacySwitcherProps = {
   pharmacies: ShellPharmacyOption[];
@@ -112,11 +113,16 @@ export function PharmacySwitcher({
             />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{p.name}</p>
-              {(p.city || p.province) && (
-                <p className="truncate text-xs text-muted-foreground">
-                  {[p.city, p.province].filter(Boolean).join(', ')}
-                </p>
-              )}
+              <p className="truncate text-xs text-muted-foreground">
+                {[
+                  p.roleKey ? pharmacyRoleLabel(p.roleKey) : p.roleName,
+                  p.city || p.province
+                    ? [p.city, p.province].filter(Boolean).join(', ')
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ') || 'Farmacia'}
+              </p>
             </div>
             {current.id === p.id ? (
               <Check className="h-4 w-4 shrink-0 text-primary" />

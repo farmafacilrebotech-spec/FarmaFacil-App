@@ -4,6 +4,8 @@ export type CurrentProfile = {
   id: string;
   email: string;
   fullName: string | null;
+  /** Preferencia de farmacia; nunca autoriza por sí sola. */
+  lastPharmacyId: string | null;
 };
 
 export type PlatformAccessResult =
@@ -92,7 +94,7 @@ export async function getCurrentProfile(): Promise<{
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name')
+    .select('id, email, full_name, last_pharmacy_id')
     .eq('id', user.id)
     .maybeSingle();
 
@@ -112,6 +114,7 @@ export async function getCurrentProfile(): Promise<{
         id: user.id,
         email: user.email ?? '',
         fullName: null,
+        lastPharmacyId: null,
       },
     };
   }
@@ -122,6 +125,10 @@ export async function getCurrentProfile(): Promise<{
       id: profile.id,
       email: profile.email,
       fullName: profile.full_name,
+      lastPharmacyId:
+        typeof profile.last_pharmacy_id === 'string'
+          ? profile.last_pharmacy_id
+          : null,
     },
   };
 }

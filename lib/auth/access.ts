@@ -11,6 +11,11 @@ import {
   type PendingPharmacyInvitation,
 } from '@/lib/pharmacies/invitations';
 import { loadPharmacyCommercialGate } from '@/lib/pharmacies/commercial-access';
+import {
+  pathForTenantRouteDecision,
+  resolveLostPharmacyAccessRedirect,
+  resolveTenantRouteDecision,
+} from '@/lib/pharmacies/pharmacy-access-routing';
 
 export type { CurrentProfile, PendingPharmacyInvitation };
 
@@ -79,11 +84,12 @@ function mapMembership(row: MembershipRow): PharmacyMembershipSummary | null {
 }
 
 /**
- * Carga memberships active del usuario autenticado.
- * Autorización: RLS (profile_id = auth.uid() u otras reglas de 012).
+ * Carga TODAS las memberships active del usuario (cualquier rol de farmacia).
+ * Autorización: RLS (profile_id = auth.uid()).
  * No usa last_pharmacy_id ni pharmacy_id del cliente como autorización.
+ * invited / suspended / revoked quedan fuera por el filtro status=active.
  */
-async function listActiveMemberships(
+export async function listActiveMemberships(
   profileId: string
 ): Promise<{ memberships: PharmacyMembershipSummary[]; error?: string }> {
   const supabase = createClient();
@@ -94,7 +100,7 @@ async function listActiveMemberships(
       `
       id,
       pharmacy_id,
-      roles!inner (
+      roles!pharmacy_memberships_role_id_fkey!inner (
         key,
         name
       )
@@ -205,7 +211,8 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
 
 /**
  * Destino interno tras autenticación (login, continue, post first-access).
- * Nunca usa pharmacy_id del cliente ni last_pharmacy_id como autorización.
+ * ≥2 memberships active → SIEMPRE selector (last_pharmacy_id no salta el paso).
+ * SuperAdmin (platform) → panel plataforma; acceso miembro sigue en /f/….
  */
 export function destinationForAppAccess(access: AppAccessResult): string {
   switch (access.status) {
@@ -215,8 +222,19 @@ export function destinationForAppAccess(access: AppAccessResult): string {
       return '/dashboard';
     case 'pharmacy':
       return `/f/${access.membership.pharmacyId}/dashboard`;
-    case 'multiple_pharmacies':
-      return '/auth/select-pharmacy';
+    case 'multiple_pharmacies': {
+      const decision = resolveTenantRouteDecision({
+        activeMemberships: access.memberships.map((m) => ({
+          pharmacyId: m.pharmacyId,
+          roleKey: m.roleKey,
+          roleName: m.roleName,
+          membershipId: m.membershipId,
+        })),
+      });
+      return (
+        pathForTenantRouteDecision(decision) ?? '/auth/select-pharmacy'
+      );
+    }
     case 'invited':
       return access.needsFirstAccess ? '/first-access' : '/auth/invitations';
     case 'forbidden':
@@ -280,8 +298,72 @@ export async function requireActivePharmacyMembership(pharmacyId: string): Promi
     };
   }
 
-  // platform / invited / forbidden → no acceso tenant por membership
+  // SuperAdmin de plataforma puede además ser miembro de farmacias:
+  // el panel /dashboard queda separado; /f/:id exige membership active.
+  if (access.status === 'platform') {
+    const { memberships, error: memError } = await listActiveMemberships(
+      access.profile.id
+    );
+    if (memError) {
+      return { ok: false, reason: 'error', message: memError };
+    }
+    const membership = memberships.find((m) => m.pharmacyId === pharmacyId);
+    if (!membership) {
+      return { ok: false, reason: 'forbidden' };
+    }
+    return {
+      ok: true,
+      profile: access.profile,
+      membership,
+    };
+  }
+
+  // invited / forbidden → no acceso tenant operativo
   return { ok: false, reason: 'forbidden' };
+}
+
+/**
+ * Redirección cuando la URL apunta a una farmacia sin membership active.
+ * Valida en servidor las memberships active restantes.
+ */
+export async function redirectPathAfterLostPharmacyAccess(
+  failedPharmacyId: string
+): Promise<string> {
+  const access = await resolveAppAccess();
+
+  if (access.status === 'pharmacy') {
+    return `/f/${access.membership.pharmacyId}/dashboard`;
+  }
+
+  if (access.status === 'multiple_pharmacies') {
+    return resolveLostPharmacyAccessRedirect({
+      failedPharmacyId,
+      activeMemberships: access.memberships.map((m) => ({
+        pharmacyId: m.pharmacyId,
+        roleKey: m.roleKey,
+        roleName: m.roleName,
+        membershipId: m.membershipId,
+      })),
+    });
+  }
+
+  if (access.status === 'platform') {
+    const { memberships } = await listActiveMemberships(access.profile.id);
+    if (memberships.length > 0) {
+      return resolveLostPharmacyAccessRedirect({
+        failedPharmacyId,
+        activeMemberships: memberships.map((m) => ({
+          pharmacyId: m.pharmacyId,
+          roleKey: m.roleKey,
+          roleName: m.roleName,
+          membershipId: m.membershipId,
+        })),
+      });
+    }
+    return '/dashboard';
+  }
+
+  return destinationForAppAccess(access);
 }
 
 /**

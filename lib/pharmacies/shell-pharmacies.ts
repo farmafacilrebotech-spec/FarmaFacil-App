@@ -10,6 +10,9 @@ export type ShellPharmacyOption = {
   province: string | null;
   logoColor: string | null;
   logoUrl?: string | null;
+  /** Rol del usuario en esta farmacia (tenant). Ausente en listado SuperAdmin. */
+  roleKey?: string | null;
+  roleName?: string | null;
 };
 
 export type PharmacySwitcherMode = 'hidden' | 'static' | 'select';

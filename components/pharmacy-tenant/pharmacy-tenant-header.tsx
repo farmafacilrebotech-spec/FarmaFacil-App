@@ -1,7 +1,8 @@
 'use client';
 
 import * as React from 'react';
-import { Menu, LogOut, Moon, Sun } from 'lucide-react';
+import { Menu, LogOut, Moon, Sun, Store } from 'lucide-react';
+import Link from 'next/link';
 import { useTheme } from 'next-themes';
 
 import { BrandLogo, PharmacyLogo } from '@/components/brand';
@@ -60,14 +61,14 @@ export function PharmacyTenantHeader({
         <BrandLogo variant="mark" size={32} />
       </div>
 
-      {/* Desktop: nombre fijo o selector solo entre farmacias autorizadas */}
-      <div className="hidden min-w-0 items-center gap-2.5 lg:flex">
+      {/* Nombre / selector entre farmacias autorizadas (memberships active) */}
+      <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-none">
         {multi ? (
           <PharmacySwitcher
             pharmacies={authorizedPharmacies}
             currentId={pharmacy.id}
             hrefForPharmacy={(id) => `/f/${id}/dashboard`}
-            className="flex max-w-[220px] shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="flex max-w-[min(100%,220px)] shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
           />
         ) : (
           <>
@@ -85,7 +86,7 @@ export function PharmacyTenantHeader({
             </div>
           </>
         )}
-        <Badge variant="secondary" className="shrink-0 font-medium">
+        <Badge variant="secondary" className="hidden shrink-0 font-medium sm:inline-flex">
           {user.roleLabel}
         </Badge>
       </div>
@@ -141,6 +142,16 @@ export function PharmacyTenantHeader({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            {multi ? (
+              <>
+                <DropdownMenuItem asChild>
+                  <Link href="/auth/select-pharmacy" className="cursor-default">
+                    <Store className="mr-2 h-4 w-4" /> Cambiar de farmacia
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            ) : null}
             <form action={signOutAction}>
               <DropdownMenuItem
                 asChild

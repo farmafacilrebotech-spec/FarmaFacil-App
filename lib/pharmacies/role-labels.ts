@@ -4,7 +4,7 @@ const ROLE_LABELS: Record<string, string> = {
   PHARMACY_OWNER: 'Propietario',
   PHARMACY_ADMIN: 'Administrador',
   PHARMACIST: 'Farmacéutico',
-  STAFF: 'Personal',
+  STAFF: 'Empleado',
 };
 
 /**

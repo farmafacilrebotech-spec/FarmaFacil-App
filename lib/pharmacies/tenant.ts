@@ -24,8 +24,46 @@ export type PharmacyTenantContext = {
   pendingInvitations: PendingPharmacyInvitation[];
 };
 
+type AuthorizedMembershipRow = {
+  pharmacy_id: string;
+  roles:
+    | { key: string; name: string }
+    | { key: string; name: string }[]
+    | null;
+  pharmacies:
+    | {
+        id: string;
+        name: string;
+        city: string | null;
+        province: string | null;
+        logo_color: string | null;
+        pharmacy_branding:
+          | { logo_url: string | null }
+          | { logo_url: string | null }[]
+          | null;
+      }
+    | {
+        id: string;
+        name: string;
+        city: string | null;
+        province: string | null;
+        logo_color: string | null;
+        pharmacy_branding:
+          | { logo_url: string | null }
+          | { logo_url: string | null }[]
+          | null;
+      }[]
+    | null;
+};
+
+function unwrapOne<T>(value: T | T[] | null | undefined): T | null {
+  if (!value) return null;
+  return Array.isArray(value) ? value[0] ?? null : value;
+}
+
 /**
- * Lista farmacias con membership active del perfil (aislamiento RLS).
+ * Lista farmacias con membership active del perfil (cualquier rol).
+ * Incluye roleKey/roleName para el selector. Aislamiento RLS por profile_id.
  */
 export async function listAuthorizedPharmaciesForProfile(
   profileId: string
@@ -36,7 +74,11 @@ export async function listAuthorizedPharmaciesForProfile(
     .select(
       `
       pharmacy_id,
-      pharmacies!inner (
+      roles!pharmacy_memberships_role_id_fkey (
+        key,
+        name
+      ),
+      pharmacies!pharmacy_memberships_pharmacy_id_fkey!inner (
         id,
         name,
         city,
@@ -59,37 +101,11 @@ export async function listAuthorizedPharmaciesForProfile(
   }
 
   const options: ShellPharmacyOption[] = [];
-  for (const row of data ?? []) {
-    const raw = row.pharmacies as
-      | {
-          id: string;
-          name: string;
-          city: string | null;
-          province: string | null;
-          logo_color: string | null;
-          pharmacy_branding:
-            | { logo_url: string | null }
-            | { logo_url: string | null }[]
-            | null;
-        }
-      | {
-          id: string;
-          name: string;
-          city: string | null;
-          province: string | null;
-          logo_color: string | null;
-          pharmacy_branding:
-            | { logo_url: string | null }
-            | { logo_url: string | null }[]
-            | null;
-        }[]
-      | null;
-    const ph = Array.isArray(raw) ? raw[0] : raw;
+  for (const row of (data as AuthorizedMembershipRow[] | null) ?? []) {
+    const ph = unwrapOne(row.pharmacies);
     if (!ph?.id) continue;
-    const brandingRaw = ph.pharmacy_branding;
-    const branding = Array.isArray(brandingRaw)
-      ? brandingRaw[0] ?? null
-      : brandingRaw;
+    const role = unwrapOne(row.roles);
+    const branding = unwrapOne(ph.pharmacy_branding);
     options.push({
       id: ph.id,
       name: ph.name,
@@ -97,11 +113,37 @@ export async function listAuthorizedPharmaciesForProfile(
       province: ph.province ?? null,
       logoColor: ph.logo_color ?? null,
       logoUrl: branding?.logo_url ?? null,
+      roleKey: role?.key ?? null,
+      roleName: role?.name ?? null,
     });
   }
 
   options.sort((a, b) => a.name.localeCompare(b.name, 'es'));
   return options;
+}
+
+/**
+ * Persiste preferencia last_pharmacy_id (trigger exige membership active).
+ * No autoriza por sí sola; solo mejora el próximo login / continue.
+ */
+export async function persistLastPharmacyPreference(
+  profileId: string,
+  pharmacyId: string
+): Promise<void> {
+  if (!profileId || !pharmacyId) return;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('profiles')
+    .update({ last_pharmacy_id: pharmacyId })
+    .eq('id', profileId);
+
+  if (error) {
+    console.error(
+      '[pharmacy-tenant] persistLastPharmacy',
+      error.code,
+      error.message
+    );
+  }
 }
 
 /**
@@ -145,19 +187,21 @@ export async function loadPharmacyTenantContext(
     return { ok: false, reason: 'forbidden' };
   }
 
-  const brandingRaw = pharmacy.pharmacy_branding as
-    | { logo_url: string | null }
-    | { logo_url: string | null }[]
-    | null;
-  const branding = Array.isArray(brandingRaw)
-    ? brandingRaw[0] ?? null
-    : brandingRaw;
+  const branding = unwrapOne(
+    pharmacy.pharmacy_branding as
+      | { logo_url: string | null }
+      | { logo_url: string | null }[]
+      | null
+  );
 
   const [{ invitations: pendingInvitations }, authorizedPharmacies] =
     await Promise.all([
       listPendingPharmacyInvitations(access.profile.id),
       listAuthorizedPharmaciesForProfile(access.profile.id),
     ]);
+
+  // Preferencia validada: solo tras comprobar membership active en servidor.
+  void persistLastPharmacyPreference(access.profile.id, pharmacyId);
 
   return {
     ok: true,

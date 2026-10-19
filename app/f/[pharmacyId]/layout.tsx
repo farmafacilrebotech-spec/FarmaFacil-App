@@ -1,6 +1,9 @@
 import { redirect } from 'next/navigation';
 
-import { requireActivePharmacyMembership } from '@/lib/auth/access';
+import {
+  redirectPathAfterLostPharmacyAccess,
+  requireActivePharmacyMembership,
+} from '@/lib/auth/access';
 import { loadPharmacyCommercialGate } from '@/lib/pharmacies/commercial-access';
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 import { PharmacyAccessSuspended } from '@/components/pharmacy-tenant/pharmacy-access-suspended';
@@ -10,7 +13,7 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Layout tenant: aislado del panel SuperAdmin ((app)).
- * 1) Membership active
+ * 1) Membership active (cualquier rol) para esta farmacia
  * 2) Operatividad comercial → si no, pantalla informativa (sin datos operativos)
  * 3) Contexto completo solo si operable (evita SELECT de branding/catálogo bloqueados)
  */
@@ -27,7 +30,8 @@ export default async function PharmacyTenantLayout({
     if (membership.reason === 'unauthenticated') {
       redirect('/login');
     }
-    redirect('/access-denied');
+    // Perdió acceso a esta farmacia → otra active o selector (validado en servidor).
+    redirect(await redirectPathAfterLostPharmacyAccess(params.pharmacyId));
   }
 
   const commercial = await loadPharmacyCommercialGate(params.pharmacyId);
