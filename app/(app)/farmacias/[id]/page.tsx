@@ -9,6 +9,8 @@ import {
 import { listPharmacyProducts } from '@/lib/pharmacies/products';
 import { listPharmacyKioskDevices } from '@/lib/kiosk/devices';
 import { getPharmacyKioskEntitlement } from '@/lib/kiosk/entitlement';
+import { getPharmacyAssistantEntitlement } from '@/lib/kiosk/assistant/entitlement';
+import { getPharmacyAssistantUsageCurrentMonth } from '@/lib/kiosk/assistant/settings';
 import { loadOrEnsurePharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
 import { PharmacyDetailClient } from '@/components/pharmacies/pharmacy-detail-client';
 import { getCurrentProfile } from '@/lib/auth/platform';
@@ -29,6 +31,8 @@ export default async function PharmacyDetailPage({
     catalog,
     kiosk,
     kioskEnt,
+    assistantEnt,
+    assistantUsage,
     profileResult,
     homeQr,
   ] = await Promise.all([
@@ -39,6 +43,8 @@ export default async function PharmacyDetailPage({
     listPharmacyProducts(params.id, { status: 'all' }),
     listPharmacyKioskDevices(params.id),
     getPharmacyKioskEntitlement(params.id),
+    getPharmacyAssistantEntitlement(params.id),
+    getPharmacyAssistantUsageCurrentMonth(params.id),
     getCurrentProfile(),
     loadOrEnsurePharmacyHomeEntrypoint(params.id),
   ]);
@@ -68,6 +74,10 @@ export default async function PharmacyDetailPage({
       kioskCommercialUiState={kioskEnt.uiState}
       kioskEntitlement={kioskEnt.entitlement}
       kioskModuleUsable={kioskEnt.moduleUsable}
+      assistantCommercialUiState={assistantEnt.uiState}
+      assistantEntitlement={assistantEnt.entitlement}
+      assistantUsageRequestCount={assistantUsage?.requestCount ?? 0}
+      assistantUsagePeriodYm={assistantUsage?.periodYm ?? ''}
       homeEntrypoint={homeQr.ok ? homeQr.entrypoint : null}
       homeEntrypointError={homeQr.ok ? null : homeQr.error}
     />

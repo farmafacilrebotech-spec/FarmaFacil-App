@@ -15,6 +15,7 @@ import {
   ShoppingCart,
   Activity,
   MonitorSmartphone,
+  Bot,
   Globe,
   Mail,
   Phone,
@@ -59,12 +60,17 @@ import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel
 import { CatalogoTab } from '@/components/pharmacies/tabs/catalogo-tab';
 import { QrTab } from '@/components/pharmacies/tabs/qr-tab';
 import { KioskDevicesPanel } from '@/components/kiosk/kiosk-devices-panel';
+import { AssistantEntitlementAdminPanel } from '@/components/kiosk/assistant-entitlement-admin-panel';
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
 import type { KioskDeviceRow } from '@/lib/kiosk/devices';
 import type {
   KioskCommercialUiState,
   KioskEntitlementRecord,
 } from '@/lib/kiosk/entitlement-status';
+import type {
+  AssistantCommercialUiState,
+  AssistantEntitlementRecord,
+} from '@/lib/kiosk/assistant/entitlement-status';
 import type { PharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 import type { PharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
 
@@ -77,6 +83,7 @@ const tabs = [
   { id: 'clientes', label: 'Clientes', icon: User, ready: false },
   { id: 'catalogo', label: 'Catálogo', icon: Pill, ready: true },
   { id: 'kiosko', label: 'Kiosko', icon: MonitorSmartphone, ready: true },
+  { id: 'asistente', label: 'Asistente IA', icon: Bot, ready: true },
   { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, ready: false },
   { id: 'actividad', label: 'Actividad', icon: Activity, ready: false },
 ] as const;
@@ -196,6 +203,10 @@ export function PharmacyDetailClient({
   kioskCommercialUiState = 'not_contracted',
   kioskEntitlement = null,
   kioskModuleUsable = false,
+  assistantCommercialUiState = 'not_contracted',
+  assistantEntitlement = null,
+  assistantUsageRequestCount = 0,
+  assistantUsagePeriodYm = '',
   homeEntrypoint = null,
   homeEntrypointError = null,
 }: {
@@ -212,6 +223,10 @@ export function PharmacyDetailClient({
   kioskCommercialUiState?: KioskCommercialUiState;
   kioskEntitlement?: KioskEntitlementRecord | null;
   kioskModuleUsable?: boolean;
+  assistantCommercialUiState?: AssistantCommercialUiState;
+  assistantEntitlement?: AssistantEntitlementRecord | null;
+  assistantUsageRequestCount?: number;
+  assistantUsagePeriodYm?: string;
   homeEntrypoint?: PharmacyHomeEntrypoint | null;
   homeEntrypointError?: string | null;
 }) {
@@ -1123,6 +1138,16 @@ export function PharmacyDetailClient({
           />
         )}
 
+        {activeTab === 'asistente' && (
+          <AssistantEntitlementAdminPanel
+            pharmacyId={pharmacy.id}
+            uiState={assistantCommercialUiState}
+            entitlement={assistantEntitlement}
+            usageRequestCount={assistantUsageRequestCount}
+            usagePeriodYm={assistantUsagePeriodYm}
+          />
+        )}
+
         {activeTab === 'qr' && (
           <QrTab
             pharmacyName={pharmacy.name}
@@ -1136,6 +1161,7 @@ export function PharmacyDetailClient({
           activeTab !== 'usuarios' &&
           activeTab !== 'catalogo' &&
           activeTab !== 'kiosko' &&
+          activeTab !== 'asistente' &&
           activeTab !== 'qr' && (
           <PendingPanel
             title={tabs.find((t) => t.id === activeTab)?.label ?? 'Sección'}

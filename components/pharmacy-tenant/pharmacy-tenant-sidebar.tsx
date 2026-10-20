@@ -11,6 +11,7 @@ import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { initials } from '@/lib/format';
 import { SignOutButton } from '@/components/auth/sign-out-button';
+import { AssistantConsultPendingBadge } from '@/components/kiosk/assistant-consult-pending-badge';
 
 export type TenantShellUser = {
   name: string;
@@ -139,6 +140,12 @@ export function PharmacyTenantSidebar({
                     <span className={cn(collapsed && 'lg:hidden')}>
                       {item.label}
                     </span>
+                    {item.segment === 'asistente' ? (
+                      <AssistantConsultPendingBadge
+                        pharmacyId={pharmacyId}
+                        collapsed={collapsed}
+                      />
+                    ) : null}
                   </Link>
                 </li>
               );

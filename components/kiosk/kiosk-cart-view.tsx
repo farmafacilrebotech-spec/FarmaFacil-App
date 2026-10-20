@@ -20,6 +20,7 @@ import {
   KioskOrderTicket,
   type KioskTicketData,
 } from '@/components/kiosk/kiosk-order-ticket';
+import { endKioskClientPurchaseSession } from '@/lib/kiosk/end-client-purchase-session';
 import { formatEuro } from '@/lib/orders/labels';
 import { cn } from '@/lib/utils';
 
@@ -115,6 +116,8 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
       });
     }
 
+    // Nuevo turno de cliente: invalida turno en servidor + limpia storage.
+    await endKioskClientPurchaseSession();
     clear();
     try {
       window.sessionStorage.removeItem(CLIENT_REQUEST_KEY);

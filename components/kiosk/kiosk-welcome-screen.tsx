@@ -2,67 +2,69 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import {
-  MessageCircle,
-  QrCode,
-  Search,
-  ShoppingCart,
-  X,
-} from 'lucide-react';
+import { Caveat } from 'next/font/google';
+import { QrCode, X } from 'lucide-react';
 
 import { BrandLogo } from '@/components/brand';
+import {
+  KioskIconAssistant,
+  KioskIconCart,
+  KioskIconQr,
+  KioskIconSearch,
+  KioskTileArrow,
+} from '@/components/kiosk/kiosk-home-icons';
 import { ScannableQr } from '@/components/kiosk/scannable-qr';
 import type { KioskHomeContext } from '@/lib/kiosk/home-context';
 import { cn } from '@/lib/utils';
 
-type Tile =
-  | {
-      id: 'catalog' | 'assistant' | 'cart';
-      title: string;
-      subtitle: string;
-      href: string;
-      icon: React.ComponentType<{ className?: string }>;
-    }
-  | {
-      id: 'account';
-      title: string;
-      subtitle: string;
-      icon: React.ComponentType<{ className?: string }>;
-    };
+const sloganFont = Caveat({
+  subsets: ['latin'],
+  weight: ['600'],
+  display: 'swap',
+});
+
+type Tile = {
+  id: 'catalog' | 'assistant' | 'account' | 'cart';
+  title: string;
+  subtitle: string;
+  href?: string;
+  Icon: React.ComponentType<{ className?: string; title?: string }>;
+};
 
 const TILES: Tile[] = [
   {
     id: 'catalog',
     title: 'Buscar producto',
-    subtitle: 'Buscador inteligente',
+    subtitle: 'Explora nuestro catálogo de productos',
     href: '/k/catalogo',
-    icon: Search,
+    Icon: KioskIconSearch,
   },
   {
     id: 'assistant',
     title: 'Asistente IA',
-    subtitle: 'Consulta farmacéutica',
+    subtitle: 'Consulta tus dudas farmacéuticas',
     href: '/k/asistente',
-    icon: MessageCircle,
+    Icon: KioskIconAssistant,
   },
   {
     id: 'account',
     title: 'Accede a tu cuenta',
-    subtitle: 'Escanea con tu móvil',
-    icon: QrCode,
+    subtitle: 'Escanea el código QR con tu móvil',
+    Icon: KioskIconQr,
   },
   {
     id: 'cart',
     title: 'Mi carrito',
-    subtitle: 'Imprimir ticket',
+    subtitle: 'Revisa tu pedido e imprime tu ticket',
     href: '/k/carrito',
-    icon: ShoppingCart,
+    Icon: KioskIconCart,
   },
 ];
 
 /**
- * Media query kiosko 21,5" portrait (literales completos para Tailwind JIT).
- * orientation + altura + ancho: no afecta a móviles ni landscape.
+ * Bienvenida kiosko — composición del iPhone, tamaños moderados.
+ * Centra el bloque en pantallas altas (sin estirar el interior de las tarjetas).
+ * Iconos/botones: rem + vw (no vh exclusivos). Sin overflow:hidden de recorte.
  */
 export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
   const [showQr, setShowQr] = React.useState(false);
@@ -79,46 +81,54 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
   return (
     <div
       className={cn(
-        'relative flex min-h-[100dvh] flex-col bg-[#2EC4C7] px-5 py-6 sm:px-8 sm:py-8',
-        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[100dvh]',
-        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
-        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:overflow-hidden',
-        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:px-8',
-        '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:py-5'
+        'relative flex min-h-[100dvh] flex-col justify-center bg-[#2EC4C7]',
+        // Padding superior suficiente para no recortar el logo (safe area + aire).
+        'px-5 pb-6 pt-[max(1.5rem,env(safe-area-inset-top,0px))] sm:px-8 sm:pb-8 sm:pt-8',
+        // Kiosko portrait grande: un poco más de aire, sin forzar recorte.
+        '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:px-[clamp(1.5rem,4vw,2.75rem)]',
+        '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:py-[clamp(1.25rem,3vw,2rem)]'
       )}
     >
+      <DecorativeCross className="pointer-events-none absolute -left-10 -top-8 h-[42vw] max-h-[22rem] w-[42vw] max-w-[22rem] text-white/[0.10]" />
+      <DecorativeCross className="pointer-events-none absolute -bottom-12 -right-10 h-[48vw] max-h-[26rem] w-[48vw] max-w-[26rem] rotate-12 text-white/[0.09]" />
+
       <div
         className={cn(
-          'mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center',
-          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-w-none',
-          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
-          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:justify-center',
-          '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:gap-4'
+          'relative z-10 mx-auto flex w-full max-w-3xl flex-col items-center',
+          '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:max-w-[min(48rem,90vw)]'
         )}
       >
-        <header
-          className={cn(
-            'flex shrink-0 flex-col items-center text-center',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-h-[22dvh]'
-          )}
-        >
-          <BrandLogo size={88} className="drop-shadow-sm" />
+        <header className="flex shrink-0 flex-col items-center text-center">
+          {/*
+            PNG oficial 709×711. Visual ~88–120 px móvil; hasta ~160 px kiosko.
+            object-contain vía BrandLogo; sin scale ni recorte.
+          */}
+          <div
+            className={cn(
+              'w-[clamp(5.5rem,22vw,7.5rem)]',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:900px)]:w-[clamp(6.5rem,14vw,9rem)]',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1400px)]:w-[clamp(7.5rem,12vw,10rem)]'
+            )}
+          >
+            <BrandLogo
+              size={200}
+              className="block w-full [&_img]:!h-auto [&_img]:!w-full [&_img]:object-contain"
+            />
+          </div>
 
           <h1
             className={cn(
-              'mt-4 text-center text-3xl font-bold tracking-tight text-white sm:mt-5 sm:text-4xl',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-3',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(1.75rem,3.2dvh,2.75rem)]',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:leading-tight'
+              'mt-4 text-3xl font-bold tracking-tight text-white sm:mt-5 sm:text-4xl',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:mt-5',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:text-[clamp(2rem,4.5vw,2.75rem)]'
             )}
           >
             Bienvenido a FarmaFácil
           </h1>
           <p
             className={cn(
-              'mt-2 text-center text-lg font-medium text-white/90 sm:text-xl',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-1.5',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(1rem,2.1dvh,1.5rem)]'
+              'mt-2 text-lg font-medium text-white/92 sm:text-xl',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:text-[clamp(1.125rem,2.8vw,1.5rem)]'
             )}
           >
             ¿Qué necesitas hoy?
@@ -126,9 +136,8 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
           {home.pharmacyName ? (
             <p
               className={cn(
-                'mt-1 text-center text-sm text-white/75',
-                '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-1',
-                '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(0.8125rem,1.5dvh,1.125rem)]'
+                'mt-1 text-sm text-white/75',
+                '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:text-base'
               )}
             >
               {home.pharmacyName}
@@ -136,87 +145,74 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
           ) : null}
         </header>
 
-        {/*
-          Grid 2×2. En kiosko portrait (~70dvh, ancho acotado):
-          cada celda queda más alta que ancha (ratio alto/ancho > 1).
-        */}
         <div
           className={cn(
             'mt-7 grid w-full grid-cols-2 gap-3 sm:mt-8 sm:gap-5',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-4',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mx-auto',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[70dvh]',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-h-[calc(100dvh-24dvh)]',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-full',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:max-w-[min(90vw,38rem)]',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:flex-none',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:grid-rows-2',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:gap-5',
-            '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:self-center'
+            '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:mt-8',
+            '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:gap-[clamp(1rem,2.2vw,1.35rem)]'
           )}
         >
           {TILES.map((tile) => {
-            const Icon = tile.icon;
+            const { Icon } = tile;
             const body = (
-              <>
+              <span className="flex w-full flex-col items-center justify-center gap-3 sm:gap-3.5">
+                {/* Icono: rem + vw, aspect 1/1, object-contain, sin overflow */}
                 <span
                   className={cn(
-                    'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#2EC4C7]/15 text-[#1a9a9d] sm:h-14 sm:w-14',
-                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[clamp(4.5rem,9dvh,6.5rem)]',
-                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-[clamp(4.5rem,9dvh,6.5rem)]',
-                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:rounded-3xl'
+                    'relative aspect-square shrink-0 overflow-hidden',
+                    // Móvil 65–90 px
+                    'w-[clamp(4.0625rem,18vw,5.625rem)]',
+                    // Tablet / portrait medio 90–120 px
+                    '[@media(orientation:portrait)_and_(min-width:600px)_and_(min-height:800px)]:w-[clamp(5.625rem,14vw,7.5rem)]',
+                    // Kiosko grande 110–150 px
+                    '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1200px)]:w-[clamp(6.875rem,11vw,9.375rem)]'
                   )}
                 >
                   <Icon
-                    className={cn(
-                      'h-6 w-6 sm:h-7 sm:w-7',
-                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-[clamp(2.25rem,4.5dvh,3.25rem)]',
-                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-[clamp(2.25rem,4.5dvh,3.25rem)]'
-                    )}
-                    aria-hidden
+                    className="!h-full !w-full object-contain"
+                    title={tile.title}
                   />
                 </span>
-                <span
-                  className={cn(
-                    'mt-3 text-left sm:mt-4',
-                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-[clamp(0.75rem,2dvh,1.25rem)]',
-                    '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-center'
-                  )}
-                >
+
+                <span className="flex w-full max-w-[17ch] flex-col items-center gap-1 px-0.5 text-center sm:max-w-[19ch]">
                   <span
                     className={cn(
-                      'block text-base font-semibold leading-snug text-slate-900 sm:text-xl',
-                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(1.125rem,2.6dvh,1.75rem)]',
-                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:leading-tight'
+                      'line-clamp-2 text-base font-bold leading-snug text-slate-900 sm:text-xl',
+                      '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1200px)]:text-[clamp(1.2rem,2.6vw,1.65rem)]'
                     )}
                   >
                     {tile.title}
                   </span>
                   <span
                     className={cn(
-                      'mt-1 block text-xs text-slate-500 sm:text-sm',
-                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:mt-2',
-                      '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-[clamp(0.8125rem,1.8dvh,1.125rem)]'
+                      'line-clamp-3 text-xs leading-snug text-slate-500 sm:text-sm',
+                      '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1200px)]:text-[clamp(0.875rem,2vw,1.0625rem)]'
                     )}
                   >
                     {tile.subtitle}
                   </span>
                 </span>
-              </>
+
+                {/* Botón siempre circular: w=h, aspect-square, shrink-0, sin grow */}
+                <KioskTileArrow
+                  className={cn(
+                    'h-11 w-11 sm:h-12 sm:w-12',
+                    '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1200px)]:h-[3.5rem]',
+                    '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1200px)]:w-[3.5rem]'
+                  )}
+                />
+              </span>
             );
 
             const className = cn(
-              'flex min-h-[132px] flex-col items-start rounded-3xl bg-white p-4 text-left shadow-lg shadow-black/10 transition sm:min-h-[148px] sm:p-6',
-              'active:scale-[0.98] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:min-h-0',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:h-full',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:w-full',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:items-center',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:justify-center',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:text-center',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:rounded-[1.75rem]',
-              '[@media(orientation:portrait)_and_(min-height:900px)_and_(min-width:700px)]:p-[clamp(1rem,2.5dvh,1.75rem)]'
+              // Altura mínima común > contenido máximo (icono+texto+botón) → tarjetas iguales.
+              'flex h-full min-h-[12.25rem] flex-col items-center justify-center rounded-[1.75rem] bg-white p-4 text-center shadow-lg shadow-black/10 sm:min-h-[13.25rem] sm:p-5',
+              'transition active:scale-[0.985] focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-white/70',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:min-h-[14.5rem]',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:rounded-[2rem]',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:p-5',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:shadow-xl',
+              '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:shadow-black/12'
             );
 
             if (tile.id === 'account') {
@@ -233,12 +229,28 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
             }
 
             return (
-              <Link key={tile.id} href={tile.href} className={className}>
+              <Link key={tile.id} href={tile.href!} className={className}>
                 {body}
               </Link>
             );
           })}
         </div>
+
+        <p
+          className={cn(
+            sloganFont.className,
+            'mt-6 hidden text-center text-2xl leading-none text-white/95',
+            '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:mt-8',
+            '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:block',
+            '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1100px)]:text-[clamp(1.5rem,3.2vw,2.125rem)]'
+          )}
+        >
+          Tu farmacia, más cerca de ti
+          <span
+            className="mx-auto mt-1 block h-[2px] w-[9.5rem] rounded-full bg-white/80"
+            aria-hidden
+          />
+        </p>
       </div>
 
       {showQr ? (
@@ -250,6 +262,24 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
         />
       ) : null}
     </div>
+  );
+}
+
+function DecorativeCross({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 120 120"
+      className={className}
+      fill="none"
+      aria-hidden
+    >
+      <path
+        d="M48 18h24v30h30v24H72v30H48V72H18V48h30V18Z"
+        stroke="currentColor"
+        strokeWidth="7"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 
+import { clearStoredAssistantConversation } from '@/lib/kiosk/assistant/conversation-state';
 import {
   KIOSK_CART_IDLE_MS,
   KIOSK_CART_STORAGE_KEY,
@@ -19,6 +20,7 @@ import {
   type KioskCartLine,
   type KioskCartState,
 } from '@/lib/kiosk/cart-state';
+import { endKioskClientPurchaseSession } from '@/lib/kiosk/end-client-purchase-session';
 
 type KioskCartContextValue = {
   cart: KioskCartState;
@@ -64,6 +66,8 @@ export function KioskCartProvider({
       let next = bindCartToPharmacy(stored, pharmacyId);
       if (isCartIdle(next, now)) {
         next = clearCart(next);
+        clearStoredAssistantConversation();
+        void endKioskClientPurchaseSession();
       }
       setCart(next);
     } else {
@@ -87,6 +91,7 @@ export function KioskCartProvider({
     const id = window.setInterval(() => {
       setCart((prev) => {
         if (isCartIdle(prev, Date.now(), KIOSK_CART_IDLE_MS)) {
+          void endKioskClientPurchaseSession();
           return clearCart(prev);
         }
         return prev;
@@ -139,6 +144,7 @@ export function KioskCartProvider({
         setCart((prev) => removeCartLine(prev, productId));
       },
       clear: () => {
+        void endKioskClientPurchaseSession();
         setCart((prev) => clearCart(prev));
       },
       touchActivity,
