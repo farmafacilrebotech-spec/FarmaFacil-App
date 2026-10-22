@@ -178,6 +178,12 @@ function MemberActionsCell({
   const canRevoke = canShowDestructiveAction(actor, member, 'revoke');
   const canCancel = canShowDestructiveAction(actor, member, 'cancel_invitation');
 
+  // Hooks antes de cualquier return: orden estable en cada render.
+  const [confirm, setConfirm] = React.useState<ConfirmAction | null>(null);
+  const [pending, setPending] = React.useState(false);
+  const [resending, setResending] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+
   if (!canManage) {
     return (
       <span className="text-xs text-muted-foreground" title="Sin permiso para gestionar este usuario">
@@ -185,11 +191,6 @@ function MemberActionsCell({
       </span>
     );
   }
-
-  const [confirm, setConfirm] = React.useState<ConfirmAction | null>(null);
-  const [pending, setPending] = React.useState(false);
-  const [resending, setResending] = React.useState(false);
-  const [editOpen, setEditOpen] = React.useState(false);
 
   function openConfirm(action: ConfirmAction) {
     window.setTimeout(() => setConfirm(action), 0);

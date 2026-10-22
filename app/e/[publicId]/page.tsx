@@ -54,17 +54,23 @@ export default async function PublicPharmacyEntrypointPage({
           {resolved.pharmacyName}
         </h1>
         <p className="mt-4 text-sm leading-relaxed text-slate-600">
-          Has escaneado el código oficial de esta farmacia. El acceso personal
-          de clientes (teléfono y contraseña) está en preparación.
+          Has escaneado el código oficial de esta farmacia. Puedes consultar el
+          catálogo y enviar una solicitud de productos sin registrarte ni crear
+          una cuenta.
         </p>
         <p className="mt-3 text-xs text-slate-400">
-          Este código identifica la farmacia. No inicia sesión automáticamente
-          ni abre el panel de gestión.
+          No hace falta teléfono con contraseña. La farmacia confirmará
+          disponibilidad y precio al gestionar tu solicitud.
         </p>
-        <div className="mt-8 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
-          Pronto podrás entrar a tu cuenta de cliente desde aquí. Mientras
-          tanto, si eres profesional de la farmacia, usa el acceso de
-          empleados.
+        <Link
+          href={`/e/${params.publicId}/catalogo`}
+          className="mt-8 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-6 py-4 text-base font-semibold text-slate-800"
+        >
+          Ver catálogo y solicitar
+        </Link>
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+          Si eres profesional de la farmacia, usa el acceso de empleados para
+          gestionar pedidos y el panel.
         </div>
         <Link
           href="/login"

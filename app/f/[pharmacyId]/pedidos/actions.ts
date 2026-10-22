@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { confirmPharmacyOrderAmount } from '@/lib/orders/confirm-amount';
 import {
   getPharmacyOrderDetail,
   listPharmacyOrders,
@@ -50,6 +51,18 @@ export async function updatePharmacyOrderPaymentStatusAction(input: {
   currentPaymentStatus?: PaymentStatus;
 }) {
   const result = await updatePharmacyOrderPaymentStatus(input);
+  if (result.ok) {
+    revalidateOrders(input.pharmacyId);
+  }
+  return result;
+}
+
+export async function confirmPharmacyOrderAmountAction(input: {
+  pharmacyId: string;
+  orderId: string;
+  amount: number;
+}) {
+  const result = await confirmPharmacyOrderAmount(input);
   if (result.ok) {
     revalidateOrders(input.pharmacyId);
   }

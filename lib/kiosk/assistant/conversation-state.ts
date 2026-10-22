@@ -96,18 +96,30 @@ function parseProductCard(raw: unknown): AssistantProductCard | null {
   const row = raw as Record<string, unknown>;
   const id = String(row.id ?? '');
   const name = String(row.name ?? '');
-  const price = Number(row.price);
-  const stock = Number(row.stock);
-  if (!id || !name || !Number.isFinite(price) || price < 0) return null;
-  if (!Number.isFinite(stock) || stock < 0) return null;
+  if (!id || !name) return null;
+
+  let price: number | null = null;
+  if (row.price != null && row.price !== '') {
+    const n = Number(row.price);
+    if (!Number.isFinite(n) || n < 0) return null;
+    price = n;
+  }
+
+  let stock: number | null = null;
+  if (row.stock != null && row.stock !== '') {
+    const n = Number(row.stock);
+    if (!Number.isFinite(n) || n < 0) return null;
+    stock = Math.floor(n);
+  }
+
   return {
     id,
     name,
     brand: row.brand == null ? null : String(row.brand),
     price,
-    stock: Math.floor(stock),
+    stock,
     available: row.available === true,
-    canAddToCart: row.canAddToCart === true,
+    canAddToCart: row.canAddToCart === true && price != null && stock != null,
     imageUrl:
       row.imageUrl == null || row.imageUrl === ''
         ? null

@@ -2,16 +2,28 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Mail, ArrowLeft, CheckCircle2, Send } from 'lucide-react';
 
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { requestForgotPasswordAction } from '@/app/(auth)/forgot-password/actions';
+import { createClient } from '@/lib/supabase/client';
+import {
+  RECOVERY_REQUEST_SUCCESS_MESSAGE,
+  buildPasswordRecoveryRedirectTo,
+  isValidRecoveryEmail,
+  mapPasswordRecoveryAuthError,
+} from '@/lib/auth/password-recovery-shared';
 
+/**
+ * Pantalla de SOLICITUD de recuperación.
+ * No exige token ni sesión previa. Los errores ?error=recovery_* solo informan
+ * de un enlace anterior inválido; el formulario sigue siendo usable.
+ */
 function ForgotPasswordForm() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = React.useState('');
   const [sentMessage, setSentMessage] = React.useState<string | null>(null);
@@ -21,26 +33,59 @@ function ForgotPasswordForm() {
   const linkError = searchParams.get('error');
   const linkErrorMessage =
     linkError === 'recovery_invalid'
-      ? 'El enlace de recuperación no es válido o ha caducado. Solicita uno nuevo.'
+      ? 'El enlace de recuperación no es válido o ha caducado. Puedes solicitar uno nuevo aquí.'
       : linkError === 'recovery_missing'
-        ? 'Falta el enlace de recuperación. Solicita uno nuevo desde este formulario.'
+        ? 'No se encontró un enlace de recuperación válido en la URL. Si llegaste desde el correo, solicita uno nuevo. Esta pantalla no requiere un enlace previo.'
         : null;
+
+  React.useEffect(() => {
+    // Limpia ?error= de la barra al montar para no confundir una nueva solicitud.
+    if (linkError) {
+      router.replace('/forgot-password', { scroll: false });
+    }
+    // Solo al montar / cuando cambia el error entrante.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkError]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    const result = await requestForgotPasswordAction(email);
-    setLoading(false);
-
-    if (!result.ok) {
-      setError(result.error);
+    const normalized = email.trim().toLowerCase();
+    if (!isValidRecoveryEmail(normalized)) {
+      setLoading(false);
+      setError('El email no es válido.');
       setSentMessage(null);
       return;
     }
 
-    setSentMessage(result.message);
+    try {
+      // Cliente browser: PKCE + redirectTo = origen de esta pestaña (127.0.0.1:3010).
+      const supabase = createClient();
+      const redirectTo = buildPasswordRecoveryRedirectTo(window.location.origin);
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(
+        normalized,
+        { redirectTo }
+      );
+
+      if (authError) {
+        const mapped = mapPasswordRecoveryAuthError(authError.message);
+        setError(mapped.error);
+        setSentMessage(null);
+        setLoading(false);
+        return;
+      }
+
+      setSentMessage(RECOVERY_REQUEST_SUCCESS_MESSAGE);
+    } catch {
+      setError(
+        'No se ha podido iniciar la recuperación de contraseña. Inténtalo de nuevo más tarde.'
+      );
+      setSentMessage(null);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (

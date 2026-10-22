@@ -21,8 +21,24 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
-export function SeedDemoCatalogButton({ pharmacyId }: { pharmacyId: string }) {
+/**
+ * Semilla demo de ~30 productos. Deprecada tras el catálogo maestro (100).
+ * Si `deprecated`, el botón queda deshabilitado.
+ */
+export function SeedDemoCatalogButton({
+  pharmacyId,
+  deprecated = false,
+}: {
+  pharmacyId: string;
+  deprecated?: boolean;
+}) {
   const router = useRouter();
   const [open, setOpen] = React.useState(false);
   const [loadingPreview, setLoadingPreview] = React.useState(false);
@@ -87,6 +103,33 @@ export function SeedDemoCatalogButton({ pharmacyId }: { pharmacyId: string }) {
     router.refresh();
   }
 
+  if (deprecated) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled
+              >
+                <Sparkles className="h-4 w-4" />
+                Cargar catálogo inicial
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-xs text-xs">
+            Deprecado: usa el catálogo maestro (100 genéricos) vía preparación
+            comercial o «Catálogo maestro» en Tarifas. No sembrar 30 demo.
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogTrigger asChild>
@@ -101,9 +144,8 @@ export function SeedDemoCatalogButton({ pharmacyId }: { pharmacyId: string }) {
           <AlertDialogDescription asChild>
             <div className="space-y-3 text-sm text-muted-foreground">
               <p>
-                Se copiará una plantilla de demostración a esta farmacia. Los
-                productos pasarán a ser exclusivos de la farmacia (sin vínculo
-                vivo con la plantilla).
+                Semilla demo antigua (~30). Preferible el catálogo maestro de
+                100 tipos genéricos (flujo comercial).
               </p>
               {loadingPreview ? (
                 <p className="flex items-center gap-2">

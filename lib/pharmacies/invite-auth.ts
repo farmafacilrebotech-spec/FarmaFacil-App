@@ -7,13 +7,16 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import {
   inviteAuthAlreadyRegistered,
+  inviteEmailNextPath,
   otpTypeFromVerification,
 } from '@/lib/pharmacies/invite-auth-logic';
 
 export {
   classifyAuthCallbackError,
   inviteAuthAlreadyRegistered,
+  inviteEmailNextPath,
   otpTypeFromVerification,
+  resolvePharmacyInviteEmailKind,
 } from '@/lib/pharmacies/invite-auth-logic';
 
 export type InviteAuthKind = 'new' | 'existing';
@@ -31,8 +34,11 @@ export type InviteAuthLink =
 
 /**
  * Prepara enlace Auth para invitación.
- * - new: generateLink(invite) → /first-access (crea usuario Auth si hace falta)
- * - existing: generateLink(magiclink) → /auth/invitations
+ * - invite OK → kind new, OTP invite
+ * - already registered → kind existing, OTP magiclink
+ *
+ * `preferFirstAccess`: alta FarmaFácil pendiente (solo memberships invited).
+ * El magiclink de fallback debe apuntar a /first-access, no a /auth/invitations.
  *
  * No envía correo (eso lo hace Resend).
  */
@@ -40,12 +46,17 @@ export async function preparePharmacyInviteAuthLink(input: {
   email: string;
   fullName: string;
   appBaseUrl: string;
+  /** true = destinatario debe completar /first-access (contraseña + legal) */
+  preferFirstAccess?: boolean;
 }): Promise<InviteAuthLink> {
   const email = input.email.trim().toLowerCase();
   const fullName = input.fullName.trim();
-  const firstAccessRedirect = `${input.appBaseUrl}/auth/callback?next=${encodeURIComponent('/first-access')}`;
-  const invitationsNext = `/auth/invitations?for=${encodeURIComponent(email)}`;
-  const invitationsRedirect = `${input.appBaseUrl}/auth/callback?next=${encodeURIComponent(invitationsNext)}`;
+  const preferFirstAccess = input.preferFirstAccess === true;
+  const firstAccessNext = '/first-access';
+  const invitationsNext = inviteEmailNextPath('existing', email);
+  const magicNext = preferFirstAccess ? firstAccessNext : invitationsNext;
+  const firstAccessRedirect = `${input.appBaseUrl}/auth/callback?next=${encodeURIComponent(firstAccessNext)}`;
+  const magicRedirect = `${input.appBaseUrl}/auth/callback?next=${encodeURIComponent(magicNext)}`;
 
   let admin;
   try {
@@ -87,7 +98,7 @@ export async function preparePharmacyInviteAuthLink(input: {
       userId,
       hashedToken,
       otpType: otpTypeFromVerification(verificationType, 'invite'),
-      nextPath: '/first-access',
+      nextPath: firstAccessNext,
     };
   }
 
@@ -105,7 +116,7 @@ export async function preparePharmacyInviteAuthLink(input: {
   const magicAttempt = await admin.auth.admin.generateLink({
     type: 'magiclink',
     email,
-    options: { redirectTo: invitationsRedirect },
+    options: { redirectTo: magicRedirect },
   });
 
   if (magicAttempt.error) {
@@ -139,6 +150,6 @@ export async function preparePharmacyInviteAuthLink(input: {
     userId,
     hashedToken,
     otpType: otpTypeFromVerification(verificationType, 'magiclink'),
-    nextPath: invitationsNext,
+    nextPath: magicNext,
   };
 }

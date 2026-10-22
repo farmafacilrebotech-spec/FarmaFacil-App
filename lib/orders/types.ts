@@ -5,6 +5,7 @@
 
 export const ORDER_STATUSES = [
   'pending_payment',
+  'request_pending',
   'preparing',
   'ready',
   'delivered',
@@ -15,6 +16,7 @@ export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const PAYMENT_STATUSES = [
   'unpaid',
+  'pending_confirmation',
   'paid',
   'refunded',
   'waived',
@@ -22,7 +24,13 @@ export const PAYMENT_STATUSES = [
 
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
-export const ORDER_SOURCES = ['kiosk', 'counter', 'online', 'other'] as const;
+export const ORDER_SOURCES = [
+  'kiosk',
+  'counter',
+  'online',
+  'other',
+  'public_qr',
+] as const;
 
 export type OrderSource = (typeof ORDER_SOURCES)[number];
 
@@ -52,6 +60,17 @@ export type PharmacyOrderSummary = {
   totalAmount: number;
   currency: string;
   deviceId: string | null;
+  /** Solo staff; solicitudes public_qr (migración 057). */
+  customerName: string | null;
+  customerPhone: string | null;
+  /** Nota opcional del cliente (public_qr). */
+  customerNote: string | null;
+  /**
+   * NULL = importe técnico/pendiente (sentinel 0 ≠ confirmado).
+   * ISO timestamp = farmacia confirmó total_amount (puede ser 0 €).
+   */
+  amountConfirmedAt: string | null;
+  amountConfirmedBy: string | null;
   createdAt: string;
   updatedAt: string;
 };

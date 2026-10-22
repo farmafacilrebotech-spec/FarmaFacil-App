@@ -14,7 +14,11 @@ import { useRouter } from 'next/navigation';
 import { searchKioskCatalogAction } from '@/app/k/catalogo/actions';
 import { useKioskCart } from '@/components/kiosk/kiosk-cart-provider';
 import type { KioskCatalogProduct } from '@/lib/kiosk/catalog';
-import { formatEuro } from '@/lib/orders/labels';
+import {
+  canAddKioskProductToCart,
+  formatKioskProductAvailability,
+  formatKioskProductPrice,
+} from '@/lib/kiosk/catalog-display';
 import { cn } from '@/lib/utils';
 
 /** Debounce de búsqueda: reduce RPC por tecla en pantallas táctiles lentas. */
@@ -90,13 +94,16 @@ export function KioskCatalogView({
   }, [debounced, router]);
 
   function onAdd(product: KioskCatalogProduct) {
-    if (!product.available) return;
+    if (!canAddKioskProductToCart(product)) return;
+    const unitPrice = product.price;
+    const stock = product.stock;
+    if (unitPrice == null || stock == null) return;
     addProduct({
       productId: product.id,
       name: product.name,
       brand: product.brand,
-      unitPrice: product.price,
-      stock: product.stock,
+      unitPrice,
+      stock,
     });
     setFlashId(product.id);
     window.setTimeout(() => setFlashId((id) => (id === product.id ? null : id)), 900);
@@ -200,23 +207,21 @@ export function KioskCatalogView({
                     {product.brand || '\u00A0'}
                   </p>
                   <p className="mt-2 text-center text-lg font-bold text-[#1a9a9d] sm:text-xl lg:text-2xl">
-                    {formatEuro(product.price)}
+                    {formatKioskProductPrice(product)}
                   </p>
                   <span
                     className={cn(
                       'mx-auto mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold sm:text-xs lg:mt-2 lg:px-3 lg:py-1 lg:text-sm',
-                      product.available
+                      canAddKioskProductToCart(product)
                         ? 'bg-emerald-50 text-emerald-700'
                         : 'bg-amber-50 text-amber-800'
                     )}
                   >
-                    {product.available
-                      ? `Disponible · ${product.stock}`
-                      : 'Sin stock'}
+                    {formatKioskProductAvailability(product)}
                   </span>
                   <button
                     type="button"
-                    disabled={!product.available}
+                    disabled={!canAddKioskProductToCart(product)}
                     onClick={() => onAdd(product)}
                     className={cn(
                       'mt-3 flex h-12 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:mt-auto sm:h-14 sm:rounded-2xl sm:text-base',

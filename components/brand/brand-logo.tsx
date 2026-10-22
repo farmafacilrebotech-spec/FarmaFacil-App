@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
  * - mark: mismo emblema a tamaño reducido (sidebar colapsado, header).
  * - wordmark: solo texto tipográfico (casos excepcionales).
  *
- * Asset fuente: public/images/logos/farmafacil-logo.png
+ * Asset fuente UI: farmafacil-logo-512.png (448KB).
+ * El PNG original (~952KB) se reserva fuera del render web habitual.
  */
 
 type Variant = 'full' | 'mark' | 'wordmark';
@@ -26,7 +27,7 @@ interface BrandLogoProps {
   showTagline?: boolean;
 }
 
-const LOGO_FULL = '/images/logos/farmafacil-logo.png';
+const LOGO_FULL = '/images/logos/farmafacil-logo-512.png';
 const LOGO_MARK = '/images/logos/farmafacil-mark.png';
 
 export function BrandLogo({
@@ -46,7 +47,8 @@ export function BrandLogo({
     );
   }
 
-  const src = variant === 'mark' || size <= 40 ? LOGO_MARK : LOGO_FULL;
+  // En UI típica (≤96px) el mark de 60KB evita descargar el logo grande.
+  const src = variant === 'mark' || size <= 96 ? LOGO_MARK : LOGO_FULL;
   const width = size;
   const height = Math.round(size * (711 / 709));
 

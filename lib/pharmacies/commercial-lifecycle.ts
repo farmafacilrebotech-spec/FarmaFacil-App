@@ -42,19 +42,48 @@ export type CommercialSnapshot = {
   now?: Date;
 };
 
+export type OperabilityReason =
+  | 'ok'
+  | 'pharmacy_suspended'
+  | 'pharmacy_archived'
+  | 'subscription_paused'
+  | 'subscription_cancelled'
+  | 'subscription_expired'
+  | 'trial_ended'
+  | 'period_ended_after_cancel'
+  | 'grace_ended'
+  | 'no_valid_subscription'
+  | 'pilot_ready_pending_activation'
+  | 'pilot_expired'
+  | 'pilot_ended';
+
 export type OperabilityResult = {
   operable: boolean;
-  reason:
-    | 'ok'
-    | 'pharmacy_suspended'
-    | 'pharmacy_archived'
-    | 'subscription_paused'
-    | 'subscription_cancelled'
-    | 'subscription_expired'
-    | 'trial_ended'
-    | 'period_ended_after_cancel'
-    | 'grace_ended'
-    | 'no_valid_subscription';
+  reason: OperabilityReason;
+};
+
+/** Modo de acceso tenant tras resolver piloto + suscripción. */
+export type CommercialAccessMode = 'operational' | 'preparation' | 'blocked';
+
+export type CommercialTrialStatus =
+  | 'draft'
+  | 'ready'
+  | 'active'
+  | 'extended'
+  | 'ended'
+  | 'converted'
+  | 'cancelled';
+
+export type CommercialTrialSnapshot = {
+  status: CommercialTrialStatus | string;
+  activatedAt?: string | null;
+  endsAt?: string | null;
+  preparedAt?: string | null;
+  program?: string | null;
+};
+
+export type CommercialAccessResolution = OperabilityResult & {
+  accessMode: CommercialAccessMode;
 };
 
 function at(snapshot: CommercialSnapshot): Date {
@@ -125,6 +154,127 @@ export function evaluatePharmacyOperability(
   }
 
   return { operable: false, reason: 'no_valid_subscription' };
+}
+
+/**
+ * Resolución única: piloto comercial prevalece sobre suscripción legacy cancelada.
+ * - ready/draft → preparación (no operable)
+ * - active/extended vigentes → operable vía suscripción (o trial clock)
+ * - ended / expires → bloqueo piloto
+ * - sin piloto abierto → evalúa suscripción (legacy)
+ */
+export function resolvePharmacyCommercialAccess(input: {
+  pharmacyStatus: CommercialPharmacyStatus | string;
+  subscriptionStatus?: CommercialSubscriptionStatus | string | null;
+  trialEnd?: string | null;
+  currentPeriodEnd?: string | null;
+  cancelAtPeriodEnd?: boolean | null;
+  gracePeriodEndsAt?: string | null;
+  trial?: CommercialTrialSnapshot | null;
+  now?: Date;
+}): CommercialAccessResolution {
+  const now = input.now ?? new Date();
+  const pharmacyStatus = input.pharmacyStatus as CommercialPharmacyStatus;
+
+  if (pharmacyStatus === 'suspended') {
+    return {
+      operable: false,
+      accessMode: 'blocked',
+      reason: 'pharmacy_suspended',
+    };
+  }
+  if (pharmacyStatus === 'archived') {
+    return {
+      operable: false,
+      accessMode: 'blocked',
+      reason: 'pharmacy_archived',
+    };
+  }
+
+  const trial = input.trial ?? null;
+  const trialStatus = trial?.status ?? null;
+
+  if (trialStatus === 'ready' || trialStatus === 'draft') {
+    return {
+      operable: false,
+      accessMode: 'preparation',
+      reason: 'pilot_ready_pending_activation',
+    };
+  }
+
+  if (trialStatus === 'active' || trialStatus === 'extended') {
+    if (isAfter(trial?.endsAt ?? null, now)) {
+      return {
+        operable: false,
+        accessMode: 'blocked',
+        reason: 'pilot_expired',
+      };
+    }
+    // Piloto en curso: la suscripción creada en activate es la fuente de operabilidad.
+    if (input.subscriptionStatus) {
+      const subEval = evaluatePharmacyOperability({
+        pharmacyStatus,
+        subscriptionStatus:
+          input.subscriptionStatus as CommercialSubscriptionStatus,
+        trialEnd: input.trialEnd ?? null,
+        currentPeriodEnd: input.currentPeriodEnd ?? null,
+        cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+        gracePeriodEndsAt: input.gracePeriodEndsAt ?? null,
+        now,
+      });
+      return {
+        ...subEval,
+        accessMode: subEval.operable ? 'operational' : 'blocked',
+      };
+    }
+    // Reloj vigente sin fila de suscripción legible: acceso operativo por piloto.
+    return { operable: true, accessMode: 'operational', reason: 'ok' };
+  }
+
+  if (trialStatus === 'ended') {
+    return {
+      operable: false,
+      accessMode: 'blocked',
+      reason: 'pilot_ended',
+    };
+  }
+
+  // Sin piloto abierto (o converted/cancelled): suscripción legacy / corriente.
+  if (!input.subscriptionStatus) {
+    return {
+      operable: false,
+      accessMode: 'blocked',
+      reason: 'no_valid_subscription',
+    };
+  }
+
+  const subEval = evaluatePharmacyOperability({
+    pharmacyStatus,
+    subscriptionStatus: input.subscriptionStatus as CommercialSubscriptionStatus,
+    trialEnd: input.trialEnd ?? null,
+    currentPeriodEnd: input.currentPeriodEnd ?? null,
+    cancelAtPeriodEnd: input.cancelAtPeriodEnd ?? false,
+    gracePeriodEndsAt: input.gracePeriodEndsAt ?? null,
+    now,
+  });
+
+  return {
+    ...subEval,
+    accessMode: subEval.operable ? 'operational' : 'blocked',
+  };
+}
+
+/** ¿Hay un piloto comercial abierto que debe mandar sobre acciones de suscripción legacy? */
+export function hasOpenCommercialPilot(
+  trial: CommercialTrialSnapshot | null | undefined
+): boolean {
+  if (!trial?.status) return false;
+  return (
+    trial.status === 'draft' ||
+    trial.status === 'ready' ||
+    trial.status === 'active' ||
+    trial.status === 'extended'
+  );
 }
 
 export type TransitionValidation =
@@ -323,11 +473,18 @@ export function commercialActionRequiresConfirm(
 
 /** Acciones válidas para el estado actual (UI SuperAdmin). */
 export function listVisibleCommercialActions(
-  snapshot: CommercialSnapshot
+  snapshot: CommercialSnapshot,
+  options?: { hideReactivateForOpenPilot?: boolean }
 ): CommercialAction[] {
-  return COMMERCIAL_ACTION_ORDER.filter(
-    (action) => validateCommercialTransition(action, snapshot).ok
-  );
+  return COMMERCIAL_ACTION_ORDER.filter((action) => {
+    if (
+      options?.hideReactivateForOpenPilot &&
+      action === 'reactivate'
+    ) {
+      return false;
+    }
+    return validateCommercialTransition(action, snapshot).ok;
+  });
 }
 
 export function snapshotFromPharmacyDetail(input: {

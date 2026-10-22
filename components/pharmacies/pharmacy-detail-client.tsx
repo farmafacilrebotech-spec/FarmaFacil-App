@@ -198,6 +198,8 @@ export function PharmacyDetailClient({
   catalogProducts = [],
   catalogCategories = [],
   catalogLoadError = null,
+  catalogMode = 'generic',
+  hasMasterProjection = false,
   kioskDevices = [],
   kioskDevicesError = null,
   kioskCommercialUiState = 'not_contracted',
@@ -218,6 +220,8 @@ export function PharmacyDetailClient({
   catalogProducts?: PharmacyProduct[];
   catalogCategories?: string[];
   catalogLoadError?: string | null;
+  catalogMode?: 'generic' | 'own';
+  hasMasterProjection?: boolean;
   kioskDevices?: KioskDeviceRow[];
   kioskDevicesError?: string | null;
   kioskCommercialUiState?: KioskCommercialUiState;
@@ -492,7 +496,23 @@ export function PharmacyDetailClient({
                     Cambiar plan
                   </Button>
                 </span>
-                {pharmacy.subscription && (
+                {pharmacy.commercialTrial &&
+                (pharmacy.commercialTrial.status === 'ready' ||
+                  pharmacy.commercialTrial.status === 'draft' ||
+                  pharmacy.commercialTrial.status === 'active' ||
+                  pharmacy.commercialTrial.status === 'extended') ? (
+                  <span>
+                    Piloto:{' '}
+                    <span className="font-medium text-foreground">
+                      {pharmacy.commercialTrial.status === 'ready' ||
+                      pharmacy.commercialTrial.status === 'draft'
+                        ? 'preparado, pendiente de activación'
+                        : pharmacy.commercialTrial.status === 'extended'
+                          ? 'activo (ampliado)'
+                          : 'activo'}
+                    </span>
+                  </span>
+                ) : pharmacy.subscription ? (
                   <span>
                     Suscripción:{' '}
                     <span className="font-medium text-foreground">
@@ -504,7 +524,7 @@ export function PharmacyDetailClient({
                       ? ` · ${pharmacy.subscription.provider}`
                       : ''}
                   </span>
-                )}
+                ) : null}
                 <span>
                   Alta:{' '}
                   <span className="font-medium text-foreground">
@@ -1123,6 +1143,8 @@ export function PharmacyDetailClient({
             products={catalogProducts}
             categories={catalogCategories}
             loadError={catalogLoadError}
+            catalogMode={catalogMode}
+            hasMasterProjection={hasMasterProjection}
           />
         )}
 

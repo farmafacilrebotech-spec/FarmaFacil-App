@@ -2,6 +2,7 @@ import { PharmacyOrdersPanel } from '@/components/pharmacy-tenant/pharmacy-order
 import { PageHeader } from '@/components/shared/page-header';
 import { requireOrdersManage, requireOrdersView } from '@/lib/orders/authz';
 import { listPharmacyOrders } from '@/lib/orders/queries';
+import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,8 +28,16 @@ export default async function PharmacyPedidosPage({
     );
   }
 
-  const manage = await requireOrdersManage(pharmacyId);
-  const listed = await listPharmacyOrders(pharmacyId, { limit: 80 });
+  const [manage, listed, tenant] = await Promise.all([
+    requireOrdersManage(pharmacyId),
+    listPharmacyOrders(pharmacyId, { limit: 80 }),
+    loadPharmacyTenantContext(pharmacyId),
+  ]);
+
+  const pharmacyName =
+    tenant.ok && tenant.context.pharmacy.name.trim()
+      ? tenant.context.pharmacy.name.trim()
+      : 'Farmacia';
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -44,6 +53,7 @@ export default async function PharmacyPedidosPage({
       ) : (
         <PharmacyOrdersPanel
           pharmacyId={pharmacyId}
+          pharmacyName={pharmacyName}
           initialOrders={listed.orders}
           canManage={manage.ok}
         />

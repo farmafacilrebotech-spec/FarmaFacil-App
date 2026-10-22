@@ -10,7 +10,9 @@ import {
   sendNewUserPharmacyInviteEmail,
 } from '@/lib/email/pharmacy-invitation';
 import { preparePharmacyInviteAuthLink } from '@/lib/pharmacies/invite-auth';
+import { resolvePharmacyInviteEmailKind } from '@/lib/pharmacies/invite-auth-logic';
 import { resolvePharmacyInviteUserKind } from '@/lib/pharmacies/invite-user-kind';
+import { authFlowDiag } from '@/lib/auth/auth-flow-diag';
 import { requestPasswordRecoveryEmail } from '@/lib/auth/password-recovery';
 import {
   assertCanManageMembership,
@@ -558,21 +560,28 @@ export async function resendPharmacyInvitationAction(input: {
     return { ok: false, error: kindResult.error };
   }
 
+  // Plantilla/destino según membership FarmaFácil (no según Auth already-registered).
+  const emailKind = resolvePharmacyInviteEmailKind(kindResult.kind);
+
   // generateLink + Resend (token_hash SSR). No inviteUserByEmail SMTP.
   const authLink = await preparePharmacyInviteAuthLink({
     email,
     fullName,
     appBaseUrl,
+    preferFirstAccess: emailKind === 'new',
   });
 
   if (!authLink.ok) {
     return { ok: false, error: authLink.error };
   }
 
-  // Preferir kind de memberships (invite-user-kind): si ya tiene cuenta usable
-  // en FarmaFácil, el email debe ser magiclink → /auth/invitations.
-  const emailKind =
-    kindResult.kind === 'existing' ? 'existing' : authLink.kind;
+  authFlowDiag('invite_resend_prepared', {
+    membership_kind: kindResult.kind,
+    email_kind: emailKind,
+    auth_link_kind: authLink.kind,
+    otp_type: authLink.otpType,
+    next_path: authLink.nextPath,
+  });
 
   const sent =
     emailKind === 'existing'
@@ -581,13 +590,8 @@ export async function resendPharmacyInvitationAction(input: {
           pharmacyName,
           appBaseUrl,
           recipientName: fullName,
-          // Solo reutilizar token si Auth ya generó magiclink (mismo tipo OTP).
-          ...(authLink.kind === 'existing'
-            ? {
-                hashedToken: authLink.hashedToken,
-                otpType: authLink.otpType,
-              }
-            : {}),
+          hashedToken: authLink.hashedToken,
+          otpType: authLink.otpType,
         })
       : await sendNewUserPharmacyInviteEmail({
           to: email,

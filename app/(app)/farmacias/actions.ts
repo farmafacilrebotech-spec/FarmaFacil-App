@@ -2,6 +2,12 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { mapCommercialRpcError } from '@/lib/commercial/rpc-errors';
+import {
+  COMMERCIAL_PREP_RPC,
+  resolveCreatePharmacyRoute,
+} from '@/lib/commercial/pharmacy-onboarding';
+import { getPharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
 import type {
   CreatePharmacyInput,
   UpdatePharmacyBrandingInput,
@@ -10,7 +16,16 @@ import type {
 } from '@/lib/pharmacies/types';
 
 export type CreatePharmacyResult =
-  | { ok: true; pharmacyId: string }
+  | {
+      ok: true;
+      pharmacyId: string;
+      /** prep comercial: trial ready, sin reloj */
+      trialId?: string;
+      trialStatus?: string;
+      catalogMode?: string;
+      publicUrl?: string | null;
+      clockStarted?: false;
+    }
   | { ok: false; error: string };
 
 export type UpdatePharmacyResult =
@@ -50,29 +65,12 @@ function isHexColor(value: string): boolean {
   return /^#[0-9A-Fa-f]{6}$/.test(value);
 }
 
-function mapRpcError(message: string, code?: string): string {
-  const m = message.toLowerCase();
-  if (code === '42501' || m.includes('permission') || m.includes('42501')) {
-    return 'No tienes permiso para crear farmacias.';
-  }
-  if (m.includes('not_authenticated')) {
-    return 'Debes iniciar sesión para crear una farmacia.';
-  }
-  if (m.includes('pharmacy_name_required')) {
-    return 'El nombre de la farmacia es obligatorio.';
-  }
-  if (m.includes('plan_key_required') || m.includes('plan_not_found')) {
-    return 'Selecciona un plan válido.';
-  }
-  if (m.includes('plan_has_no_active_modules')) {
-    return 'El plan seleccionado no tiene módulos activos. Contacta con soporte.';
-  }
-  if (m.includes('check') && m.includes('color')) {
-    return 'Los colores deben tener formato #RRGGBB.';
-  }
-  return 'No se ha podido crear la farmacia. Inténtalo de nuevo.';
-}
-
+/**
+ * Alta SuperAdmin unificada.
+ * - Piloto → ff_create_pharmacy_commercial_prep_v1 (sin trial 30d, sin reloj).
+ * - General / Personalizado / IA → rechazado hasta migración 056 (no se simula contrato).
+ * - Ya no llama a ff_create_pharmacy_v1.
+ */
 export async function createPharmacyAction(
   input: CreatePharmacyInput
 ): Promise<CreatePharmacyResult> {
@@ -81,9 +79,18 @@ export async function createPharmacyAction(
     return { ok: false, error: 'El nombre de la farmacia es obligatorio.' };
   }
 
-  const planKey = input.plan_key?.trim() ?? '';
-  if (!['starter', 'pro', 'business', 'enterprise'].includes(planKey)) {
-    return { ok: false, error: 'Selecciona un plan válido.' };
+  const commercialPlan = input.commercial_plan;
+  if (!commercialPlan) {
+    return {
+      ok: false,
+      error:
+        'Selecciona una modalidad comercial (Piloto). El alta con plan legacy ya no está disponible.',
+    };
+  }
+
+  const route = resolveCreatePharmacyRoute(commercialPlan);
+  if (!route.ok) {
+    return { ok: false, error: route.error };
   }
 
   const email = input.email?.trim() ?? '';
@@ -114,9 +121,8 @@ export async function createPharmacyAction(
     return { ok: false, error: 'Debes iniciar sesión para crear una farmacia.' };
   }
 
-  const { data, error } = await supabase.rpc('ff_create_pharmacy_v1', {
+  const { data, error } = await supabase.rpc(COMMERCIAL_PREP_RPC, {
     p_name: name,
-    p_plan_key: planKey,
     p_legal_name: input.legal_name?.trim() || null,
     p_cif: cif || null,
     p_email: email || null,
@@ -127,7 +133,6 @@ export async function createPharmacyAction(
     p_city: input.city?.trim() || null,
     p_province: input.province?.trim() || null,
     p_country: input.country?.trim() || 'ES',
-    p_status: 'pending_setup',
     p_logo_color: input.logo_color?.trim() || primary,
     p_primary_color: primary,
     p_secondary_color: secondary,
@@ -141,24 +146,52 @@ export async function createPharmacyAction(
 
   if (error) {
     if (process.env.NODE_ENV === 'development') {
-      console.error('[pharmacies] ff_create_pharmacy_v1', {
+      console.error('[pharmacies] commercial_prep_create', {
         message: error.message,
         code: error.code,
         details: error.details,
       });
     }
-    return { ok: false, error: mapRpcError(error.message, error.code) };
+    return {
+      ok: false,
+      error: mapCommercialRpcError(error.message, error.code),
+    };
   }
 
-  const pharmacyId = typeof data === 'string' ? data : String(data);
+  const payload =
+    data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  if (!payload || payload.status !== 'ok') {
+    return {
+      ok: false,
+      error: 'No se ha podido preparar la farmacia comercial. Inténtalo de nuevo.',
+    };
+  }
+
+  const pharmacyId = String(payload.pharmacy_id ?? '');
+  const trialId = String(payload.trial_id ?? '');
   if (!pharmacyId) {
     return { ok: false, error: 'No se ha podido crear la farmacia. Inténtalo de nuevo.' };
   }
 
+  let publicUrl: string | null = null;
+  const ep = await getPharmacyHomeEntrypoint(pharmacyId);
+  if (ep.ok && ep.entrypoint) {
+    publicUrl = ep.entrypoint.publicUrl;
+  }
+
   revalidatePath('/farmacias');
   revalidatePath(`/farmacias/${pharmacyId}`);
+  revalidatePath('/tarifas');
 
-  return { ok: true, pharmacyId };
+  return {
+    ok: true,
+    pharmacyId,
+    trialId: trialId || undefined,
+    trialStatus: String(payload.trial_status ?? 'ready'),
+    catalogMode: String(payload.catalog_mode ?? 'generic'),
+    publicUrl,
+    clockStarted: false,
+  };
 }
 
 export async function updatePharmacyGeneralAction(

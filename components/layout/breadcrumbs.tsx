@@ -15,6 +15,7 @@ const labels: Record<string, string> = {
   pedidos: 'Pedidos',
   promociones: 'Promociones',
   contratos: 'Contratos',
+  tarifas: 'Tarifas y simulador',
   configuracion: 'Configuración',
   ayuda: 'Centro de ayuda',
   usuarios: 'Usuarios',

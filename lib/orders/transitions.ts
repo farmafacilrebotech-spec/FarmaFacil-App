@@ -7,6 +7,7 @@ import type { OrderStatus, PaymentStatus } from '@/lib/orders/types';
 
 const ORDER_EDGES: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
   pending_payment: ['preparing', 'cancelled'],
+  request_pending: ['preparing', 'cancelled'],
   preparing: ['ready', 'cancelled'],
   ready: ['delivered', 'cancelled'],
   delivered: [],
@@ -16,6 +17,7 @@ const ORDER_EDGES: Readonly<Record<OrderStatus, readonly OrderStatus[]>> = {
 const PAYMENT_EDGES: Readonly<
   Record<PaymentStatus, readonly PaymentStatus[]>
 > = {
+  pending_confirmation: ['unpaid', 'paid', 'waived'],
   unpaid: ['paid', 'waived'],
   paid: ['refunded'],
   waived: ['paid'],

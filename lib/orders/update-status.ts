@@ -146,5 +146,13 @@ function mapUpdatePayload(data: unknown): UpdateOrderStatusResult {
       code: 'invalid_transition',
     };
   }
+  if (status === 'amount_not_confirmed') {
+    return {
+      ok: false,
+      error:
+        'Confirma primero el importe total antes de marcar la solicitud como cobrada.',
+      code: 'amount_not_confirmed',
+    };
+  }
   return { ok: false, error: 'No se ha podido actualizar el pedido.' };
 }

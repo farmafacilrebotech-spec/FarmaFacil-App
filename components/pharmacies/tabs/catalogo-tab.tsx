@@ -1,6 +1,7 @@
 'use client';
 
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
+import type { PharmacyCatalogMode } from '@/lib/pharmacies/catalog-mode';
 import { PharmacyCatalogView } from '@/components/pharmacy-catalog/pharmacy-catalog-view';
 import { SeedDemoCatalogButton } from '@/components/pharmacies/seed-demo-catalog-button';
 
@@ -14,12 +15,16 @@ export function CatalogoTab({
   products,
   categories,
   loadError,
+  catalogMode = 'generic',
+  hasMasterProjection = false,
 }: {
   pharmacyId: string;
   pharmacyName: string;
   products: PharmacyProduct[];
   categories: string[];
   loadError?: string | null;
+  catalogMode?: PharmacyCatalogMode;
+  hasMasterProjection?: boolean;
 }) {
   return (
     <PharmacyCatalogView
@@ -28,8 +33,14 @@ export function CatalogoTab({
       products={products}
       categories={categories}
       loadError={loadError}
+      catalogMode={catalogMode}
       variant="embedded"
-      toolbarExtra={<SeedDemoCatalogButton pharmacyId={pharmacyId} />}
+      toolbarExtra={
+        <SeedDemoCatalogButton
+          pharmacyId={pharmacyId}
+          deprecated={hasMasterProjection || catalogMode === 'generic'}
+        />
+      }
     />
   );
 }

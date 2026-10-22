@@ -6,14 +6,14 @@ import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, Save } from 'lucide-react';
 
 import type {
+  CommercialOnboardingPlan,
   CreatePharmacyInput,
-  PlanKey,
-  PlanSummary,
 } from '@/lib/pharmacies/types';
 import {
   DEFAULT_PRIMARY_COLOR,
   DEFAULT_SECONDARY_COLOR,
 } from '@/lib/pharmacies/labels';
+import { listOnboardingModalities } from '@/lib/commercial/pharmacy-onboarding';
 import { createPharmacyAction } from '@/app/(app)/farmacias/actions';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -23,7 +23,9 @@ import { Textarea } from '@/components/ui/textarea';
 
 type Step = 1 | 2 | 3;
 
-export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
+const MODALITIES = listOnboardingModalities();
+
+export function NewPharmacyForm() {
   const router = useRouter();
   const [step, setStep] = React.useState<Step>(1);
   const [submitting, setSubmitting] = React.useState(false);
@@ -41,11 +43,8 @@ export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
   const [province, setProvince] = React.useState('');
   const [country, setCountry] = React.useState('ES');
 
-  const defaultPlanKey = (plans.find((p) => p.key === 'pro') ?? plans[0])
-    ?.key as PlanKey | undefined;
-  const [planKey, setPlanKey] = React.useState<PlanKey | ''>(
-    defaultPlanKey ?? ''
-  );
+  const [commercialPlan, setCommercialPlan] =
+    React.useState<CommercialOnboardingPlan>('piloto');
 
   const [visibleName, setVisibleName] = React.useState('');
   const [primaryColor, setPrimaryColor] = React.useState(DEFAULT_PRIMARY_COLOR);
@@ -56,20 +55,30 @@ export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
   const [schedule, setSchedule] = React.useState('');
   const [whatsapp, setWhatsapp] = React.useState('');
 
+  const selectedModality = MODALITIES.find((m) => m.planCode === commercialPlan);
+
   function canAdvance(): boolean {
     if (step === 1) return name.trim().length > 0;
-    if (step === 2) return Boolean(planKey);
+    if (step === 2) {
+      return Boolean(commercialPlan) && selectedModality?.creatable === true;
+    }
     return true;
   }
 
   async function onSubmit() {
-    if (!planKey || submitting) return;
+    if (!commercialPlan || submitting) return;
+    if (!selectedModality?.creatable) {
+      setError(
+        'Esta modalidad aún no se puede dar de alta. Elige Piloto o espera la asignación de plan (056).'
+      );
+      return;
+    }
     setError(null);
     setSubmitting(true);
 
     const payload: CreatePharmacyInput = {
       name: name.trim(),
-      plan_key: planKey,
+      commercial_plan: commercialPlan,
       legal_name: legalName.trim() || undefined,
       cif: cif.trim() || undefined,
       email: email.trim() || undefined,
@@ -119,7 +128,8 @@ export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
           Nueva farmacia
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Alta inicial con datos, plan y personalización básica.
+          Alta comercial: Piloto prepara 15 días sin iniciar el reloj. Catálogo
+          genérico (100) y QR listos; la activación exige readiness.
         </p>
       </div>
 
@@ -127,7 +137,7 @@ export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
         {(
           [
             { id: 1, label: 'Datos' },
-            { id: 2, label: 'Plan' },
+            { id: 2, label: 'Modalidad' },
             { id: 3, label: 'Personalización' },
           ] as const
         ).map((s) => (
@@ -234,38 +244,57 @@ export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
         {step === 2 && (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Elige el plan comercial. Se creará una suscripción en estado de
-              prueba (trialing).
+              Modalidad comercial. Solo <strong>Piloto</strong> está disponible
+              para alta hoy (preparación sin reloj). General, Personalizado e IA
+              personalizado requieren la asignación de plan (migración 056, no
+              aplicada).
             </p>
-            {plans.length === 0 ? (
-              <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                No hay planes activos disponibles.
-              </p>
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {plans.map((plan) => (
+            <div className="grid gap-3 sm:grid-cols-2">
+              {MODALITIES.map((modality) => {
+                const selected = commercialPlan === modality.planCode;
+                return (
                   <button
-                    key={plan.id}
+                    key={modality.planCode}
                     type="button"
-                    onClick={() => setPlanKey(plan.key as PlanKey)}
+                    disabled={!modality.creatable}
+                    onClick={() => {
+                      if (modality.creatable) {
+                        setCommercialPlan(modality.planCode);
+                      }
+                    }}
                     className={cn(
                       'rounded-xl border p-4 text-left transition-colors',
-                      planKey === plan.key
+                      !modality.creatable && 'cursor-not-allowed opacity-60',
+                      selected && modality.creatable
                         ? 'border-primary bg-primary/5 ring-1 ring-primary'
                         : 'border-border hover:border-primary/40'
                     )}
                   >
-                    <p className="font-semibold text-foreground">{plan.name}</p>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-foreground">
+                        {modality.label}
+                      </p>
+                      {!modality.creatable ? (
+                        <span className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                          Próximamente
+                        </span>
+                      ) : (
+                        <span className="shrink-0 rounded-md bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700 dark:text-emerald-400">
+                          Disponible
+                        </span>
+                      )}
+                    </div>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {plan.description || plan.key}
+                      {modality.summary}
                     </p>
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
             <div className="rounded-lg border border-dashed border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-              Próximamente: contrato, facturación SEPA e invitación del
-              administrador de la farmacia.
+              Tras crear: invita al propietario → reenvía el email si hace falta
+              → primer acceso con contraseña → membership active → checklist de
+              readiness → «Activar piloto» (15 días) en Tarifas.
             </div>
           </div>
         )}
@@ -364,7 +393,7 @@ export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
             ) : (
               <Button
                 type="button"
-                disabled={!canAdvance() || submitting || !planKey}
+                disabled={!canAdvance() || submitting}
                 onClick={() => void onSubmit()}
                 className="gap-1.5"
               >
@@ -373,7 +402,7 @@ export function NewPharmacyForm({ plans }: { plans: PlanSummary[] }) {
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                {submitting ? 'Creando…' : 'Crear farmacia'}
+                {submitting ? 'Preparando…' : 'Preparar farmacia piloto'}
               </Button>
             )}
           </div>

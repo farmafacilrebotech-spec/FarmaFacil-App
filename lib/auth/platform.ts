@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { createClient } from '@/lib/supabase/server';
 
 export type CurrentProfile = {
@@ -18,64 +20,70 @@ export type PlatformAccessResult =
  * Comprueba PLATFORM_SUPERADMIN solo vía:
  * platform_user_roles → platform_roles (key).
  * Respeta RLS (el usuario puede leer sus propios roles).
+ * cache() evita repetir el mismo check en un request RSC.
  */
-export async function hasPlatformSuperAdminRole(
-  profileId: string
-): Promise<{ ok: boolean; error?: string }> {
-  const supabase = createClient();
+export const hasPlatformSuperAdminRole = cache(
+  async (
+    profileId: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const supabase = createClient();
 
-  const { data, error } = await supabase
-    .from('platform_user_roles')
-    .select(
-      `
+    const { data, error } = await supabase
+      .from('platform_user_roles')
+      .select(
+        `
       id,
       platform_roles!inner (
         key
       )
     `
-    )
-    .eq('profile_id', profileId)
-    .eq('platform_roles.key', 'PLATFORM_SUPERADMIN')
-    .maybeSingle();
+      )
+      .eq('profile_id', profileId)
+      .eq('platform_roles.key', 'PLATFORM_SUPERADMIN')
+      .maybeSingle();
 
-  if (error) {
-    console.error('platform role check failed:', error.code, error.message);
-    return { ok: false, error: error.message };
+    if (error) {
+      console.error('platform role check failed:', error.code, error.message);
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: data != null };
   }
-
-  return { ok: data != null };
-}
+);
 
 /**
  * Comprueba un permiso de plataforma vía helper SQL ff_has_platform_permission.
  * Usa la sesión del usuario (JWT); no service_role.
+ * cache() deduplica la misma permissionKey dentro del request.
  */
-export async function hasPlatformPermission(
-  permissionKey: string
-): Promise<{ ok: boolean; error?: string }> {
-  const supabase = createClient();
+export const hasPlatformPermission = cache(
+  async (
+    permissionKey: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const supabase = createClient();
 
-  const { data, error } = await supabase.rpc('ff_has_platform_permission', {
-    p_permission_key: permissionKey,
-  });
+    const { data, error } = await supabase.rpc('ff_has_platform_permission', {
+      p_permission_key: permissionKey,
+    });
 
-  if (error) {
-    console.error(
-      'platform permission check failed:',
-      error.code,
-      error.message
-    );
-    return { ok: false, error: error.message };
+    if (error) {
+      console.error(
+        'platform permission check failed:',
+        error.code,
+        error.message
+      );
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: data === true };
   }
+);
 
-  return { ok: data === true };
-}
-
-export async function getCurrentProfile(): Promise<{
+export const getCurrentProfile = cache(async (): Promise<{
   profile: CurrentProfile | null;
   error?: string;
   authenticated: boolean;
-}> {
+}> => {
   const supabase = createClient();
 
   const {
@@ -131,40 +139,42 @@ export async function getCurrentProfile(): Promise<{
           : null,
     },
   };
-}
+});
 
 /**
  * Resolución única de acceso al panel de plataforma.
  * Nunca trata un error RBAC como "sin sesión".
  */
-export async function resolvePlatformAccess(): Promise<PlatformAccessResult> {
-  const { profile, authenticated, error } = await getCurrentProfile();
+export const resolvePlatformAccess = cache(
+  async (): Promise<PlatformAccessResult> => {
+    const { profile, authenticated, error } = await getCurrentProfile();
 
-  if (!authenticated) {
-    return { status: 'unauthenticated' };
+    if (!authenticated) {
+      return { status: 'unauthenticated' };
+    }
+
+    if (error || !profile) {
+      return {
+        status: 'error',
+        message: error ?? 'No se ha podido cargar el perfil.',
+        email: profile?.email,
+      };
+    }
+
+    const role = await hasPlatformSuperAdminRole(profile.id);
+
+    if (role.error) {
+      return {
+        status: 'error',
+        message: role.error,
+        email: profile.email,
+      };
+    }
+
+    if (!role.ok) {
+      return { status: 'forbidden', profile };
+    }
+
+    return { status: 'authorized', profile };
   }
-
-  if (error || !profile) {
-    return {
-      status: 'error',
-      message: error ?? 'No se ha podido cargar el perfil.',
-      email: profile?.email,
-    };
-  }
-
-  const role = await hasPlatformSuperAdminRole(profile.id);
-
-  if (role.error) {
-    return {
-      status: 'error',
-      message: role.error,
-      email: profile.email,
-    };
-  }
-
-  if (!role.ok) {
-    return { status: 'forbidden', profile };
-  }
-
-  return { status: 'authorized', profile };
-}
+);

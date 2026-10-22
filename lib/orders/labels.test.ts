@@ -22,4 +22,16 @@ describe('order panel transition options', () => {
     ]);
     assert.ok(!nextPaymentStatusOptions('unpaid').includes('refunded'));
   });
+
+  it('solicitud QR: request_pending → preparing; pending_confirmation → unpaid', () => {
+    assert.deepEqual(nextOrderStatusOptions('request_pending').sort(), [
+      'cancelled',
+      'preparing',
+    ]);
+    assert.deepEqual(nextPaymentStatusOptions('pending_confirmation').sort(), [
+      'paid',
+      'unpaid',
+      'waived',
+    ]);
+  });
 });

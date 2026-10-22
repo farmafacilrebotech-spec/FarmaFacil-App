@@ -10,10 +10,12 @@ import {
   SUBSCRIPTION_STATUS_LABELS,
 } from '@/lib/pharmacies/labels';
 import { formatDate } from '@/lib/format';
+import { COMMERCIAL_PILOT_DURATION_DAYS } from '@/lib/commercial/pharmacy-onboarding';
 import {
   COMMERCIAL_ACTION_LABELS,
   COMMERCIAL_ACTION_SUCCESS,
   commercialActionRequiresConfirm,
+  hasOpenCommercialPilot,
   listVisibleCommercialActions,
   snapshotFromPharmacyDetail,
   type CommercialAction,
@@ -36,6 +38,27 @@ function DateValue({ value }: { value: string | null | undefined }) {
   return <span className="font-medium text-foreground">{formatDate(value)}</span>;
 }
 
+function pilotStatusLabel(status: string): string {
+  switch (status) {
+    case 'draft':
+      return 'Borrador';
+    case 'ready':
+      return 'Preparado, pendiente de activación';
+    case 'active':
+      return 'Activo';
+    case 'extended':
+      return 'Activo (ampliado)';
+    case 'ended':
+      return 'Finalizado';
+    case 'converted':
+      return 'Convertido';
+    case 'cancelled':
+      return 'Cancelado';
+    default:
+      return status;
+  }
+}
+
 export function PharmacySubscriptionPanel({
   pharmacy,
 }: {
@@ -52,18 +75,44 @@ export function PharmacySubscriptionPanel({
     message: string;
   } | null>(null);
 
+  const trial = pharmacy.commercialTrial;
   const sub = pharmacy.subscription;
-  const snapshot = snapshotFromPharmacyDetail({
-    pharmacyStatus: pharmacy.status,
-    subscriptionStatus: sub?.status ?? null,
-    trialEnd: sub?.trial_end,
-    currentPeriodEnd: sub?.current_period_end,
-    cancelAtPeriodEnd: sub?.cancel_at_period_end,
-    gracePeriodEndsAt: sub?.grace_period_ends_at,
-  });
+  const openPilot = hasOpenCommercialPilot(
+    trial
+      ? {
+          status: trial.status,
+          activatedAt: trial.activated_at,
+          endsAt: trial.ends_at,
+          preparedAt: trial.prepared_at,
+          program: trial.program,
+        }
+      : null
+  );
+  const pilotReady =
+    trial?.status === 'ready' || trial?.status === 'draft';
+  const legacyCancelledOrExpired =
+    Boolean(sub) &&
+    (sub!.status === 'cancelled' || sub!.status === 'expired') &&
+    openPilot;
+
+  // Acciones de suscripción solo sobre corriente vigente; no reactivar legacy
+  // cuando hay piloto comercial abierto (activación solo vía Tarifas/readiness).
+  const snapshot =
+    sub && !legacyCancelledOrExpired
+      ? snapshotFromPharmacyDetail({
+          pharmacyStatus: pharmacy.status,
+          subscriptionStatus: sub.status,
+          trialEnd: sub.trial_end,
+          currentPeriodEnd: sub.current_period_end,
+          cancelAtPeriodEnd: sub.cancel_at_period_end,
+          gracePeriodEndsAt: sub.grace_period_ends_at,
+        })
+      : null;
 
   const visibleActions = snapshot
-    ? listVisibleCommercialActions(snapshot)
+    ? listVisibleCommercialActions(snapshot, {
+        hideReactivateForOpenPilot: openPilot,
+      })
     : [];
 
   async function runAction(action: CommercialAction) {
@@ -114,15 +163,10 @@ export function PharmacySubscriptionPanel({
           </div>
           <div>
             <h2 className="text-sm font-semibold text-foreground">
-              Suscripción comercial
+              Estado comercial
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Gestión SuperAdmin · provider{' '}
-              {sub?.provider ? (
-                <span className="font-medium text-foreground">{sub.provider}</span>
-              ) : (
-                '—'
-              )}
+              Gestión SuperAdmin · piloto comercial y suscripción
             </p>
           </div>
         </div>
@@ -141,11 +185,113 @@ export function PharmacySubscriptionPanel({
         </div>
       ) : null}
 
-      {!sub ? (
-        <p className="mt-4 text-sm text-muted-foreground">
-          Esta farmacia no tiene suscripción registrada.
-        </p>
+      {trial ? (
+        <div className="mt-4 rounded-lg border border-teal-200/80 bg-teal-50/50 p-4 dark:border-teal-900 dark:bg-teal-950/30">
+          <p className="text-xs font-semibold uppercase tracking-wide text-teal-800 dark:text-teal-200">
+            Piloto comercial
+          </p>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-xs text-muted-foreground">Estado</dt>
+              <dd className="text-sm font-medium text-foreground">
+                {pilotStatusLabel(trial.status)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Programa</dt>
+              <dd className="text-sm font-medium text-foreground">
+                {trial.program}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Duración</dt>
+              <dd className="text-sm font-medium text-foreground">
+                {pilotReady
+                  ? `${COMMERCIAL_PILOT_DURATION_DAYS} días disponibles, todavía no iniciados`
+                  : trial.ends_at
+                    ? `Hasta ${formatDate(trial.ends_at)}`
+                    : `${COMMERCIAL_PILOT_DURATION_DAYS} días`}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Preparación</dt>
+              <dd className="text-sm">
+                <DateValue value={trial.prepared_at} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Activación</dt>
+              <dd className="text-sm">
+                <DateValue value={trial.activated_at} />
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Fin piloto</dt>
+              <dd className="text-sm">
+                <DateValue value={trial.ends_at} />
+              </dd>
+            </div>
+          </dl>
+          {pilotReady ? (
+            <p className="mt-3 text-xs leading-relaxed text-teal-900/80 dark:text-teal-100/80">
+              Piloto comercial: preparado, pendiente de activación. La
+              activación se realiza exclusivamente desde Tarifas tras superar
+              readiness — no uses «Reactivar suscripción» sobre el histórico
+              legacy.
+            </p>
+          ) : null}
+        </div>
       ) : (
+        <p className="mt-4 text-sm text-muted-foreground">
+          No hay piloto comercial registrado para esta farmacia.
+        </p>
+      )}
+
+      {legacyCancelledOrExpired && sub ? (
+        <div className="mt-4 rounded-lg border border-border/80 bg-muted/30 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Suscripción legacy (histórico)
+          </p>
+          <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <dt className="text-xs text-muted-foreground">Estado</dt>
+              <dd className="text-sm font-medium text-foreground">
+                {SUBSCRIPTION_STATUS_LABELS[sub.status] ?? sub.status}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Provider</dt>
+              <dd className="text-sm font-medium text-foreground">
+                {sub.provider || '—'}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Plan</dt>
+              <dd className="text-sm font-medium text-foreground">
+                {pharmacy.plan?.name ?? sub.plan?.name ?? '—'}
+              </dd>
+            </div>
+          </dl>
+          {sub.commercial_reason ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Motivo histórico:{' '}
+              <span className="text-foreground">{sub.commercial_reason}</span>
+            </p>
+          ) : null}
+          <p className="mt-2 text-xs text-muted-foreground">
+            No es la suscripción comercial actual. No reactivar para iniciar el
+            piloto.
+          </p>
+        </div>
+      ) : null}
+
+      {!trial && !sub ? (
+        <p className="mt-4 text-sm text-muted-foreground">
+          Esta farmacia no tiene suscripción ni piloto registrados.
+        </p>
+      ) : null}
+
+      {sub && !legacyCancelledOrExpired ? (
         <>
           <dl className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <div>
@@ -226,11 +372,20 @@ export function PharmacySubscriptionPanel({
             </div>
           ) : (
             <p className="mt-4 text-xs text-muted-foreground">
-              No hay acciones comerciales disponibles en el estado actual.
+              {openPilot
+                ? 'La activación del piloto se gestiona en Tarifas (readiness → Activar piloto). No hay acciones de suscripción legacy aquí.'
+                : 'No hay acciones comerciales disponibles en el estado actual.'}
             </p>
           )}
         </>
-      )}
+      ) : null}
+
+      {openPilot && (legacyCancelledOrExpired || !sub) ? (
+        <p className="mt-4 text-xs text-muted-foreground">
+          La activación del piloto se gestiona en Tarifas (readiness → Activar
+          piloto). No hay acciones de suscripción legacy aquí.
+        </p>
+      ) : null}
 
       <AlertDialog
         open={confirmAction != null}

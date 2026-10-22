@@ -13,9 +13,17 @@ export type KioskCatalogProduct = {
   sku: string | null;
   ean: string | null;
   category: string | null;
-  price: number;
-  stock: number;
-  /** true si stock > 0 (dato existente; sin campo de imagen/receta). */
+  subcategory?: string | null;
+  /** Null en genéricos: no hay PVP inventado. */
+  price: number | null;
+  /** Null en genéricos: no hay stock inventado. */
+  stock: number | null;
+  availabilityStatus?: string | null;
+  source?: string | null;
+  /**
+   * Compat: true solo si hay stock confirmado (>0).
+   * Genéricos con confirm_with_pharmacy → false (solicitar a farmacia).
+   */
   available: boolean;
 };
 
@@ -120,8 +128,25 @@ export async function searchKioskCatalog(input: {
     if (!id) continue;
     // Defensa en profundidad: no aceptar filas sin is_active true
     if (row.is_active === false) continue;
-    const stock = Number(row.stock);
-    const price = Number(row.price);
+    const source =
+      row.source == null || row.source === '' ? null : String(row.source);
+    const availabilityStatus =
+      row.availability_status == null || row.availability_status === ''
+        ? null
+        : String(row.availability_status);
+    const isGeneric = source === 'generic' || source === 'demo';
+    const stockRaw = row.stock;
+    const priceRaw = row.price;
+    const stock =
+      stockRaw == null || stockRaw === ''
+        ? null
+        : Number(stockRaw);
+    const price =
+      priceRaw == null || priceRaw === ''
+        ? null
+        : Number(priceRaw);
+    const stockNum = stock != null && Number.isFinite(stock) ? stock : null;
+    const priceNum = price != null && Number.isFinite(price) ? price : null;
     items.push({
       id,
       name: String(row.name ?? 'Producto'),
@@ -132,9 +157,19 @@ export async function searchKioskCatalog(input: {
         row.category == null || row.category === ''
           ? null
           : String(row.category),
-      price: Number.isFinite(price) ? price : 0,
-      stock: Number.isFinite(stock) ? stock : 0,
-      available: Number.isFinite(stock) && stock > 0,
+      subcategory:
+        row.subcategory == null || row.subcategory === ''
+          ? null
+          : String(row.subcategory),
+      price: isGeneric ? null : priceNum,
+      stock: isGeneric ? null : stockNum,
+      availabilityStatus,
+      source,
+      available:
+        !isGeneric &&
+        availabilityStatus !== 'confirm_with_pharmacy' &&
+        stockNum != null &&
+        stockNum > 0,
     });
   }
 

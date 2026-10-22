@@ -46,6 +46,7 @@ export function PharmacyCatalogView({
   products,
   categories,
   loadError,
+  catalogMode = 'own',
   variant = 'page',
   toolbarExtra,
 }: {
@@ -54,10 +55,13 @@ export function PharmacyCatalogView({
   products: PharmacyProduct[];
   categories: string[];
   loadError?: string | null;
+  /** generic: sin PVP/stock ficticios ni import propio */
+  catalogMode?: 'generic' | 'own';
   /** page = cabecera completa tenant; embedded = pestaña SuperAdmin */
   variant?: 'page' | 'embedded';
   toolbarExtra?: React.ReactNode;
 }) {
+  const isGeneric = catalogMode === 'generic';
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('all');
   const [status, setStatus] = React.useState<'all' | 'active' | 'inactive'>(
@@ -115,35 +119,43 @@ export function PharmacyCatalogView({
   const actions = (
     <>
       {toolbarExtra}
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-1.5"
-        onClick={downloadTemplate}
-      >
-        <Download className="h-4 w-4" /> Plantilla
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="gap-1.5"
-        onClick={() => setImportOpen(true)}
-      >
-        <Upload className="h-4 w-4" /> Importar Excel/CSV
-      </Button>
-      <Button
-        type="button"
-        size="sm"
-        className="gap-1.5"
-        onClick={() => {
-          setEditing(null);
-          setFormOpen(true);
-        }}
-      >
-        <Plus className="h-4 w-4" /> Añadir producto
-      </Button>
+      {!isGeneric ? (
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={downloadTemplate}
+          >
+            <Download className="h-4 w-4" /> Plantilla
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setImportOpen(true)}
+          >
+            <Upload className="h-4 w-4" /> Importar Excel/CSV
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              setEditing(null);
+              setFormOpen(true);
+            }}
+          >
+            <Plus className="h-4 w-4" /> Añadir producto
+          </Button>
+        </>
+      ) : (
+        <Badge variant="outline" className="font-normal">
+          Modalidad genérica · sin import propio
+        </Badge>
+      )}
     </>
   );
 
@@ -186,28 +198,34 @@ export function PharmacyCatalogView({
         <EmptyState
           icon={Package}
           title="Todavía no hay productos"
-          description="Importa tu catálogo desde Excel/CSV o crea el primer producto manualmente."
+          description={
+            isGeneric
+              ? 'En modalidad genérica el catálogo llega desde el maestro FarmaFácil (preparación comercial o sync).'
+              : 'Importa tu catálogo desde Excel/CSV o crea el primer producto manualmente.'
+          }
           action={
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-1.5"
-                onClick={() => setImportOpen(true)}
-              >
-                <Upload className="h-4 w-4" /> Importar catálogo
-              </Button>
-              <Button
-                type="button"
-                className="gap-1.5"
-                onClick={() => {
-                  setEditing(null);
-                  setFormOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" /> Añadir primer producto
-              </Button>
-            </div>
+            isGeneric ? undefined : (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => setImportOpen(true)}
+                >
+                  <Upload className="h-4 w-4" /> Importar catálogo
+                </Button>
+                <Button
+                  type="button"
+                  className="gap-1.5"
+                  onClick={() => {
+                    setEditing(null);
+                    setFormOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" /> Añadir primer producto
+                </Button>
+              </div>
+            )
           }
         />
       ) : (
@@ -262,17 +280,27 @@ export function PharmacyCatalogView({
                     <TableHead className="hidden lg:table-cell">
                       Categoría
                     </TableHead>
-                    <TableHead className="text-right">PVP</TableHead>
-                    <TableHead className="text-right">Stock</TableHead>
+                    {!isGeneric ? (
+                      <>
+                        <TableHead className="text-right">PVP</TableHead>
+                        <TableHead className="text-right">Stock</TableHead>
+                      </>
+                    ) : (
+                      <TableHead className="hidden sm:table-cell">
+                        Disponibilidad
+                      </TableHead>
+                    )}
                     <TableHead>Estado</TableHead>
-                    <TableHead className="text-right">Acciones</TableHead>
+                    {!isGeneric ? (
+                      <TableHead className="text-right">Acciones</TableHead>
+                    ) : null}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={7}
+                        colSpan={isGeneric ? 5 : 7}
                         className="py-10 text-center text-sm text-muted-foreground"
                       >
                         No hay productos con estos filtros.
@@ -286,9 +314,14 @@ export function PharmacyCatalogView({
                             <p className="truncate font-medium text-foreground">
                               {p.name}
                             </p>
-                            {p.brand ? (
+                            {p.brand && !isGeneric ? (
                               <p className="truncate text-xs text-muted-foreground">
                                 {p.brand}
+                              </p>
+                            ) : null}
+                            {isGeneric && p.subcategory ? (
+                              <p className="truncate text-xs text-muted-foreground">
+                                {p.subcategory}
                               </p>
                             ) : null}
                           </div>
@@ -303,59 +336,71 @@ export function PharmacyCatalogView({
                         <TableCell className="hidden lg:table-cell">
                           {p.category ?? '—'}
                         </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {formatCurrency(p.price)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span
-                            className={
-                              p.stock <= p.minStock
-                                ? 'font-medium text-amber-600'
-                                : undefined
-                            }
-                          >
-                            {formatNumber(p.stock)}
-                          </span>
-                        </TableCell>
+                        {!isGeneric ? (
+                          <>
+                            <TableCell className="text-right font-medium">
+                              {formatCurrency(p.price)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span
+                                className={
+                                  p.stock <= p.minStock
+                                    ? 'font-medium text-amber-600'
+                                    : undefined
+                                }
+                              >
+                                {formatNumber(p.stock)}
+                              </span>
+                            </TableCell>
+                          </>
+                        ) : (
+                          <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
+                            {p.availabilityStatus === 'confirm_with_pharmacy'
+                              ? 'Confirmar en farmacia'
+                              : p.availabilityStatus ?? '—'}
+                          </TableCell>
+                        )}
                         <TableCell>
                           <Badge variant={p.isActive ? 'secondary' : 'outline'}>
                             {p.isActive ? 'Activo' : 'Archivado'}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              onClick={() => {
-                                setEditing(p);
-                                setFormOpen(true);
-                              }}
-                              aria-label="Editar"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8"
-                              disabled={busyId === p.id}
-                              onClick={() => void toggleActive(p)}
-                              aria-label={
-                                p.isActive ? 'Archivar' : 'Reactivar'
-                              }
-                            >
-                              {p.isActive ? (
-                                <Archive className="h-4 w-4" />
-                              ) : (
-                                <ArchiveRestore className="h-4 w-4" />
-                              )}
-                            </Button>
-                          </div>
-                        </TableCell>
+                        {!isGeneric ? (
+                          <TableCell className="text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                onClick={() => {
+                                  setEditing(p);
+                                  setFormOpen(true);
+                                }}
+                                aria-label="Editar"
+                              >
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="h-8 w-8"
+                                disabled={busyId === p.id}
+                                onClick={() => void toggleActive(p)}
+                                aria-label={
+                                  p.isActive ? 'Archivar' : 'Reactivar'
+                                }
+                              >
+                                {p.isActive ? (
+                                  <Archive className="h-4 w-4" />
+                                ) : (
+                                  <ArchiveRestore className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </TableCell>
+                        ) : null}
                       </TableRow>
                     ))
                   )}
@@ -366,17 +411,21 @@ export function PharmacyCatalogView({
         </>
       )}
 
-      <ProductFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        pharmacyId={pharmacyId}
-        product={editing}
-      />
-      <ProductImportDialog
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        pharmacyId={pharmacyId}
-      />
+      {!isGeneric ? (
+        <>
+          <ProductFormDialog
+            open={formOpen}
+            onOpenChange={setFormOpen}
+            pharmacyId={pharmacyId}
+            product={editing}
+          />
+          <ProductImportDialog
+            open={importOpen}
+            onOpenChange={setImportOpen}
+            pharmacyId={pharmacyId}
+          />
+        </>
+      ) : null}
     </div>
   );
 }

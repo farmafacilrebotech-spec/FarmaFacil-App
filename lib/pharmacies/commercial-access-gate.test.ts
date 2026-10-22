@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 import {
   addDaysIso,
   evaluatePharmacyOperability,
+  listVisibleCommercialActions,
+  resolvePharmacyCommercialAccess,
   type CommercialSnapshot,
 } from './commercial-lifecycle.ts';
 
@@ -164,5 +166,84 @@ describe('platform vs tenant privilege matrix (documented)', () => {
       softLockTablesWithoutOperable.includes('pharmacy_products'),
       false
     );
+  });
+});
+
+describe('resolvePharmacyCommercialAccess (piloto + legacy)', () => {
+  it('piloto ready + legacy cancelled → preparation, not cancelled', () => {
+    const r = resolvePharmacyCommercialAccess({
+      pharmacyStatus: 'pending_setup',
+      subscriptionStatus: 'cancelled',
+      trial: { status: 'ready', activatedAt: null, endsAt: null },
+      now,
+    });
+    assert.equal(r.accessMode, 'preparation');
+    assert.equal(r.operable, false);
+    assert.equal(r.reason, 'pilot_ready_pending_activation');
+  });
+
+  it('piloto active + suscripción trialing vigente → operational', () => {
+    const r = resolvePharmacyCommercialAccess({
+      pharmacyStatus: 'pending_setup',
+      subscriptionStatus: 'trialing',
+      trialEnd: addDaysIso(now, 10),
+      trial: {
+        status: 'active',
+        activatedAt: addDaysIso(now, -1),
+        endsAt: addDaysIso(now, 14),
+      },
+      now,
+    });
+    assert.equal(r.accessMode, 'operational');
+    assert.equal(r.operable, true);
+    assert.equal(r.reason, 'ok');
+  });
+
+  it('piloto active con endsAt pasado → blocked pilot_expired', () => {
+    const r = resolvePharmacyCommercialAccess({
+      pharmacyStatus: 'pending_setup',
+      subscriptionStatus: 'trialing',
+      trialEnd: addDaysIso(now, -1),
+      trial: {
+        status: 'active',
+        activatedAt: addDaysIso(now, -20),
+        endsAt: addDaysIso(now, -1),
+      },
+      now,
+    });
+    assert.equal(r.accessMode, 'blocked');
+    assert.equal(r.operable, false);
+    assert.equal(r.reason, 'pilot_expired');
+  });
+
+  it('legacy cancelled sin piloto → blocked subscription_cancelled', () => {
+    const r = resolvePharmacyCommercialAccess({
+      pharmacyStatus: 'pending_setup',
+      subscriptionStatus: 'cancelled',
+      trial: null,
+      now,
+    });
+    assert.equal(r.accessMode, 'blocked');
+    assert.equal(r.operable, false);
+    assert.equal(r.reason, 'subscription_cancelled');
+  });
+
+  it('piloto ended → blocked pilot_ended', () => {
+    const r = resolvePharmacyCommercialAccess({
+      pharmacyStatus: 'pending_setup',
+      subscriptionStatus: 'cancelled',
+      trial: { status: 'ended', endsAt: addDaysIso(now, -1) },
+      now,
+    });
+    assert.equal(r.accessMode, 'blocked');
+    assert.equal(r.reason, 'pilot_ended');
+  });
+
+  it('hide reactivate when open pilot', () => {
+    const actions = listVisibleCommercialActions(
+      snap({ subscriptionStatus: 'cancelled' }),
+      { hideReactivateForOpenPilot: true }
+    );
+    assert.equal(actions.includes('reactivate'), false);
   });
 });

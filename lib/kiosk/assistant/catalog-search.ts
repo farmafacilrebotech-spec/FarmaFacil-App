@@ -4,6 +4,11 @@ import {
   extractCatalogSearchQueries,
   isProductSeekingMessage,
 } from '@/lib/kiosk/assistant/product-intent';
+import {
+  canAddKioskProductToCart,
+  formatKioskProductAvailability,
+  formatKioskProductPrice,
+} from '@/lib/kiosk/catalog-display';
 
 export type AssistantCatalogHit = KioskCatalogProduct & {
   /** false en DEMO: no se añade al carrito real. */
@@ -85,7 +90,10 @@ export async function searchAssistantCatalog(input: {
         Number(b.available) - Number(a.available) || a.name.localeCompare(b.name)
     )
     .slice(0, limit)
-    .map((p) => ({ ...p, canAddToCart: true }));
+    .map((p) => ({
+      ...p,
+      canAddToCart: canAddKioskProductToCart(p),
+    }));
 
   return { sought: true, queries, products };
 }
@@ -99,11 +107,10 @@ export function formatCatalogHitsForPrompt(
   return [
     'Coincidencias reales del catálogo autorizado (únicas fuentes de producto/precio; no inventes otras):',
     ...products.map((p, i) => {
-      const stockNote = p.available
-        ? `disponible (stock ${p.stock})`
-        : 'sin stock ahora';
-      return `${i + 1}. id=${p.id} · ${p.name}${p.brand ? ` (${p.brand})` : ''} · ${p.price.toFixed(2)} € · ${stockNote}`;
+      const priceNote = formatKioskProductPrice(p);
+      const stockNote = formatKioskProductAvailability(p);
+      return `${i + 1}. id=${p.id} · ${p.name}${p.brand ? ` (${p.brand})` : ''} · ${priceNote} · ${stockNote}`;
     }),
-    'Presenta estas coincidencias como orientación sobre el catálogo autorizado. No inventes características ni afirmes idoneidad clínica individual. Si no encajan del todo, dilo y sugiere el buscador o el farmacéutico del mostrador.',
+    'Presenta estas coincidencias como orientación sobre el catálogo autorizado. No inventes PVP ni stock. No inventes características ni afirmes idoneidad clínica individual. Si no encajan del todo, dilo y sugiere el buscador o el farmacéutico del mostrador.',
   ].join('\n');
 }

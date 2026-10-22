@@ -9,6 +9,7 @@ import {
   Settings,
   UserCog,
   LifeBuoy,
+  Calculator,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -62,6 +63,12 @@ export const navItems: NavItem[] = [
     href: '/contratos',
     icon: FileText,
     description: 'Contratos y firmas',
+  },
+  {
+    label: 'Tarifas y simulador',
+    href: '/tarifas',
+    icon: Calculator,
+    description: 'Planes, presupuestos y pilotos',
   },
   {
     label: 'Usuarios',

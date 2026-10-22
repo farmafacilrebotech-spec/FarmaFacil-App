@@ -1,9 +1,12 @@
 import { createAdminClient } from '@/lib/supabase/admin';
 import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
-import { buildAuthCallbackUrl } from '@/lib/email/auth-callback-url';
+import { buildInviteOpenUrl } from '@/lib/email/auth-callback-url';
 import { sendTransactionalEmail } from '@/lib/email/send';
 
-export { buildAuthCallbackUrl } from '@/lib/email/auth-callback-url';
+export {
+  buildAuthCallbackUrl,
+  buildInviteOpenUrl,
+} from '@/lib/email/auth-callback-url';
 
 /**
  * Paleta email = Brand Book FarmaFácil (app/globals.css).
@@ -53,7 +56,8 @@ export async function sendNewUserPharmacyInviteEmail(input: {
   otpType: string;
 }): Promise<{ ok: true } | { ok: false; error: string; code?: string }> {
   const email = input.to.trim().toLowerCase();
-  const actionUrl = buildAuthCallbackUrl({
+  // Landing /auth/invite-open: el OTP solo se consume al pulsar Continuar.
+  const actionUrl = buildInviteOpenUrl({
     appBaseUrl: input.appBaseUrl,
     hashedToken: input.hashedToken,
     otpType: input.otpType,
@@ -124,7 +128,7 @@ export async function sendExistingUserPharmacyInviteEmail(input: {
     }
   }
 
-  const actionUrl = buildAuthCallbackUrl({
+  const actionUrl = buildInviteOpenUrl({
     appBaseUrl: input.appBaseUrl,
     hashedToken,
     otpType,

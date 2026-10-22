@@ -23,7 +23,7 @@ const DEMO_PROMPT_FAQS: Array<{ question: string; answer: string }> = [
   {
     question: '¿Qué puedes hacer en modo demo?',
     answer:
-      'Orientarte de forma general sobre categorías de parafarmacia y el uso del kiosko. No consulto el inventario real ni precios de esta farmacia.',
+      'Orientarte de forma general sobre categorías de parafarmacia. No consulto el inventario real ni precios de esta farmacia.',
   },
   {
     question: '¿Puedo pedir cita o hablar con el farmacéutico desde aquí?',
@@ -33,7 +33,7 @@ const DEMO_PROMPT_FAQS: Array<{ question: string; answer: string }> = [
   {
     question: '¿Los productos que mencionas están en esta farmacia?',
     answer:
-      'No. En demo solo uso ejemplos genéricos. Para existencias reales usa el buscador del kiosko o pregunta en el mostrador.',
+      'No. En demo solo uso ejemplos genéricos. Para existencias reales pregunta en el mostrador o consulta el catálogo publicado de la farmacia.',
   },
 ];
 
@@ -82,7 +82,9 @@ export function buildAssistantSystemPrompt(input: {
   const lines: string[] = [
     `Eres «${assistantName}», un asistente virtual de orientación general para clientes de una farmacia FarmaFácil. Tu objetivo es ayudar a resolver consultas habituales, orientar sobre categorías de parafarmacia y facilitar la búsqueda de productos, respetando siempre las competencias del farmacéutico.`,
     '',
-    `Atiendes en el kiosko público de «${pharmacy}».`,
+    mode === 'demo'
+      ? `Atiendes a clientes de «${pharmacy}» como asistente genérico de orientación (no es exclusivo del kiosko; el piloto puede usarlo sin dispositivo kiosko).`
+      : `Atiendes en el canal asistente de «${pharmacy}».`,
     `Modalidad actual: ${mode === 'contracted' ? 'CONTRATADO (asistente personalizado)' : 'DEMO (contenido genérico de demostración)'}.`,
     '',
     'Comportamiento:',
@@ -101,12 +103,13 @@ export function buildAssistantSystemPrompt(input: {
       '',
       formatFaqs(DEMO_PROMPT_FAQS),
       '',
-      'Servicios (demo): Servicios de demostración: orientación general en kiosko. No incluye servicios clínicos ni pedidos online reales.',
-      'Horarios (demo): Horario demo: consulta el horario publicado en el mostrador de la farmacia.',
+      'Servicios (demo): orientación general sobre parafarmacia. No incluye servicios clínicos ni cobros online.',
+      'Horarios (demo): consulta el horario publicado en el mostrador de la farmacia.',
       '',
       '- No afirmes que has consultado el catálogo real de esta farmacia: en DEMO solo hay ejemplos genéricos autorizados.',
       '- Si el sistema te aporta coincidencias demo, úsalas solo como orientación de catálogo de demostración; no inventes otras ni afirmes idoneidad clínica individual.',
-      '- Si el cliente pide buscar un producto concreto sin coincidencias, orienta de forma general y sugiere el buscador del kiosko o el mostrador.',
+      '- Si el cliente pide buscar un producto concreto sin coincidencias, orienta de forma general y sugiere el catálogo publicado o el mostrador.',
+      '- No presentes el asistente genérico como función exclusiva del kiosko.',
       '- No ofrezcas ni prometas consultas online al farmacéutico en modo DEMO: deriva al mostrador.'
     );
   } else {

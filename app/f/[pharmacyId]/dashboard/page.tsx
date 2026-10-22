@@ -1,4 +1,5 @@
 import { PharmacyTenantDashboard } from '@/components/pharmacy-tenant/pharmacy-tenant-dashboard';
+import { loadPharmacyTenantDashboardStats } from '@/lib/orders/tenant-dashboard-stats';
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 
 export const dynamic = 'force-dynamic';
@@ -13,5 +14,9 @@ export default async function PharmacyDashboardPage({
     return null;
   }
 
-  return <PharmacyTenantDashboard context={result.context} />;
+  const stats = await loadPharmacyTenantDashboardStats(params.pharmacyId);
+
+  return (
+    <PharmacyTenantDashboard context={result.context} stats={stats} />
+  );
 }

@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { recoveryUrlHasAuthMaterial } from '@/lib/auth/password-recovery-shared';
 
 /**
  * Callback de recovery compatible con los tres formatos que puede emitir Auth:
@@ -10,8 +11,9 @@ import { createClient } from '@/lib/supabase/client';
  *   C) #access_token=...&type=recovery   (fragment; NUNCA llega a un Route Handler)
  *
  * Importante:
+ * - Leer search/hash ANTES de createBrowserClient (puede consumir el fragment).
  * - No hacer signOut antes de exchangeCodeForSession: borraría el code_verifier PKCE.
- * - setSession / exchange sustituyen la sesión previa (usuario B) por la de recovery (A).
+ * - No reutilizar una sesión previa (p. ej. SuperAdmin) si la URL no trae material Auth.
  */
 export default function AuthRecoveryPage() {
   const [message] = React.useState('Validando enlace de recuperación…');
@@ -20,7 +22,11 @@ export default function AuthRecoveryPage() {
     let cancelled = false;
 
     async function establishRecoverySession() {
-      const supabase = createClient();
+      // Captura síncrona antes de tocar el client (detectSessionInUrl).
+      const search = window.location.search;
+      const hash = window.location.hash;
+      const hadAuthMaterial = recoveryUrlHasAuthMaterial({ search, hash });
+
       const url = new URL(window.location.href);
       const code = url.searchParams.get('code');
       const tokenHash =
@@ -28,24 +34,22 @@ export default function AuthRecoveryPage() {
       const otpType = url.searchParams.get('type');
 
       const hashParams = new URLSearchParams(
-        window.location.hash.startsWith('#')
-          ? window.location.hash.slice(1)
-          : window.location.hash
+        hash.startsWith('#') ? hash.slice(1) : hash
       );
       const accessToken = hashParams.get('access_token');
       const refreshToken = hashParams.get('refresh_token');
       const hashType = hashParams.get('type');
 
+      const supabase = createClient();
+
       try {
         if (code) {
-          // PKCE: el verifier está en cookies. No tocar signOut antes.
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) {
             console.error('[auth/recovery] exchangeCodeForSession', error.message);
             throw error;
           }
         } else if (tokenHash && (!otpType || otpType === 'recovery')) {
-          // token_hash no depende del verifier: sí podemos limpiar sesión B antes.
           await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
           const { error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
@@ -68,17 +72,24 @@ export default function AuthRecoveryPage() {
             console.error('[auth/recovery] setSession', error.message);
             throw error;
           }
-        } else {
-          // createBrowserClient puede haber consumido el hash vía detectSessionInUrl.
+        } else if (hadAuthMaterial) {
+          // createBrowserClient pudo haber consumido el hash vía detectSessionInUrl.
           const {
             data: { session },
           } = await supabase.auth.getSession();
           if (!session) {
             if (!cancelled) {
-              window.location.replace('/forgot-password?error=recovery_missing');
+              window.location.replace('/forgot-password?error=recovery_invalid');
             }
             return;
           }
+        } else {
+          // Visita bare a /auth/recovery sin enlace: no exigir token en la
+          // pantalla de solicitud; redirigir con mensaje claro.
+          if (!cancelled) {
+            window.location.replace('/forgot-password?error=recovery_missing');
+          }
+          return;
         }
 
         const {

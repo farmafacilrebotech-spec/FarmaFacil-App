@@ -13,6 +13,7 @@ describe('buildAssistantSystemPrompt', () => {
     assert.match(p, /ejemplos genéricos autorizados/i);
     assert.match(p, /No ofrezcas diagnósticos/);
     assert.match(p, /Deriva al farmacéutico/);
+    assert.match(p, /no es exclusivo del kiosko/i);
   });
 
   it('en DEMO ignora FAQs e instrucciones reales aunque se pasen en runtime', () => {

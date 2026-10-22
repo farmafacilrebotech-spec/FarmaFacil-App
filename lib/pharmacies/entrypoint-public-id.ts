@@ -37,12 +37,11 @@ function defaultRandomBytes(size: number): Uint8Array {
     g.crypto.getRandomValues(buf);
     return buf;
   }
-  // Fallback Node (tests / server)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { randomBytes } = require('node:crypto') as {
+  // Fallback Node (tests / server). require dinámico evita bundling browser.
+  const nodeCrypto = require('node:crypto') as {
     randomBytes: (n: number) => Buffer;
   };
-  return new Uint8Array(randomBytes(size));
+  return new Uint8Array(nodeCrypto.randomBytes(size));
 }
 
 /**

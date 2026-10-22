@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 
 import type { PharmacyTenantContext } from '@/lib/pharmacies/tenant';
+import type { PharmacyTenantDashboardStats } from '@/lib/orders/tenant-dashboard-stats';
 import { tenantHref } from '@/lib/pharmacies/tenant-nav';
 import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
 import { PageHeader } from '@/components/shared/page-header';
@@ -19,8 +20,10 @@ const EMPTY_TREND = [0, 0, 0, 0, 0, 0, 0, 0];
 
 export function PharmacyTenantDashboard({
   context,
+  stats,
 }: {
   context: PharmacyTenantContext;
+  stats: PharmacyTenantDashboardStats;
 }) {
   const pharmacyId = context.pharmacy.id;
   const roleLabel = pharmacyRoleLabel(context.membership.roleKey);
@@ -56,14 +59,22 @@ export function PharmacyTenantDashboard({
       />
 
       <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        Indicadores en cero hasta conectar pedidos, clientes y catálogo de esta
-        farmacia. No se muestran datos de demostración.
+        Pedidos de hoy incluyen solicitudes del catálogo QR. Productos = ítems
+        activos del catálogo de esta farmacia (p. ej. genéricos del piloto), no
+        un inventario de almacén. Clientes y facturación aún no conectados.
       </p>
+
+      {stats.partialError ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Algunos indicadores no se han podido actualizar. Revisa pedidos y
+          catálogo en sus secciones.
+        </p>
+      ) : null}
 
       <div className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <KpiCard
           label="Pedidos hoy"
-          value="0"
+          value={String(stats.ordersToday)}
           delta={0}
           trend={EMPTY_TREND}
           icon="today"
@@ -71,15 +82,15 @@ export function PharmacyTenantDashboard({
         />
         <KpiCard
           label="Clientes"
-          value="0"
+          value="—"
           delta={0}
           trend={EMPTY_TREND}
           icon="clients"
           className="min-w-0"
         />
         <KpiCard
-          label="Productos"
-          value="0"
+          label="Productos en catálogo"
+          value={String(stats.activeProducts)}
           delta={0}
           trend={EMPTY_TREND}
           icon="products"
@@ -87,7 +98,7 @@ export function PharmacyTenantDashboard({
         />
         <KpiCard
           label="Facturación"
-          value="0 €"
+          value="—"
           delta={0}
           trend={EMPTY_TREND}
           icon="revenue"
@@ -106,11 +117,27 @@ export function PharmacyTenantDashboard({
             </p>
           </div>
           <div className="p-4">
-            <EmptyState
-              icon={Package}
-              title="Sin actividad todavía"
-              description="Cuando haya pedidos y movimientos reales, aparecerán aquí."
-            />
+            {stats.ordersToday > 0 ? (
+              <div className="rounded-lg border border-border bg-muted/20 px-4 py-3 text-sm text-foreground">
+                Hay {stats.ordersToday} pedido
+                {stats.ordersToday === 1 ? '' : 's'} creado
+                {stats.ordersToday === 1 ? '' : 's'} hoy (incluye solicitudes
+                QR). Ábrelos en{' '}
+                <Link
+                  href={tenantHref(pharmacyId, 'pedidos')}
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  Pedidos
+                </Link>
+                .
+              </div>
+            ) : (
+              <EmptyState
+                icon={Package}
+                title="Sin actividad todavía"
+                description="Cuando haya pedidos y movimientos reales, aparecerán aquí."
+              />
+            )}
           </div>
         </Card>
 

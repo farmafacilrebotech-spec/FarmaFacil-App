@@ -7,6 +7,10 @@ import {
   listPharmacyRoles,
 } from '@/lib/pharmacies/queries';
 import { listPharmacyProducts } from '@/lib/pharmacies/products';
+import {
+  getPharmacyCatalogMode,
+  pharmacyHasMasterCatalogProjection,
+} from '@/lib/pharmacies/catalog-mode';
 import { listPharmacyKioskDevices } from '@/lib/kiosk/devices';
 import { getPharmacyKioskEntitlement } from '@/lib/kiosk/entitlement';
 import { getPharmacyAssistantEntitlement } from '@/lib/kiosk/assistant/entitlement';
@@ -29,6 +33,8 @@ export default async function PharmacyDetailPage({
     members,
     roles,
     catalog,
+    catalogMode,
+    hasMasterProjection,
     kiosk,
     kioskEnt,
     assistantEnt,
@@ -41,6 +47,8 @@ export default async function PharmacyDetailPage({
     listPharmacyMembers(params.id),
     listPharmacyRoles(),
     listPharmacyProducts(params.id, { status: 'all' }),
+    getPharmacyCatalogMode(params.id),
+    pharmacyHasMasterCatalogProjection(params.id),
     listPharmacyKioskDevices(params.id),
     getPharmacyKioskEntitlement(params.id),
     getPharmacyAssistantEntitlement(params.id),
@@ -69,6 +77,8 @@ export default async function PharmacyDetailPage({
       catalogProducts={catalog.ok ? catalog.products : []}
       catalogCategories={catalog.ok ? catalog.categories : []}
       catalogLoadError={catalog.ok ? null : catalog.error}
+      catalogMode={catalogMode}
+      hasMasterProjection={hasMasterProjection}
       kioskDevices={kiosk.ok ? kiosk.devices : []}
       kioskDevicesError={kiosk.ok ? null : kiosk.error}
       kioskCommercialUiState={kioskEnt.uiState}

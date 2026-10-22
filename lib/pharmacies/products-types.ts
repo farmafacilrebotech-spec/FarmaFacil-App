@@ -14,8 +14,11 @@ export type PharmacyProduct = {
   minStock: number;
   isActive: boolean;
   isFeatured: boolean;
-  source: 'manual' | 'import' | 'demo';
+  source: 'manual' | 'import' | 'demo' | 'generic';
   sourceRef: string | null;
+  subcategory: string | null;
+  availabilityStatus: 'confirm_with_pharmacy' | 'available' | 'unavailable' | null;
+  masterCatalogId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -36,9 +39,39 @@ export type PharmacyProductRow = {
   is_featured: boolean;
   source?: string | null;
   source_ref?: string | null;
+  subcategory?: string | null;
+  availability_status?: string | null;
+  master_catalog_id?: string | null;
   created_at: string;
   updated_at: string;
 };
+
+function mapSource(
+  source: string | null | undefined
+): PharmacyProduct['source'] {
+  if (
+    source === 'demo' ||
+    source === 'import' ||
+    source === 'manual' ||
+    source === 'generic'
+  ) {
+    return source;
+  }
+  return 'manual';
+}
+
+function mapAvailability(
+  value: string | null | undefined
+): PharmacyProduct['availabilityStatus'] {
+  if (
+    value === 'confirm_with_pharmacy' ||
+    value === 'available' ||
+    value === 'unavailable'
+  ) {
+    return value;
+  }
+  return null;
+}
 
 export function mapPharmacyProduct(row: PharmacyProductRow): PharmacyProduct {
   return {
@@ -55,10 +88,11 @@ export function mapPharmacyProduct(row: PharmacyProductRow): PharmacyProduct {
     minStock: row.min_stock,
     isActive: row.is_active,
     isFeatured: row.is_featured,
-    source: row.source === 'demo' || row.source === 'import' || row.source === 'manual'
-      ? row.source
-      : 'manual',
+    source: mapSource(row.source),
     sourceRef: row.source_ref ?? null,
+    subcategory: row.subcategory ?? null,
+    availabilityStatus: mapAvailability(row.availability_status),
+    masterCatalogId: row.master_catalog_id ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

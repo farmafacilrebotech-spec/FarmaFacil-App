@@ -1,5 +1,6 @@
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 import { listPharmacyProducts } from '@/lib/pharmacies/products';
+import { getPharmacyCatalogMode } from '@/lib/pharmacies/catalog-mode';
 import { PharmacyCatalogView } from '@/components/pharmacy-catalog/pharmacy-catalog-view';
 
 export const dynamic = 'force-dynamic';
@@ -22,11 +23,14 @@ export default async function PharmacyCatalogPage({
       ? statusParam
       : 'all';
 
-  const list = await listPharmacyProducts(params.pharmacyId, {
-    q: searchParams?.q,
-    category: searchParams?.category,
-    status,
-  });
+  const [list, catalogMode] = await Promise.all([
+    listPharmacyProducts(params.pharmacyId, {
+      q: searchParams?.q,
+      category: searchParams?.category,
+      status,
+    }),
+    getPharmacyCatalogMode(params.pharmacyId),
+  ]);
 
   return (
     <PharmacyCatalogView
@@ -35,6 +39,7 @@ export default async function PharmacyCatalogPage({
       products={list.ok ? list.products : []}
       categories={list.ok ? list.categories : []}
       loadError={list.ok ? null : list.error}
+      catalogMode={catalogMode}
     />
   );
 }

@@ -51,6 +51,12 @@ export async function createPharmacyProductAction(
   const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
+  // Altas manuales = catálogo propio (mismo gate que import).
+  if (access.via !== 'platform') {
+    const modeGate = await requireOwnCatalogMode(pharmacyId);
+    if (!modeGate.ok) return modeGate;
+  }
+
   const parsed = pharmacyProductInputSchema.safeParse(raw);
   if (!parsed.success) {
     return {
@@ -63,7 +69,8 @@ export async function createPharmacyProductAction(
   const payload = toProductInsert(
     pharmacyId,
     access.profile.id,
-    parsed.data
+    parsed.data,
+    { source: 'manual' }
   );
 
   const { data, error } = await supabase
@@ -99,11 +106,16 @@ export async function updatePharmacyProductAction(
   }
 
   const supabase = createClient();
-  const { error } = await supabase
+  // No permitir editar proyecciones del maestro desde la farmacia (también enforced en SQL).
+  let updateQuery = supabase
     .from('pharmacy_products')
     .update(toProductUpdate(access.profile.id, parsed.data))
     .eq('id', productId)
     .eq('pharmacy_id', pharmacyId);
+  if (access.via !== 'platform') {
+    updateQuery = updateQuery.in('source', ['manual', 'import']);
+  }
+  const { error } = await updateQuery;
 
   if (error) {
     console.error('[catalog] update', error.code, error.message);
@@ -156,12 +168,51 @@ export type PreviewImportResult =
  * Paso 1–3: parsea archivo, sugiere mapeo y genera preview.
  * No escribe en BD. El fichero no se almacena.
  */
+async function requireOwnCatalogMode(
+  pharmacyId: string
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('pharmacy_settings')
+    .select('catalog_mode')
+    .eq('pharmacy_id', pharmacyId)
+    .maybeSingle();
+  if (error && error.code !== 'PGRST116') {
+    // Columna aún no migrada (054): no bloquear en entornos sin 054.
+    if (
+      error.message.includes('catalog_mode') ||
+      error.code === '42703' ||
+      error.code === 'PGRST204'
+    ) {
+      return {
+        ok: false,
+        error:
+          'La modalidad de catálogo aún no está disponible. Aplica la migración 054.',
+      };
+    }
+    console.error('[catalog] mode', error.code, error.message);
+    return { ok: false, error: 'No se ha podido verificar la modalidad de catálogo.' };
+  }
+  const mode = data?.catalog_mode === 'own' ? 'own' : 'generic';
+  if (mode !== 'own') {
+    return {
+      ok: false,
+      error:
+        'La importación de catálogo propio solo está disponible en modalidad Personalizado.',
+    };
+  }
+  return { ok: true };
+}
+
 export async function previewProductImportAction(
   pharmacyId: string,
   formData: FormData
 ): Promise<PreviewImportResult> {
   const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
+
+  const modeGate = await requireOwnCatalogMode(pharmacyId);
+  if (!modeGate.ok) return modeGate;
 
   const file = formData.get('file');
   if (!(file instanceof File)) {
@@ -232,6 +283,9 @@ export async function confirmProductImportAction(
   const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
+  const modeGate = await requireOwnCatalogMode(pharmacyId);
+  if (!modeGate.ok) return modeGate;
+
   const rows = payload.rows ?? [];
   if (rows.length === 0) {
     return { ok: false, error: 'No hay filas para importar.' };
@@ -260,6 +314,7 @@ export async function confirmProductImportAction(
     if (row.action === 'update' && row.matchedProductId) {
       const patch: Record<string, unknown> = {
         name: draft.name.trim(),
+        source: 'import',
         updated_by: access.profile.id,
       };
       if (draft.sku !== undefined) patch.sku = draft.sku;
@@ -277,7 +332,8 @@ export async function confirmProductImportAction(
         .from('pharmacy_products')
         .update(patch)
         .eq('id', row.matchedProductId)
-        .eq('pharmacy_id', pharmacyId);
+        .eq('pharmacy_id', pharmacyId)
+        .in('source', ['manual', 'import']);
 
       if (error) {
         console.error('[catalog] import update', error.code, error.message);
@@ -301,6 +357,8 @@ export async function confirmProductImportAction(
         draft.minStockProvided && draft.minStock != null ? draft.minStock : 0,
       is_active: true,
       is_featured: false,
+      source: 'import',
+      availability_status: 'available',
       created_by: access.profile.id,
       updated_by: access.profile.id,
     };

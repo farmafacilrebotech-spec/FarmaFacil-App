@@ -10,8 +10,10 @@ export type AssistantProductCard = {
   id: string;
   name: string;
   brand: string | null;
-  price: number;
-  stock: number;
+  /** Null en genéricos: sin PVP inventado (no usar 0). */
+  price: number | null;
+  /** Null en genéricos: sin stock inventado. */
+  stock: number | null;
   available: boolean;
   canAddToCart: boolean;
   imageUrl?: string | null;

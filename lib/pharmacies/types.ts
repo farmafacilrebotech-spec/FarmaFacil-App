@@ -81,6 +81,28 @@ export interface PharmacySubscription {
   plan: PlanSummary | null;
 }
 
+/** Piloto comercial 15d (pharmacy_commercial_trials). */
+export type PharmacyCommercialTrialStatus =
+  | 'draft'
+  | 'ready'
+  | 'active'
+  | 'extended'
+  | 'ended'
+  | 'converted'
+  | 'cancelled';
+
+export interface PharmacyCommercialTrial {
+  id: string;
+  program: string;
+  status: PharmacyCommercialTrialStatus | string;
+  prepared_at: string | null;
+  activated_at: string | null;
+  ends_at: string | null;
+  ended_at: string | null;
+  extension_used: boolean;
+  subscription_id: string | null;
+}
+
 export interface PharmacyDetail {
   id: string;
   name: string;
@@ -104,11 +126,29 @@ export interface PharmacyDetail {
   branding: PharmacyBranding | null;
   settings: PharmacySettings | null;
   subscription: PharmacySubscription | null;
+  /** Piloto comercial abierto o el más reciente; null si no hay fila. */
+  commercialTrial: PharmacyCommercialTrial | null;
 }
+
+/**
+ * Modalidad comercial del alta SuperAdmin.
+ * Solo `piloto` crea hoy (prep comercial). El resto queda bloqueado hasta 056.
+ */
+export type CommercialOnboardingPlan =
+  | 'piloto'
+  | 'general'
+  | 'personalizado'
+  | 'asistente_ia_personalizado';
 
 export interface CreatePharmacyInput {
   name: string;
-  plan_key: PlanKey;
+  /** Modalidad comercial. Preferida frente a plan_key legacy. */
+  commercial_plan: CommercialOnboardingPlan;
+  /**
+   * @deprecated No usar en altas nuevas. El trial legacy 30d queda fuera del flujo.
+   * Si se envía sin commercial_plan, se rechaza.
+   */
+  plan_key?: PlanKey;
   legal_name?: string;
   cif?: string;
   email?: string;

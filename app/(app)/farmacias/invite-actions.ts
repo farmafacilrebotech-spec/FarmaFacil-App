@@ -8,10 +8,13 @@ import {
   sendNewUserPharmacyInviteEmail,
 } from '@/lib/email/pharmacy-invitation';
 import { preparePharmacyInviteAuthLink } from '@/lib/pharmacies/invite-auth';
+import { resolvePharmacyInviteEmailKind } from '@/lib/pharmacies/invite-auth-logic';
+import { resolvePharmacyInviteUserKind } from '@/lib/pharmacies/invite-user-kind';
 import {
   inviteBlockMessageForMembership,
   resolveInviteAgainstExistingMembership,
 } from '@/lib/pharmacies/membership-invite-state';
+import { authFlowDiag } from '@/lib/auth/auth-flow-diag';
 import type { PharmacyRoleKey } from '@/lib/pharmacies/types';
 import { requirePharmacyMembershipManage } from '@/lib/pharmacies/membership-authz';
 import {
@@ -46,6 +49,40 @@ const ALLOWED_ROLE_KEYS: PharmacyRoleKey[] = [
 
 function isValidEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+/**
+ * Emails de demo local/staging (@farmafacil.test): no enviar Resend
+ * y activar membership si la cuenta ya existe (evita SMS/OTP y correos reales).
+ */
+function isDemoTestEmail(email: string): boolean {
+  return email.trim().toLowerCase().endsWith('@farmafacil.test');
+}
+
+async function activateDemoMembershipWithoutEmail(params: {
+  supabase: ReturnType<typeof createClient>;
+  pharmacyId: string;
+  membershipId: string;
+  actorId: string;
+}): Promise<boolean> {
+  const now = new Date().toISOString();
+  const { error } = await params.supabase
+    .from('pharmacy_memberships')
+    .update({
+      status: 'active',
+      accepted_at: now,
+      updated_by: params.actorId,
+      updated_at: now,
+    })
+    .eq('id', params.membershipId)
+    .eq('pharmacy_id', params.pharmacyId)
+    .eq('status', 'invited');
+
+  if (error) {
+    console.error('[invite] demo activate', error.code);
+    return false;
+  }
+  return true;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -336,10 +373,14 @@ export async function invitePharmacyUserAction(input: {
 
   // Auth primero → userId estable. Luego membership por profile_id (sin
   // depender de profiles RLS, que oculta revoked a peers de farmacia).
+  // preferFirstAccess provisional: si Auth ya existe, el magiclink irá a
+  // first-access; si tras insert/reinvite resulta "existing" FarmaFácil,
+  // el email de existing usa next invitations en la plantilla.
   const authLink = await preparePharmacyInviteAuthLink({
     email,
     fullName,
     appBaseUrl,
+    preferFirstAccess: true,
   });
 
   if (!authLink.ok) {
@@ -421,18 +462,28 @@ export async function invitePharmacyUserAction(input: {
 
     // Usuario ya tenía cuenta (cancelación / baja): email de farmacia nueva.
     // No conceder active: reinvite deja invited → requiere aceptación.
+    // Excepción demo @farmafacil.test: sin correo y membership activa.
     let invitationEmailSent = false;
-    const sent = await sendExistingUserPharmacyInviteEmail({
-      to: email,
-      pharmacyName,
-      appBaseUrl,
-      recipientName: fullName,
-      hashedToken: authLink.hashedToken,
-      otpType: authLink.otpType,
-    });
-    invitationEmailSent = sent.ok;
-    if (!sent.ok) {
-      console.error('[invite] reinvite email', sent.error, sent.code);
+    if (isDemoTestEmail(email)) {
+      await activateDemoMembershipWithoutEmail({
+        supabase,
+        pharmacyId,
+        membershipId: decision.membershipId,
+        actorId: auth.actorId,
+      });
+    } else {
+      const sent = await sendExistingUserPharmacyInviteEmail({
+        to: email,
+        pharmacyName,
+        appBaseUrl,
+        recipientName: fullName,
+        hashedToken: authLink.hashedToken,
+        otpType: authLink.otpType,
+      });
+      invitationEmailSent = sent.ok;
+      if (!sent.ok) {
+        console.error('[invite] reinvite email', sent.error, sent.code);
+      }
     }
 
     revalidatePath(`/farmacias/${pharmacyId}`);
@@ -513,8 +564,35 @@ export async function invitePharmacyUserAction(input: {
   }
 
   // Email solo tras membership OK. No afirmar envío sin confirmación de Resend.
+  // Demo @farmafacil.test: sin Resend; si la cuenta ya existe → membership active.
+  // Plantilla según memberships FarmaFácil (p.ej. Auth confirmado + solo invited
+  // → first-access), no según authLink.kind alone.
   let invitationEmailSent = false;
-  if (authLink.kind === 'new') {
+  const kindResult = await resolvePharmacyInviteUserKind(authLink.userId);
+  const emailKind = kindResult.ok
+    ? resolvePharmacyInviteEmailKind(kindResult.kind)
+    : authLink.kind === 'new'
+      ? 'new'
+      : 'existing';
+
+  authFlowDiag('invite_created_prepared', {
+    email_kind: emailKind,
+    auth_link_kind: authLink.kind,
+    otp_type: authLink.otpType,
+    next_path: authLink.nextPath,
+    kind_resolve_ok: kindResult.ok,
+  });
+
+  if (isDemoTestEmail(email)) {
+    if (emailKind === 'existing') {
+      await activateDemoMembershipWithoutEmail({
+        supabase,
+        pharmacyId,
+        membershipId: inserted.membershipId,
+        actorId: auth.actorId,
+      });
+    }
+  } else if (emailKind === 'new') {
     const sent = await sendNewUserPharmacyInviteEmail({
       to: email,
       pharmacyName,
@@ -549,6 +627,6 @@ export async function invitePharmacyUserAction(input: {
     ok: true,
     membershipId: inserted.membershipId,
     invitationEmailSent,
-    inviteKind: authLink.kind,
+    inviteKind: emailKind,
   };
 }

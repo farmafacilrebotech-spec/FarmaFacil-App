@@ -1,3 +1,5 @@
+import { cache } from 'react';
+
 import { createClient } from '@/lib/supabase/server';
 import type {
   PharmacyDetail,
@@ -6,6 +8,7 @@ import type {
   PharmacyBranding,
   PharmacySettings,
   PharmacySubscription,
+  PharmacyCommercialTrial,
   PharmacyStatus,
   PharmacyMember,
   PharmacyRoleOption,
@@ -62,7 +65,11 @@ export async function listActivePlans(): Promise<PlanSummary[]> {
   return (data ?? []) as PlanSummary[];
 }
 
-export async function listPharmacies(): Promise<PharmacyListItem[]> {
+/**
+ * Lista farmacias de plataforma.
+ * cache() evita la doble carga layout + página (dashboard/farmacias) en el mismo request.
+ */
+export const listPharmacies = cache(async (): Promise<PharmacyListItem[]> => {
   const supabase = createClient();
   const { data, error } = await supabase
     .from('pharmacies')
@@ -105,7 +112,7 @@ export async function listPharmacies(): Promise<PharmacyListItem[]> {
     created_at: row.created_at as string,
     plan: mapPlan(row.plan as PlanRow | PlanRow[] | null),
   }));
-}
+});
 
 type SubscriptionQueryRow = {
   id: string;
@@ -233,6 +240,77 @@ async function loadPharmacySubscriptionRow(
   return sub ? mapSubscriptionRow(sub) : null;
 }
 
+async function loadPharmacyCommercialTrialRow(
+  pharmacyId: string
+): Promise<PharmacyCommercialTrial | null> {
+  const supabase = createClient();
+
+  const open = await supabase
+    .from('pharmacy_commercial_trials')
+    .select(
+      `
+      id,
+      program,
+      status,
+      prepared_at,
+      activated_at,
+      ends_at,
+      ended_at,
+      extension_used,
+      subscription_id
+    `
+    )
+    .eq('pharmacy_id', pharmacyId)
+    .in('status', ['draft', 'ready', 'active', 'extended'])
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  let row = open.data?.[0];
+
+  if (!row && !open.error) {
+    const any = await supabase
+      .from('pharmacy_commercial_trials')
+      .select(
+        `
+      id,
+      program,
+      status,
+      prepared_at,
+      activated_at,
+      ends_at,
+      ended_at,
+      extension_used,
+      subscription_id
+    `
+      )
+      .eq('pharmacy_id', pharmacyId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    row = any.data?.[0];
+  }
+
+  if (open.error && process.env.NODE_ENV === 'development') {
+    console.error(
+      '[pharmacies] loadPharmacyCommercialTrialRow',
+      open.error.message
+    );
+  }
+
+  if (!row) return null;
+
+  return {
+    id: row.id as string,
+    program: (row.program as string) ?? 'commercial_v1_15d',
+    status: row.status as string,
+    prepared_at: (row.prepared_at as string | null) ?? null,
+    activated_at: (row.activated_at as string | null) ?? null,
+    ends_at: (row.ends_at as string | null) ?? null,
+    ended_at: (row.ended_at as string | null) ?? null,
+    extension_used: Boolean(row.extension_used),
+    subscription_id: (row.subscription_id as string | null) ?? null,
+  };
+}
+
 export async function getPharmacyById(
   id: string
 ): Promise<PharmacyDetail | null> {
@@ -280,8 +358,7 @@ export async function getPharmacyById(
       )
     `;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let data: any = null;
+  let data: Record<string, unknown> | null = null;
   let error: { message: string; code?: string } | null = null;
 
   {
@@ -290,7 +367,10 @@ export async function getPharmacyById(
       .select(pharmacySelectFull)
       .eq('id', id)
       .maybeSingle();
-    data = full.data;
+    data =
+      full.data && typeof full.data === 'object'
+        ? (full.data as Record<string, unknown>)
+        : null;
     error = full.error;
   }
 
@@ -317,7 +397,10 @@ export async function getPharmacyById(
       )
       .eq('id', id)
       .maybeSingle();
-    data = legacy.data;
+    data =
+      legacy.data && typeof legacy.data === 'object'
+        ? (legacy.data as Record<string, unknown>)
+        : null;
     error = legacy.error;
   }
 
@@ -330,7 +413,10 @@ export async function getPharmacyById(
 
   if (!data) return null;
 
-  const subscription = await loadPharmacySubscriptionRow(id);
+  const [subscription, commercialTrial] = await Promise.all([
+    loadPharmacySubscriptionRow(id),
+    loadPharmacyCommercialTrialRow(id),
+  ]);
 
   const brandingRaw = data.branding as PharmacyBranding | PharmacyBranding[] | null;
   const settingsRaw = data.settings as PharmacySettings | PharmacySettings[] | null;
@@ -368,6 +454,7 @@ export async function getPharmacyById(
     branding: branding ?? null,
     settings: settings ?? null,
     subscription,
+    commercialTrial,
   };
 }
 

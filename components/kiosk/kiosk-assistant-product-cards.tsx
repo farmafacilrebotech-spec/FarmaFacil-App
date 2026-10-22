@@ -6,7 +6,11 @@ import { Check, Package, Search, ShoppingCart } from 'lucide-react';
 
 import { useKioskCart } from '@/components/kiosk/kiosk-cart-provider';
 import type { AssistantProductCard } from '@/lib/kiosk/assistant/types';
-import { formatEuro } from '@/lib/orders/labels';
+import {
+  canAddKioskProductToCart,
+  formatKioskProductAvailability,
+  formatKioskProductPrice,
+} from '@/lib/kiosk/catalog-display';
 import { cn } from '@/lib/utils';
 
 /**
@@ -26,13 +30,26 @@ export function KioskAssistantProductCards({
   if (!products.length) return null;
 
   function onAdd(product: AssistantProductCard) {
-    if (!product.canAddToCart || !product.available) return;
+    if (
+      !product.canAddToCart ||
+      !canAddKioskProductToCart({
+        available: product.available,
+        price: product.price,
+        stock: product.stock,
+        source: null,
+      })
+    ) {
+      return;
+    }
+    const unitPrice = product.price;
+    const stock = product.stock;
+    if (unitPrice == null || stock == null) return;
     addProduct({
       productId: product.id,
       name: product.name,
       brand: product.brand,
-      unitPrice: product.price,
-      stock: product.stock,
+      unitPrice,
+      stock,
     });
     setFlashId(product.id);
     window.setTimeout(
@@ -82,25 +99,33 @@ export function KioskAssistantProductCards({
                     </p>
                   ) : null}
                   <p className="mt-1 text-base font-bold text-[#1a9a9d]">
-                    {formatEuro(product.price)}
+                    {formatKioskProductPrice(product)}
                   </p>
                   <p
                     className={cn(
                       'mt-0.5 text-[11px] font-semibold',
-                      product.available
+                      product.available && product.price != null
                         ? 'text-emerald-700'
                         : 'text-amber-800'
                     )}
                   >
-                    {product.available
-                      ? `Disponible · ${product.stock}`
-                      : 'Sin stock'}
+                    {formatKioskProductAvailability({
+                      ...product,
+                      source: null,
+                    })}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {product.canAddToCart ? (
                       <button
                         type="button"
-                        disabled={!product.available}
+                        disabled={
+                          !canAddKioskProductToCart({
+                            available: product.available,
+                            price: product.price,
+                            stock: product.stock,
+                            source: null,
+                          })
+                        }
                         onClick={() => onAdd(product)}
                         className={cn(
                           'inline-flex h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-white shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm',

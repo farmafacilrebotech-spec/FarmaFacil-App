@@ -1,9 +1,10 @@
 'use client';
 
 import * as React from 'react';
-import { RefreshCw } from 'lucide-react';
+import { MessageCircle, RefreshCw } from 'lucide-react';
 
 import {
+  confirmPharmacyOrderAmountAction,
   getPharmacyOrderDetailAction,
   listPharmacyOrdersAction,
   updatePharmacyOrderPaymentStatusAction,
@@ -12,23 +13,30 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
 import {
+  ORDER_SOURCE_LABELS,
   ORDER_STATUS_LABELS,
   PAYMENT_STATUS_LABELS,
+  formatOrderAmount,
   formatEuro,
+  isPublicQrAmountPending,
   nextOrderStatusOptions,
-  nextPaymentStatusOptions,
+  nextPaymentStatusOptionsForOrder,
 } from '@/lib/orders/labels';
+import { canConfirmOrderAmount } from '@/lib/orders/public-qr-display';
 import type {
   OrderStatus,
   PaymentStatus,
   PharmacyOrderDetail,
   PharmacyOrderSummary,
 } from '@/lib/orders/types';
+import { buildManualPickupWhatsAppLink } from '@/lib/orders/whatsapp-notify';
 import { cn } from '@/lib/utils';
 
 const STATUS_FILTERS: Array<{ value: OrderStatus | 'all'; label: string }> = [
   { value: 'all', label: 'Todos' },
+  { value: 'request_pending', label: 'Solicitudes' },
   { value: 'pending_payment', label: 'Pago pendiente' },
   { value: 'preparing', label: 'Preparación' },
   { value: 'ready', label: 'Listos' },
@@ -38,6 +46,8 @@ const STATUS_FILTERS: Array<{ value: OrderStatus | 'all'; label: string }> = [
 
 function statusBadgeClass(status: OrderStatus): string {
   switch (status) {
+    case 'request_pending':
+      return 'bg-violet-50 text-violet-900 border-violet-200';
     case 'pending_payment':
       return 'bg-amber-50 text-amber-900 border-amber-200';
     case 'preparing':
@@ -53,12 +63,19 @@ function statusBadgeClass(status: OrderStatus): string {
   }
 }
 
+function amountInputDefault(order: PharmacyOrderDetail): string {
+  if (!order.amountConfirmedAt) return '';
+  return order.totalAmount.toFixed(2);
+}
+
 export function PharmacyOrdersPanel({
   pharmacyId,
+  pharmacyName,
   initialOrders,
   canManage,
 }: {
   pharmacyId: string;
+  pharmacyName: string;
   initialOrders: PharmacyOrderSummary[];
   canManage: boolean;
 }) {
@@ -70,6 +87,8 @@ export function PharmacyOrdersPanel({
   const [busy, setBusy] = React.useState(false);
   const [message, setMessage] = React.useState<string | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [amountDraft, setAmountDraft] = React.useState('');
+  const [whatsappError, setWhatsappError] = React.useState<string | null>(null);
 
   const visible =
     filter === 'all' ? orders : orders.filter((o) => o.status === filter);
@@ -93,6 +112,7 @@ export function PharmacyOrdersPanel({
     async function load() {
       setLoadingDetail(true);
       setError(null);
+      setWhatsappError(null);
       const result = await getPharmacyOrderDetailAction(pharmacyId, selectedId!);
       if (cancelled) return;
       setLoadingDetail(false);
@@ -102,6 +122,7 @@ export function PharmacyOrdersPanel({
         return;
       }
       setDetail(result.order);
+      setAmountDraft(amountInputDefault(result.order));
     }
     void load();
     return () => {
@@ -167,6 +188,81 @@ export function PharmacyOrdersPanel({
     await refreshList();
   }
 
+  async function confirmAmount() {
+    if (!detail || !canManage) return;
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    const result = await confirmPharmacyOrderAmountAction({
+      pharmacyId,
+      orderId: detail.id,
+      amount: Number(String(amountDraft).trim().replace(',', '.')),
+    });
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    setMessage(
+      result.unchanged
+        ? 'Importe ya confirmado (sin cambios).'
+        : `Importe total confirmado: ${formatEuro(result.totalAmount, detail.currency)}. El pedido sigue sin cobrar.`
+    );
+    setDetail((prev) =>
+      prev
+        ? {
+            ...prev,
+            totalAmount: result.totalAmount,
+            paymentStatus: result.paymentStatus,
+            status: result.status,
+            amountConfirmedAt: result.amountConfirmedAt,
+          }
+        : prev
+    );
+    setAmountDraft(result.totalAmount.toFixed(2));
+    await refreshList();
+  }
+
+  function openWhatsApp() {
+    if (!detail) return;
+    setWhatsappError(null);
+    const confirmed =
+      detail.amountConfirmedAt != null ? detail.totalAmount : null;
+    const built = buildManualPickupWhatsAppLink({
+      pharmacyName,
+      displayNumber: detail.displayNumber,
+      customerPhone: detail.customerPhone,
+      confirmedAmountEuro: confirmed,
+      currency: detail.currency,
+    });
+    if (!built.ok) {
+      setWhatsappError(built.error);
+      return;
+    }
+    window.open(built.href, '_blank', 'noopener,noreferrer');
+  }
+
+  const amountPending = detail
+    ? isPublicQrAmountPending({
+        amount: detail.totalAmount,
+        source: detail.source,
+        paymentStatus: detail.paymentStatus,
+        orderStatus: detail.status,
+        amountConfirmedAt: detail.amountConfirmedAt,
+      })
+    : false;
+
+  const showConfirmAmount =
+    canManage &&
+    detail &&
+    detail.source === 'public_qr' &&
+    canConfirmOrderAmount(detail.status);
+
+  const showWhatsApp =
+    detail &&
+    detail.source === 'public_qr' &&
+    detail.status === 'ready';
+
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
       <Card className="min-w-0 overflow-hidden">
@@ -221,7 +317,7 @@ export function PharmacyOrdersPanel({
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {new Date(order.createdAt).toLocaleString('es-ES')} ·{' '}
-                      {order.source}
+                      {ORDER_SOURCE_LABELS[order.source] ?? order.source}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <Badge
@@ -235,8 +331,15 @@ export function PharmacyOrdersPanel({
                       </Badge>
                     </div>
                   </div>
-                  <p className="shrink-0 text-sm font-semibold">
-                    {formatEuro(order.totalAmount, order.currency)}
+                  <p className="shrink-0 max-w-[11rem] text-right text-sm font-semibold leading-snug">
+                    {formatOrderAmount({
+                      amount: order.totalAmount,
+                      currency: order.currency,
+                      source: order.source,
+                      paymentStatus: order.paymentStatus,
+                      orderStatus: order.status,
+                      amountConfirmedAt: order.amountConfirmedAt,
+                    })}
                   </p>
                 </button>
               </li>
@@ -255,23 +358,90 @@ export function PharmacyOrdersPanel({
             Cargando detalle…
           </p>
         ) : !detail ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">
-            No se ha podido cargar el pedido.
-          </p>
+          <div className="space-y-2 py-16 text-center">
+            <p className="text-sm text-muted-foreground">
+              No se ha podido cargar el pedido.
+            </p>
+            {error ? (
+              <p className="mx-auto max-w-sm text-sm text-red-700" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </div>
         ) : (
           <div className="space-y-5">
             <div>
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Pedido
+                {detail.source === 'public_qr' ? 'Solicitud' : 'Pedido'}
               </p>
               <h2 className="text-2xl font-bold tabular-nums">
                 #{detail.displayNumber}
               </h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                {formatEuro(detail.totalAmount, detail.currency)} ·{' '}
+                {ORDER_SOURCE_LABELS[detail.source] ?? detail.source} ·{' '}
                 {new Date(detail.createdAt).toLocaleString('es-ES')}
               </p>
+              {detail.amountConfirmedAt ? (
+                <div className="mt-2 space-y-0.5">
+                  <p className="text-sm font-semibold text-foreground">
+                    Importe total confirmado:{' '}
+                    {formatEuro(detail.totalAmount, detail.currency)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Confirmado el{' '}
+                    {new Date(detail.amountConfirmedAt).toLocaleString('es-ES')}
+                    . Sigue sin cobrar hasta que marques «Cobrado» en mostrador.
+                  </p>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm font-medium text-foreground">
+                  {formatOrderAmount({
+                    amount: detail.totalAmount,
+                    currency: detail.currency,
+                    source: detail.source,
+                    paymentStatus: detail.paymentStatus,
+                    orderStatus: detail.status,
+                    amountConfirmedAt: detail.amountConfirmedAt,
+                  })}
+                </p>
+              )}
             </div>
+
+            {(detail.customerName ||
+              detail.customerPhone ||
+              detail.customerNote) && (
+              <div className="rounded-lg border border-border bg-muted/20 p-3">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Contacto (catálogo QR)
+                </p>
+                {detail.customerName ? (
+                  <p className="mt-1 text-sm font-semibold">{detail.customerName}</p>
+                ) : null}
+                {detail.customerPhone ? (
+                  <p className="mt-0.5 text-sm tabular-nums text-foreground">
+                    {detail.customerPhone}
+                  </p>
+                ) : null}
+                {detail.customerNote ? (
+                  <p className="mt-2 text-sm text-foreground">
+                    <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Nota:{' '}
+                    </span>
+                    {detail.customerNote}
+                  </p>
+                ) : null}
+              </div>
+            )}
+
+            {detail.source === 'public_qr' &&
+            detail.status === 'request_pending' &&
+            amountPending ? (
+              <p className="rounded-lg border border-violet-200 bg-violet-50 px-3 py-2 text-xs text-violet-950">
+                Solicitud: confirma disponibilidad pasando a «En preparación» y
+                confirma el importe total cuando lo tengas. El 0 € técnico no es
+                un precio. Tras confirmar el importe el pedido sigue sin cobrar.
+              </p>
+            ) : null}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-lg border border-border p-3">
@@ -300,12 +470,77 @@ export function PharmacyOrdersPanel({
                       {item.quantity}× {item.productName}
                     </span>
                     <span className="shrink-0 font-medium">
-                      {formatEuro(item.lineTotal, detail.currency)}
+                      {detail.source === 'public_qr' && amountPending
+                        ? 'Pendiente'
+                        : formatEuro(item.lineTotal, detail.currency)}
                     </span>
                   </li>
                 ))}
               </ul>
             </div>
+
+            {showConfirmAmount ? (
+              <div className="space-y-2 rounded-lg border border-border p-3">
+                <p className="text-sm font-medium">Importe total confirmado</p>
+                <p className="text-xs text-muted-foreground">
+                  Introduce el total en euros (2 decimales). No modifica precios
+                  del catálogo. Tras confirmar, el pedido permanece sin cobrar.
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="min-w-[8rem] flex-1">
+                    <label
+                      htmlFor={`confirm-amount-${detail.id}`}
+                      className="sr-only"
+                    >
+                      Importe total en euros
+                    </label>
+                    <Input
+                      id={`confirm-amount-${detail.id}`}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="12,50"
+                      value={amountDraft}
+                      disabled={busy}
+                      onChange={(e) => setAmountDraft(e.target.value)}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={busy || !amountDraft.trim()}
+                    onClick={() => void confirmAmount()}
+                  >
+                    {detail.amountConfirmedAt
+                      ? 'Actualizar importe'
+                      : 'Confirmar importe'}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {showWhatsApp ? (
+              <div className="space-y-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={openWhatsApp}
+                >
+                  <MessageCircle className="mr-2 h-4 w-4" />
+                  Avisar al cliente por WhatsApp
+                </Button>
+                <p className="text-xs text-muted-foreground">
+                  Abre WhatsApp con un mensaje editable. No se envía solo ni se
+                  marca como enviado.
+                </p>
+                {whatsappError ? (
+                  <p className="text-sm text-red-700" role="alert">
+                    {whatsappError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
             {canManage ? (
               <div className="space-y-4 border-t border-border pt-4">
@@ -334,27 +569,42 @@ export function PharmacyOrdersPanel({
                 <div>
                   <p className="mb-2 text-sm font-medium">Cambiar estado de pago</p>
                   <div className="flex flex-wrap gap-2">
-                    {nextPaymentStatusOptions(detail.paymentStatus).map(
-                      (next) => (
-                        <Button
-                          key={next}
-                          type="button"
-                          size="sm"
-                          variant="secondary"
-                          disabled={busy}
-                          onClick={() => void changePayment(next)}
-                        >
-                          {PAYMENT_STATUS_LABELS[next]}
-                        </Button>
-                      )
-                    )}
-                    {nextPaymentStatusOptions(detail.paymentStatus).length ===
-                    0 ? (
+                    {nextPaymentStatusOptionsForOrder({
+                      source: detail.source,
+                      paymentStatus: detail.paymentStatus,
+                      totalAmount: detail.totalAmount,
+                      orderStatus: detail.status,
+                      amountConfirmedAt: detail.amountConfirmedAt,
+                    }).map((next) => (
+                      <Button
+                        key={next}
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={busy}
+                        onClick={() => void changePayment(next)}
+                      >
+                        {PAYMENT_STATUS_LABELS[next]}
+                      </Button>
+                    ))}
+                    {nextPaymentStatusOptionsForOrder({
+                      source: detail.source,
+                      paymentStatus: detail.paymentStatus,
+                      totalAmount: detail.totalAmount,
+                      orderStatus: detail.status,
+                      amountConfirmedAt: detail.amountConfirmedAt,
+                    }).length === 0 ? (
                       <p className="text-xs text-muted-foreground">
                         Sin transiciones de pago disponibles.
                       </p>
                     ) : null}
                   </div>
+                  {amountPending ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Confirma el importe total antes de poder marcar «Cobrado».
+                      Mientras tanto puedes usar «Sin cobrar» o «Exento».
+                    </p>
+                  ) : null}
                 </div>
               </div>
             ) : (

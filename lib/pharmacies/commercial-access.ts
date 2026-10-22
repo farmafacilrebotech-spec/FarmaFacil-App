@@ -1,13 +1,19 @@
 import { createClient } from '@/lib/supabase/server';
 import {
-  evaluatePharmacyOperability,
+  COMMERCIAL_PILOT_DURATION_DAYS,
+} from '@/lib/commercial/pharmacy-onboarding';
+import {
+  resolvePharmacyCommercialAccess,
+  type CommercialAccessMode,
   type CommercialPharmacyStatus,
   type CommercialSubscriptionStatus,
+  type CommercialTrialSnapshot,
+  type OperabilityReason,
   type OperabilityResult,
 } from '@/lib/pharmacies/commercial-lifecycle';
 
 export const FARMAFACIL_SUPPORT_EMAIL =
-  process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'soporte@farmafacil.es';
+  process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || 'soporte@farmafacil.solutions';
 
 export type PharmacyCommercialGate = OperabilityResult & {
   pharmacyId: string;
@@ -19,12 +25,14 @@ export type PharmacyCommercialGate = OperabilityResult & {
   trialEnd: string | null;
   currentPeriodEnd: string | null;
   gracePeriodEndsAt: string | null;
+  accessMode: CommercialAccessMode;
+  commercialTrial: CommercialTrialSnapshot | null;
   title: string;
   message: string;
 };
 
 const OPERABILITY_COPY: Record<
-  OperabilityResult['reason'],
+  OperabilityReason,
   { title: string; message: string }
 > = {
   ok: {
@@ -76,6 +84,20 @@ const OPERABILITY_COPY: Record<
     message:
       'No hay una suscripción comercial vigente para esta farmacia. Contacta con soporte FarmaFácil.',
   },
+  pilot_ready_pending_activation: {
+    title: 'Piloto pendiente de activación',
+    message: `Tu farmacia tiene un piloto comercial preparado (${COMMERCIAL_PILOT_DURATION_DAYS} días disponibles, todavía no iniciados). FarmaFácil activará el piloto cuando se complete la preparación. Mientras tanto no hay acceso operativo (pedidos, catálogo editable ni módulos contratados).`,
+  },
+  pilot_expired: {
+    title: 'Piloto comercial finalizado',
+    message:
+      'El periodo del piloto comercial ha terminado. El acceso operativo no está disponible. Contacta con soporte para continuar con un plan.',
+  },
+  pilot_ended: {
+    title: 'Piloto comercial cerrado',
+    message:
+      'El piloto comercial de esta farmacia está cerrado. Contacta con soporte FarmaFácil para contratar o reactivar el servicio.',
+  },
 };
 
 type SubRow = {
@@ -87,9 +109,21 @@ type SubRow = {
   commercial_reason: string | null;
 };
 
+type TrialRow = {
+  status: string;
+  prepared_at: string | null;
+  activated_at: string | null;
+  ends_at: string | null;
+  program: string | null;
+};
+
+const TRIAL_SELECT =
+  'status, prepared_at, activated_at, ends_at, program';
+
 /**
- * Evalúa operatividad comercial de una farmacia (espejo de ff_pharmacy_is_operable).
+ * Evalúa acceso comercial de una farmacia (piloto + suscripción).
  * Lectura vía RLS: member active o plataforma.
+ * El piloto open prevalece sobre una suscripción legacy cancelada.
  */
 export async function loadPharmacyCommercialGate(
   pharmacyId: string
@@ -124,10 +158,12 @@ export async function loadPharmacyCommercialGate(
           message: fallback.error?.message,
         };
       }
+      const trial = await loadCommercialTrialForGate(pharmacyId);
       return buildGateFromRows(
         fallback.data as { id: string; name: string; status: string },
         null,
-        null
+        null,
+        trial
       );
     }
     console.error(
@@ -197,8 +233,17 @@ export async function loadPharmacyCommercialGate(
     }
   }
 
-  // Si no hay corriente, mirar la última cancelled/expired para el mensaje
-  if (!sub) {
+  const trial = await loadCommercialTrialForGate(pharmacyId);
+
+  // Solo usar cancelled/expired para mensaje si NO hay piloto abierto.
+  const openPilot =
+    trial &&
+    (trial.status === 'draft' ||
+      trial.status === 'ready' ||
+      trial.status === 'active' ||
+      trial.status === 'extended');
+
+  if (!sub && !openPilot) {
     const { data: ended } = await supabase
       .from('subscriptions')
       .select(
@@ -220,30 +265,98 @@ export async function loadPharmacyCommercialGate(
   return buildGateFromRows(
     pharmacy as { id: string; name: string; status: string },
     sub,
-    suspensionReason
+    suspensionReason,
+    trial
   );
+}
+
+/**
+ * Lee pharmacy_commercial_trials.
+ * RLS actual: solo plataforma. Tras soft-lock de farmacia (member puede ver pharmacies),
+ * usa admin solo para la fila del trial — no concede SELECT operativo.
+ */
+async function loadCommercialTrialForGate(
+  pharmacyId: string
+): Promise<CommercialTrialSnapshot | null> {
+  const supabase = createClient();
+
+  const open = await supabase
+    .from('pharmacy_commercial_trials')
+    .select(TRIAL_SELECT)
+    .eq('pharmacy_id', pharmacyId)
+    .in('status', ['draft', 'ready', 'active', 'extended'])
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (!open.error && open.data?.[0]) {
+    return mapTrialRow(open.data[0] as TrialRow);
+  }
+
+  // Member JWT no ve trials → lectura acotada con service role.
+  // Dynamic import: evita arrastrar @supabase/supabase-js al grafo RSC/webpack
+  // de rutas tenant (crash «Cannot read properties of undefined (reading 'call')»
+  // en /f/.../pedidos al resolver el gate comercial).
+  try {
+    const { createAdminClient } = await import('@/lib/supabase/admin');
+    const admin = createAdminClient();
+    const adminOpen = await admin
+      .from('pharmacy_commercial_trials')
+      .select(TRIAL_SELECT)
+      .eq('pharmacy_id', pharmacyId)
+      .in('status', ['draft', 'ready', 'active', 'extended'])
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (adminOpen.data?.[0]) {
+      return mapTrialRow(adminOpen.data[0] as TrialRow);
+    }
+    const adminAny = await admin
+      .from('pharmacy_commercial_trials')
+      .select(TRIAL_SELECT)
+      .eq('pharmacy_id', pharmacyId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    if (adminAny.data?.[0]) {
+      return mapTrialRow(adminAny.data[0] as TrialRow);
+    }
+  } catch (err) {
+    console.error('[commercial-access] trial admin read', err);
+  }
+
+  return null;
+}
+
+function mapTrialRow(row: TrialRow): CommercialTrialSnapshot {
+  return {
+    status: row.status,
+    preparedAt: row.prepared_at,
+    activatedAt: row.activated_at,
+    endsAt: row.ends_at,
+    program: row.program,
+  };
 }
 
 function buildGateFromRows(
   pharmacy: { id: string; name: string; status: string },
   sub: SubRow | null,
-  suspensionReason: string | null
+  suspensionReason: string | null,
+  trial: CommercialTrialSnapshot | null
 ): { ok: true; gate: PharmacyCommercialGate } {
-  const evaluation = evaluatePharmacyOperability({
+  const evaluation = resolvePharmacyCommercialAccess({
     pharmacyStatus: pharmacy.status as CommercialPharmacyStatus,
-    subscriptionStatus: (sub?.status ??
-      'expired') as CommercialSubscriptionStatus,
+    subscriptionStatus: sub?.status ?? null,
     trialEnd: sub?.trial_end ?? null,
     currentPeriodEnd: sub?.current_period_end ?? null,
     cancelAtPeriodEnd: sub?.cancel_at_period_end ?? false,
     gracePeriodEndsAt: sub?.grace_period_ends_at ?? null,
+    trial,
   });
 
   const copy = OPERABILITY_COPY[evaluation.reason];
+  // No mezclar motivo de conversión legacy cancelada en pantalla de preparación.
   const detail =
-    suspensionReason ||
-    sub?.commercial_reason ||
-    null;
+    evaluation.accessMode === 'preparation'
+      ? null
+      : suspensionReason || sub?.commercial_reason || null;
 
   return {
     ok: true,
@@ -258,6 +371,7 @@ function buildGateFromRows(
       trialEnd: sub?.trial_end ?? null,
       currentPeriodEnd: sub?.current_period_end ?? null,
       gracePeriodEndsAt: sub?.grace_period_ends_at ?? null,
+      commercialTrial: trial,
       title: copy.title,
       message: detail
         ? `${copy.message} Motivo registrado: ${detail}.`

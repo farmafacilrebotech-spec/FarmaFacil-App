@@ -1,5 +1,10 @@
 import { createClient } from '@/lib/supabase/server';
 import { getAppBaseUrl } from '@/lib/auth/app-url';
+import {
+  buildPasswordRecoveryRedirectTo,
+  isValidRecoveryEmail,
+  mapPasswordRecoveryAuthError,
+} from '@/lib/auth/password-recovery-shared';
 
 /** @deprecated Prefer getAppBaseUrl — se mantiene el nombre por callers existentes. */
 export function getPasswordRecoveryAppUrl(): string | null {
@@ -11,12 +16,15 @@ export type PasswordRecoveryRequestResult =
   | {
       ok: false;
       error: string;
-      code?: 'not_configured' | 'rate_limit' | 'technical';
+      code?: 'not_configured' | 'rate_limit' | 'technical' | 'validation';
     };
 
 /**
  * Dispara el email de recuperación vía Supabase Auth (SMTP de Auth).
- * Compartido por /forgot-password y la acción SuperAdmin.
+ * Pensado para SuperAdmin / server actions.
+ *
+ * El formulario público /forgot-password debe preferir el cliente browser
+ * (PKCE + origin de la pestaña) vía requestPasswordRecoveryFromBrowser.
  *
  * No revela si el email existe: Auth suele devolver éxito genérico.
  * Los errores técnicos / rate limit NO se convierten en éxito.
@@ -25,8 +33,12 @@ export async function requestPasswordRecoveryEmail(
   rawEmail: string
 ): Promise<PasswordRecoveryRequestResult> {
   const email = rawEmail.trim().toLowerCase();
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    return { ok: false, error: 'El email no es válido.', code: 'technical' };
+  if (!isValidRecoveryEmail(email)) {
+    return {
+      ok: false,
+      error: 'El email no es válido.',
+      code: 'validation',
+    };
   }
 
   const appUrl = getPasswordRecoveryAppUrl();
@@ -40,7 +52,7 @@ export async function requestPasswordRecoveryEmail(
     };
   }
 
-  const redirectTo = `${appUrl}/auth/recovery`;
+  const redirectTo = buildPasswordRecoveryRedirectTo(appUrl);
 
   try {
     const supabase = createClient();
@@ -49,28 +61,8 @@ export async function requestPasswordRecoveryEmail(
     });
 
     if (error) {
-      const msg = error.message.toLowerCase();
       console.error('[password-recovery] resetPasswordForEmail', error.message);
-
-      if (
-        msg.includes('rate') ||
-        msg.includes('too many') ||
-        msg.includes('limit')
-      ) {
-        return {
-          ok: false,
-          error:
-            'Se han enviado demasiadas solicitudes. Espera unos minutos e inténtalo de nuevo.',
-          code: 'rate_limit',
-        };
-      }
-
-      return {
-        ok: false,
-        error:
-          'No se ha podido iniciar la recuperación de contraseña. Inténtalo de nuevo más tarde.',
-        code: 'technical',
-      };
+      return { ok: false, ...mapPasswordRecoveryAuthError(error.message) };
     }
 
     return { ok: true };

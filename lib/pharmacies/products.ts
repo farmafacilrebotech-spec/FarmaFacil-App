@@ -29,7 +29,7 @@ export async function listPharmacyProducts(
   let query = supabase
     .from('pharmacy_products')
     .select(
-      'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, source, source_ref, created_at, updated_at'
+      'id, pharmacy_id, sku, ean, name, description, brand, category, subcategory, price, stock, min_stock, is_active, is_featured, source, source_ref, availability_status, master_catalog_id, created_at, updated_at'
     )
     .eq('pharmacy_id', pharmacyId)
     .order('name', { ascending: true });
@@ -55,12 +55,17 @@ export async function listPharmacyProducts(
   // Compatibilidad: si 022 aún no está aplicada, reintenta sin source/source_ref.
   if (
     error &&
-    (error.message.includes('source') || error.code === '42703' || error.code === 'PGRST204')
+    (error.message.includes('source') ||
+      error.message.includes('subcategory') ||
+      error.message.includes('availability_status') ||
+      error.message.includes('master_catalog_id') ||
+      error.code === '42703' ||
+      error.code === 'PGRST204')
   ) {
     let fallback = supabase
       .from('pharmacy_products')
       .select(
-        'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, created_at, updated_at'
+        'id, pharmacy_id, sku, ean, name, description, brand, category, price, stock, min_stock, is_active, is_featured, source, source_ref, created_at, updated_at'
       )
       .eq('pharmacy_id', pharmacyId)
       .order('name', { ascending: true });

@@ -1,7 +1,23 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import type { EmailOtpType } from '@supabase/supabase-js';
+import { authFlowDiag } from '@/lib/auth/auth-flow-diag';
+import { appUrlFromHeaders } from '@/lib/auth/request-origin';
+import { redirectRelative } from '@/lib/auth/relative-redirect';
 import { classifyAuthCallbackError } from '@/lib/pharmacies/invite-auth-logic';
+
+function appUrl(request: NextRequest, pathWithOptionalQuery: string): URL {
+  return appUrlFromHeaders(
+    request.headers,
+    request.nextUrl.origin,
+    pathWithOptionalQuery
+  );
+}
+
+/** Prefer relative Location so Edge/Node cannot rewrite 127.0.0.1 → localhost. */
+function redirectToPath(pathWithOptionalQuery: string): NextResponse {
+  return redirectRelative(pathWithOptionalQuery);
+}
 
 /**
  * Destinos internos permitidos tras el callback de Auth (allowlist).
@@ -40,16 +56,12 @@ function safeNextPath(raw: string | null): string {
   return pathOnly;
 }
 
-function redirectToLogin(request: NextRequest, errorCode: string) {
-  const loginUrl = request.nextUrl.clone();
-  loginUrl.pathname = '/login';
-  loginUrl.search = '';
-  loginUrl.searchParams.set('error', errorCode);
-  return NextResponse.redirect(loginUrl);
+function redirectToLogin(_request: NextRequest, errorCode: string) {
+  return redirectToPath(`/login?error=${encodeURIComponent(errorCode)}`);
 }
 
 function createCallbackClient(request: NextRequest, nextPath: string) {
-  let response = NextResponse.redirect(new URL(nextPath, request.url));
+  let response = redirectToPath(nextPath);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -63,7 +75,7 @@ function createCallbackClient(request: NextRequest, nextPath: string) {
           cookiesToSet.forEach(({ name, value }) => {
             request.cookies.set(name, value);
           });
-          response = NextResponse.redirect(new URL(nextPath, request.url));
+          response = redirectToPath(nextPath);
           cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
           });
@@ -97,17 +109,30 @@ export async function GET(request: NextRequest) {
   const otpType = url.searchParams.get('type');
   const code = url.searchParams.get('code');
   const nextPath = safeNextPath(url.searchParams.get('next'));
+  authFlowDiag('callback_enter', {
+    path: url.pathname,
+    otp_param_present: Boolean(tokenHash),
+    has_code: Boolean(code),
+    otp_type: otpType,
+    next_path: nextPath,
+    request_host: request.headers.get('host'),
+    public_origin_host: appUrl(request, '/').host,
+  });
 
   if (tokenHash && otpType) {
     if (!ALLOWED_OTP.includes(otpType as EmailOtpType)) {
-      // p.ej. type=recovery no debe entrar por este callback de invitaciones.
+      authFlowDiag('callback_redirect', {
+        reason: 'otp_type_not_allowed',
+        otp_type: otpType,
+        redirect_to: '/login',
+        error_code: 'auth_callback',
+      });
       return redirectToLogin(request, 'auth_callback');
     }
 
     const { supabase, getResponse } = createCallbackClient(request, nextPath);
-    // Asegura que la nueva sesión sustituya cualquier sesión previa del navegador.
-    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
-
+    // Evitar signOut previo: en SSR regenera Set-Cookie vacíos que compiten con
+    // la sesión nueva; verifyOtp ya sustituye la sesión del navegador.
     const { error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: otpType as EmailOtpType,
@@ -116,26 +141,63 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('[auth/callback] verifyOtp', error.message);
       const { code: errorCode } = classifyAuthCallbackError(error.message);
+      authFlowDiag('callback_redirect', {
+        reason: 'verify_otp_failed',
+        otp_type: otpType,
+        verify_ok: false,
+        error_code: errorCode,
+        redirect_to: '/login',
+        has_session: false,
+        redirect_host: appUrl(request, '/login').host,
+      });
       return redirectToLogin(request, errorCode);
     }
 
+    authFlowDiag('callback_redirect', {
+      reason: 'verify_otp_ok',
+      otp_type: otpType,
+      verify_ok: true,
+      has_session: true,
+      redirect_to: nextPath,
+      location_style: 'relative',
+      request_host: request.headers.get('host'),
+    });
     return getResponse();
   }
 
   if (code) {
     const { supabase, getResponse } = createCallbackClient(request, nextPath);
-    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
 
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (error) {
       console.error('[auth/callback] exchangeCodeForSession', error.message);
       const { code: errorCode } = classifyAuthCallbackError(error.message);
+      authFlowDiag('callback_redirect', {
+        reason: 'exchange_code_failed',
+        verify_ok: false,
+        error_code: errorCode,
+        redirect_to: '/login',
+        has_session: false,
+      });
       return redirectToLogin(request, errorCode);
     }
 
+    authFlowDiag('callback_redirect', {
+      reason: 'exchange_code_ok',
+      verify_ok: true,
+      has_session: true,
+      redirect_to: nextPath,
+      redirect_host: appUrl(request, nextPath).host,
+    });
     return getResponse();
   }
 
+  authFlowDiag('callback_redirect', {
+    reason: 'missing_token_and_code',
+    redirect_to: '/login',
+    error_code: 'missing_code',
+    has_session: false,
+  });
   return redirectToLogin(request, 'missing_code');
 }

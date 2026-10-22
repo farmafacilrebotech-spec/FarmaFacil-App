@@ -20,9 +20,42 @@ type OrderRow = {
   total_amount: number | string;
   currency: string;
   device_id: string | null;
+  customer_name?: string | null;
+  customer_phone?: string | null;
+  customer_note?: string | null;
+  amount_confirmed_at?: string | null;
+  amount_confirmed_by?: string | null;
   created_at: string;
   updated_at: string;
 };
+
+const ORDER_SELECT_BASE = `
+  id,
+  pharmacy_id,
+  order_number,
+  display_number,
+  source,
+  status,
+  payment_status,
+  total_amount,
+  currency,
+  device_id,
+  created_at,
+  updated_at
+`;
+
+const ORDER_SELECT_WITH_CONTACT = `
+  ${ORDER_SELECT_BASE},
+  customer_name,
+  customer_phone,
+  customer_note
+`;
+
+const ORDER_SELECT_FULL = `
+  ${ORDER_SELECT_WITH_CONTACT},
+  amount_confirmed_at,
+  amount_confirmed_by
+`;
 
 type ItemRow = {
   id: string;
@@ -49,9 +82,26 @@ function mapOrder(row: OrderRow): PharmacyOrderSummary {
         : row.total_amount,
     currency: row.currency,
     deviceId: row.device_id,
+    customerName: row.customer_name ?? null,
+    customerPhone: row.customer_phone ?? null,
+    customerNote: row.customer_note ?? null,
+    amountConfirmedAt: row.amount_confirmed_at ?? null,
+    amountConfirmedBy: row.amount_confirmed_by ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function isMissingOptionalColumnError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes('customer_name') ||
+    m.includes('customer_phone') ||
+    m.includes('customer_note') ||
+    m.includes('amount_confirmed_at') ||
+    m.includes('amount_confirmed_by') ||
+    (m.includes('column') && m.includes('does not exist'))
+  );
 }
 
 function mapItem(row: ItemRow): PharmacyOrderItem {
@@ -86,33 +136,27 @@ export async function listPharmacyOrders(
 
   const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200);
   const supabase = createClient();
-  let query = supabase
-    .from('pharmacy_orders')
-    .select(
-      `
-      id,
-      pharmacy_id,
-      order_number,
-      display_number,
-      source,
-      status,
-      payment_status,
-      total_amount,
-      currency,
-      device_id,
-      created_at,
-      updated_at
-    `
-    )
-    .eq('pharmacy_id', pharmacyId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
 
-  if (options?.status) {
-    query = query.eq('status', options.status);
+  async function runSelect(columns: string) {
+    let query = supabase
+      .from('pharmacy_orders')
+      .select(columns)
+      .eq('pharmacy_id', pharmacyId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (options?.status) {
+      query = query.eq('status', options.status);
+    }
+    return query;
   }
 
-  const { data, error } = await query;
+  let { data, error } = await runSelect(ORDER_SELECT_FULL);
+  if (error && isMissingOptionalColumnError(error.message)) {
+    ({ data, error } = await runSelect(ORDER_SELECT_WITH_CONTACT));
+  }
+  if (error && isMissingOptionalColumnError(error.message)) {
+    ({ data, error } = await runSelect(ORDER_SELECT_BASE));
+  }
   if (error) {
     console.error('[orders] list', error.message);
     return { ok: false, error: 'No se han podido cargar los pedidos.' };
@@ -141,27 +185,29 @@ export async function getPharmacyOrderDetail(
   }
 
   const supabase = createClient();
-  const { data: orderRow, error: orderError } = await supabase
+  let { data: orderRow, error: orderError } = await supabase
     .from('pharmacy_orders')
-    .select(
-      `
-      id,
-      pharmacy_id,
-      order_number,
-      display_number,
-      source,
-      status,
-      payment_status,
-      total_amount,
-      currency,
-      device_id,
-      created_at,
-      updated_at
-    `
-    )
+    .select(ORDER_SELECT_FULL)
     .eq('id', orderId)
     .eq('pharmacy_id', pharmacyId)
     .maybeSingle();
+
+  if (orderError && isMissingOptionalColumnError(orderError.message)) {
+    ({ data: orderRow, error: orderError } = await supabase
+      .from('pharmacy_orders')
+      .select(ORDER_SELECT_WITH_CONTACT)
+      .eq('id', orderId)
+      .eq('pharmacy_id', pharmacyId)
+      .maybeSingle());
+  }
+  if (orderError && isMissingOptionalColumnError(orderError.message)) {
+    ({ data: orderRow, error: orderError } = await supabase
+      .from('pharmacy_orders')
+      .select(ORDER_SELECT_BASE)
+      .eq('id', orderId)
+      .eq('pharmacy_id', pharmacyId)
+      .maybeSingle());
+  }
 
   if (orderError) {
     console.error('[orders] get', orderError.message);

@@ -10,6 +10,7 @@
 
 # next.js
 /.next/
+/.next-build/
 /out/
 
 # production
@@ -44,3 +45,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Android kiosk (Gradle builds; source under android-kiosk/ is tracked)
+android-kiosk/.gradle/
+android-kiosk/**/build/
+android-kiosk/local.properties
+android-kiosk/*.apk
+android-kiosk/*.aab
+android-kiosk/.idea/
+android-kiosk/captures/
+/.next-perf-prod/

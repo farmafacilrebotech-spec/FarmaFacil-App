@@ -7,6 +7,7 @@ import {
 import { loadPharmacyCommercialGate } from '@/lib/pharmacies/commercial-access';
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 import { PharmacyAccessSuspended } from '@/components/pharmacy-tenant/pharmacy-access-suspended';
+import { PharmacyPilotPreparation } from '@/components/pharmacy-tenant/pharmacy-pilot-preparation';
 import { PharmacyTenantShell } from '@/components/pharmacy-tenant/pharmacy-tenant-shell';
 
 export const dynamic = 'force-dynamic';
@@ -14,8 +15,10 @@ export const dynamic = 'force-dynamic';
 /**
  * Layout tenant: aislado del panel SuperAdmin ((app)).
  * 1) Membership active (cualquier rol) para esta farmacia
- * 2) Operatividad comercial → si no, pantalla informativa (sin datos operativos)
- * 3) Contexto completo solo si operable (evita SELECT de branding/catálogo bloqueados)
+ * 2) Resolución comercial (piloto + suscripción):
+ *    - preparation → pantalla de preparación (sin shell operativo)
+ *    - blocked → pantalla informativa
+ *    - operational → contexto + shell
  */
 export default async function PharmacyTenantLayout({
   children,
@@ -37,6 +40,15 @@ export default async function PharmacyTenantLayout({
   const commercial = await loadPharmacyCommercialGate(params.pharmacyId);
   if (!commercial.ok) {
     redirect('/access-denied');
+  }
+
+  if (commercial.gate.accessMode === 'preparation') {
+    return (
+      <PharmacyPilotPreparation
+        gate={commercial.gate}
+        userEmail={membership.profile.email}
+      />
+    );
   }
 
   if (!commercial.gate.operable) {
