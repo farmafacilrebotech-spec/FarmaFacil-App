@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireOrdersView } from '@/lib/orders/authz';
 import type {
+  OrderLineAvailabilityStatus,
   OrderSource,
   OrderStatus,
   PaymentStatus,
@@ -25,6 +26,14 @@ type OrderRow = {
   customer_note?: string | null;
   amount_confirmed_at?: string | null;
   amount_confirmed_by?: string | null;
+  lines_valued_at?: string | null;
+  lines_valued_by?: string | null;
+  customer_accepted_at?: string | null;
+  customer_accepted_by?: string | null;
+  customer_rejected_at?: string | null;
+  quote_version?: number | null;
+  quote_expires_at?: string | null;
+  quote_legacy_total_only?: boolean | null;
   created_at: string;
   updated_at: string;
 };
@@ -51,10 +60,31 @@ const ORDER_SELECT_WITH_CONTACT = `
   customer_note
 `;
 
-const ORDER_SELECT_FULL = `
+const ORDER_SELECT_WITH_AMOUNT = `
   ${ORDER_SELECT_WITH_CONTACT},
   amount_confirmed_at,
   amount_confirmed_by
+`;
+
+const ORDER_SELECT_FULL = `
+  ${ORDER_SELECT_WITH_AMOUNT},
+  lines_valued_at,
+  lines_valued_by,
+  customer_accepted_at,
+  customer_accepted_by,
+  customer_rejected_at,
+  quote_version,
+  quote_expires_at,
+  quote_legacy_total_only
+`;
+
+const ORDER_SELECT_R3 = `
+  ${ORDER_SELECT_WITH_AMOUNT},
+  lines_valued_at,
+  lines_valued_by,
+  customer_accepted_at,
+  customer_accepted_by,
+  quote_legacy_total_only
 `;
 
 type ItemRow = {
@@ -65,6 +95,10 @@ type ItemRow = {
   quantity: number;
   unit_price: number | string;
   line_total: number | string;
+  availability_status?: string | null;
+  staff_note?: string | null;
+  priced_at?: string | null;
+  priced_by?: string | null;
 };
 
 function mapOrder(row: OrderRow): PharmacyOrderSummary {
@@ -87,6 +121,17 @@ function mapOrder(row: OrderRow): PharmacyOrderSummary {
     customerNote: row.customer_note ?? null,
     amountConfirmedAt: row.amount_confirmed_at ?? null,
     amountConfirmedBy: row.amount_confirmed_by ?? null,
+    linesValuedAt: row.lines_valued_at ?? null,
+    linesValuedBy: row.lines_valued_by ?? null,
+    customerAcceptedAt: row.customer_accepted_at ?? null,
+    customerAcceptedBy: row.customer_accepted_by ?? null,
+    customerRejectedAt: row.customer_rejected_at ?? null,
+    quoteVersion:
+      typeof row.quote_version === 'number'
+        ? row.quote_version
+        : Number(row.quote_version ?? 0) || 0,
+    quoteExpiresAt: row.quote_expires_at ?? null,
+    quoteLegacyTotalOnly: row.quote_legacy_total_only === true,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -100,8 +145,29 @@ function isMissingOptionalColumnError(message: string): boolean {
     m.includes('customer_note') ||
     m.includes('amount_confirmed_at') ||
     m.includes('amount_confirmed_by') ||
+    m.includes('lines_valued_at') ||
+    m.includes('lines_valued_by') ||
+    m.includes('customer_accepted_at') ||
+    m.includes('customer_accepted_by') ||
+    m.includes('customer_rejected_at') ||
+    m.includes('quote_version') ||
+    m.includes('quote_expires_at') ||
+    m.includes('quote_legacy_total_only') ||
+    m.includes('availability_status') ||
+    m.includes('staff_note') ||
+    m.includes('priced_at') ||
+    m.includes('priced_by') ||
     (m.includes('column') && m.includes('does not exist'))
   );
+}
+
+function mapAvailability(
+  value: string | null | undefined
+): OrderLineAvailabilityStatus {
+  if (value === 'available' || value === 'unavailable' || value === 'pending') {
+    return value;
+  }
+  return 'pending';
 }
 
 function mapItem(row: ItemRow): PharmacyOrderItem {
@@ -119,6 +185,10 @@ function mapItem(row: ItemRow): PharmacyOrderItem {
       typeof row.line_total === 'string'
         ? Number(row.line_total)
         : row.line_total,
+    availabilityStatus: mapAvailability(row.availability_status),
+    staffNote: row.staff_note ?? null,
+    pricedAt: row.priced_at ?? null,
+    pricedBy: row.priced_by ?? null,
   };
 }
 
@@ -137,26 +207,33 @@ export async function listPharmacyOrders(
   const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200);
   const supabase = createClient();
 
-  async function runSelect(columns: string) {
-    let query = supabase
+  const run = (select: string) => {
+    let q = supabase
       .from('pharmacy_orders')
-      .select(columns)
+      .select(select)
       .eq('pharmacy_id', pharmacyId)
       .order('created_at', { ascending: false })
       .limit(limit);
     if (options?.status) {
-      query = query.eq('status', options.status);
+      q = q.eq('status', options.status);
     }
-    return query;
+    return q;
+  };
+
+  let { data, error } = await run(ORDER_SELECT_FULL);
+  if (error && isMissingOptionalColumnError(error.message)) {
+    ({ data, error } = await run(ORDER_SELECT_R3));
+  }
+  if (error && isMissingOptionalColumnError(error.message)) {
+    ({ data, error } = await run(ORDER_SELECT_WITH_AMOUNT));
+  }
+  if (error && isMissingOptionalColumnError(error.message)) {
+    ({ data, error } = await run(ORDER_SELECT_WITH_CONTACT));
+  }
+  if (error && isMissingOptionalColumnError(error.message)) {
+    ({ data, error } = await run(ORDER_SELECT_BASE));
   }
 
-  let { data, error } = await runSelect(ORDER_SELECT_FULL);
-  if (error && isMissingOptionalColumnError(error.message)) {
-    ({ data, error } = await runSelect(ORDER_SELECT_WITH_CONTACT));
-  }
-  if (error && isMissingOptionalColumnError(error.message)) {
-    ({ data, error } = await runSelect(ORDER_SELECT_BASE));
-  }
   if (error) {
     console.error('[orders] list', error.message);
     return { ok: false, error: 'No se han podido cargar los pedidos.' };
@@ -195,6 +272,22 @@ export async function getPharmacyOrderDetail(
   if (orderError && isMissingOptionalColumnError(orderError.message)) {
     ({ data: orderRow, error: orderError } = await supabase
       .from('pharmacy_orders')
+      .select(ORDER_SELECT_R3)
+      .eq('id', orderId)
+      .eq('pharmacy_id', pharmacyId)
+      .maybeSingle());
+  }
+  if (orderError && isMissingOptionalColumnError(orderError.message)) {
+    ({ data: orderRow, error: orderError } = await supabase
+      .from('pharmacy_orders')
+      .select(ORDER_SELECT_WITH_AMOUNT)
+      .eq('id', orderId)
+      .eq('pharmacy_id', pharmacyId)
+      .maybeSingle());
+  }
+  if (orderError && isMissingOptionalColumnError(orderError.message)) {
+    ({ data: orderRow, error: orderError } = await supabase
+      .from('pharmacy_orders')
       .select(ORDER_SELECT_WITH_CONTACT)
       .eq('id', orderId)
       .eq('pharmacy_id', pharmacyId)
@@ -221,10 +314,20 @@ export async function getPharmacyOrderDetail(
     };
   }
 
-  const { data: itemRows, error: itemsError } = await supabase
-    .from('pharmacy_order_items')
-    .select(
-      `
+  const ITEM_SELECT_FULL = `
+      id,
+      order_id,
+      product_id,
+      product_name,
+      quantity,
+      unit_price,
+      line_total,
+      availability_status,
+      staff_note,
+      priced_at,
+      priced_by
+    `;
+  const ITEM_SELECT_BASE = `
       id,
       order_id,
       product_id,
@@ -232,11 +335,32 @@ export async function getPharmacyOrderDetail(
       quantity,
       unit_price,
       line_total
-    `
-    )
-    .eq('order_id', orderId)
-    .eq('pharmacy_id', pharmacyId)
-    .order('created_at', { ascending: true });
+    `;
+
+  let itemRows: ItemRow[] | null = null;
+  let itemsError: { message: string } | null = null;
+
+  {
+    const full = await supabase
+      .from('pharmacy_order_items')
+      .select(ITEM_SELECT_FULL)
+      .eq('order_id', orderId)
+      .eq('pharmacy_id', pharmacyId)
+      .order('created_at', { ascending: true });
+    itemsError = full.error;
+    itemRows = (full.data as ItemRow[] | null) ?? null;
+  }
+
+  if (itemsError && isMissingOptionalColumnError(itemsError.message)) {
+    const base = await supabase
+      .from('pharmacy_order_items')
+      .select(ITEM_SELECT_BASE)
+      .eq('order_id', orderId)
+      .eq('pharmacy_id', pharmacyId)
+      .order('created_at', { ascending: true });
+    itemsError = base.error;
+    itemRows = (base.data as ItemRow[] | null) ?? null;
+  }
 
   if (itemsError) {
     console.error('[orders] items', itemsError.message);
@@ -247,7 +371,7 @@ export async function getPharmacyOrderDetail(
     ok: true,
     order: {
       ...mapOrder(orderRow as OrderRow),
-      items: ((itemRows as ItemRow[] | null) ?? []).map(mapItem),
+      items: (itemRows ?? []).map(mapItem),
     },
   };
 }

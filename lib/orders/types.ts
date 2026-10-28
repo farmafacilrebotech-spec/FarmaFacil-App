@@ -71,9 +71,28 @@ export type PharmacyOrderSummary = {
    */
   amountConfirmedAt: string | null;
   amountConfirmedBy: string | null;
+  /** Valoración por línea (060). NULL = no valorado o solo total legacy 058. */
+  linesValuedAt: string | null;
+  linesValuedBy: string | null;
+  /** Aceptación del cliente del presupuesto (R4). NULL = no aceptado. */
+  customerAcceptedAt: string | null;
+  customerAcceptedBy: string | null;
+  /** Rechazo del cliente (R4). */
+  customerRejectedAt: string | null;
+  /** Versión del presupuesto vigente (R4). 0 = no valorado. */
+  quoteVersion: number;
+  /** Caducidad de la versión vigente (R4). */
+  quoteExpiresAt: string | null;
+  /** Histórico sellado en apply 060 (total 058 sin desglose). */
+  quoteLegacyTotalOnly: boolean;
   createdAt: string;
   updatedAt: string;
 };
+
+export type OrderLineAvailabilityStatus =
+  | 'pending'
+  | 'available'
+  | 'unavailable';
 
 export type PharmacyOrderItem = {
   id: string;
@@ -83,6 +102,11 @@ export type PharmacyOrderItem = {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  /** Ausente/pending si la columna 060 aún no existe o no se valoró. */
+  availabilityStatus: OrderLineAvailabilityStatus;
+  staffNote: string | null;
+  pricedAt: string | null;
+  pricedBy: string | null;
 };
 
 export type PharmacyOrderDetail = PharmacyOrderSummary & {

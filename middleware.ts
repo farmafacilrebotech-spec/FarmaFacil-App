@@ -24,6 +24,11 @@ function isPublicEntrypointRoute(pathname: string): boolean {
   return pathname === '/e' || pathname.startsWith('/e/');
 }
 
+/** Presupuesto público R4: /q/[token] — sin sesión. */
+function isPublicQuoteRoute(pathname: string): boolean {
+  return pathname === '/q' || pathname.startsWith('/q/');
+}
+
 export async function middleware(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
@@ -33,7 +38,8 @@ export async function middleware(request: NextRequest) {
     isAuthRoute ||
     isPublicLegalRoute(pathname) ||
     isPublicKioskRoute(pathname) ||
-    isPublicEntrypointRoute(pathname);
+    isPublicEntrypointRoute(pathname) ||
+    isPublicQuoteRoute(pathname);
 
   // Sin sesión en ruta protegida → login.
   // Nota: Next Edge puede normalizar 127.0.0.1→localhost en Location absoluta.
@@ -41,7 +47,9 @@ export async function middleware(request: NextRequest) {
   // La redirección login→continue se hace en login/page.tsx con redirect() relativo.
   if (!user && !isPublicRoute) {
     const params = new URLSearchParams();
-    params.set('next', pathname);
+    // Nunca poner tokens (/q/...) ni secretos en ?next=
+    const safeNext = pathname.startsWith('/q/') ? '/q' : pathname;
+    params.set('next', safeNext);
     const response = middlewareRedirect(
       request,
       `/login?${params.toString()}`
@@ -50,6 +58,16 @@ export async function middleware(request: NextRequest) {
       response.cookies.set(cookie);
     });
     return response;
+  }
+
+  // Presupuesto público: sin caché CDN/navegador (el token va en la URL).
+  if (isPublicQuoteRoute(pathname)) {
+    supabaseResponse.headers.set(
+      'Cache-Control',
+      'private, no-store, no-cache, max-age=0, must-revalidate'
+    );
+    supabaseResponse.headers.set('Referrer-Policy', 'no-referrer');
+    supabaseResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
   }
 
   return supabaseResponse;

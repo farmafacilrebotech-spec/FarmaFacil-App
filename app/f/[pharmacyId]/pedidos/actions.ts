@@ -3,6 +3,10 @@
 import { revalidatePath } from 'next/cache';
 
 import { confirmPharmacyOrderAmount } from '@/lib/orders/confirm-amount';
+import { confirmPublicQrLineValuation } from '@/lib/orders/confirm-line-valuation';
+import { issuePublicQrQuoteLink } from '@/lib/orders/issue-quote-link';
+import type { ValuationLineInput } from '@/lib/orders/line-valuation';
+import { listPharmacyOrderQuoteEvents } from '@/lib/orders/quote-events';
 import {
   getPharmacyOrderDetail,
   listPharmacyOrders,
@@ -67,4 +71,32 @@ export async function confirmPharmacyOrderAmountAction(input: {
     revalidateOrders(input.pharmacyId);
   }
   return result;
+}
+
+export async function confirmPublicQrLineValuationAction(input: {
+  pharmacyId: string;
+  orderId: string;
+  lines: ValuationLineInput[];
+  expectedUpdatedAt?: string | null;
+  allowRevision?: boolean;
+}) {
+  const result = await confirmPublicQrLineValuation(input);
+  if (result.ok) {
+    revalidateOrders(input.pharmacyId);
+  }
+  return result;
+}
+
+export async function issuePublicQrQuoteLinkAction(input: {
+  pharmacyId: string;
+  orderId: string;
+}) {
+  return issuePublicQrQuoteLink(input);
+}
+
+export async function listPharmacyOrderQuoteEventsAction(input: {
+  pharmacyId: string;
+  orderId: string;
+}) {
+  return listPharmacyOrderQuoteEvents(input);
 }

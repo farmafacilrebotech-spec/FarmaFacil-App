@@ -26,11 +26,78 @@ import { cn } from '@/lib/utils';
 
 const CLIENT_REQUEST_KEY = 'ff_kiosk_checkout_request_id';
 
+type FarmaFacilKioskBridge = {
+  printTicket: (payloadJson: string) => string;
+  getBridgeInfo?: () => string;
+};
+
+type FarmaFacilKioskPrintAck = {
+  status?: string;
+  code?: string;
+  message?: string;
+};
+
+type FarmaFacilKioskPrintResult = {
+  ok?: boolean;
+  code?: string;
+  message?: string;
+};
+
+declare global {
+  interface Window {
+    FarmaFacilKiosk?: FarmaFacilKioskBridge;
+    onFarmaFacilKioskPrintResult?: (
+      result: FarmaFacilKioskPrintResult
+    ) => void;
+  }
+}
+
 function newClientRequestId(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID();
   }
   return `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+/** Payload del puente Android (mismo shape que KioskTicketData + qr opcional). */
+function ticketPayloadForBridge(ticket: KioskTicketData): string {
+  return JSON.stringify({
+    displayNumber: ticket.displayNumber,
+    pharmacyName: ticket.pharmacyName,
+    totalAmount: ticket.totalAmount,
+    currency: ticket.currency,
+    paymentStatus: ticket.paymentStatus,
+    items: ticket.items.map((item) => ({
+      productName: item.productName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      lineTotal: item.lineTotal,
+    })),
+  });
+}
+
+function humanPrintError(code: string | undefined, fallback: string): string {
+  switch (code) {
+    case 'printer_disconnected':
+      return 'Impresora desconectada. Comprueba el cable USB e inténtalo de nuevo.';
+    case 'usb_permission_required':
+      return 'Se necesita permiso USB. Confirma el diálogo del sistema y pulsa Imprimir de nuevo.';
+    case 'busy':
+      return 'Ya hay una impresión en curso. Espera un momento.';
+    case 'rate_limited':
+      return 'Espera un momento antes de volver a imprimir.';
+    case 'not_connected':
+    case 'connect_failed':
+      return 'No se pudo conectar con la impresora. Revisa USB y permiso, luego reintenta.';
+    case 'print_failed':
+      return 'Error al imprimir. El pedido no se ha modificado; puedes reintentar.';
+    case 'forbidden':
+      return 'Impresión no disponible en este contexto.';
+    case 'invalid_payload':
+      return 'No se pudo preparar el ticket para imprimir.';
+    default:
+      return fallback;
+  }
 }
 
 export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
@@ -40,6 +107,8 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [ticket, setTicket] = React.useState<KioskTicketData | null>(null);
+  const [printError, setPrintError] = React.useState<string | null>(null);
+  const [printing, setPrinting] = React.useState(false);
 
   async function confirmOrder() {
     if (cart.lines.length === 0 || submitting) return;
@@ -126,7 +195,66 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
     }
   }
 
+  React.useEffect(() => {
+    if (!ticket) return;
+    const previous = window.onFarmaFacilKioskPrintResult;
+    window.onFarmaFacilKioskPrintResult = (result) => {
+      setPrinting(false);
+      if (result?.ok) {
+        setPrintError(null);
+        return;
+      }
+      setPrintError(
+        humanPrintError(
+          result?.code,
+          result?.message ||
+            'No se pudo imprimir. El pedido sigue creado; puedes reintentar.'
+        )
+      );
+    };
+    return () => {
+      window.onFarmaFacilKioskPrintResult = previous;
+    };
+  }, [ticket]);
+
   function printTicket() {
+    if (!ticket || printing) return;
+
+    const bridge = window.FarmaFacilKiosk;
+    if (bridge && typeof bridge.printTicket === 'function') {
+      setPrintError(null);
+      setPrinting(true);
+      try {
+        const raw = bridge.printTicket(ticketPayloadForBridge(ticket));
+        let ack: FarmaFacilKioskPrintAck = {};
+        try {
+          ack = JSON.parse(raw) as FarmaFacilKioskPrintAck;
+        } catch {
+          // ack no JSON: asumir encolado; el callback nativo cerrará el estado
+        }
+        if (ack.status === 'accepted') {
+          // Resultado final vía onFarmaFacilKioskPrintResult; no tocar el pedido.
+          return;
+        }
+        setPrinting(false);
+        setPrintError(
+          humanPrintError(
+            ack.code,
+            ack.message ||
+              'No se pudo iniciar la impresión. El pedido no se ha modificado.'
+          )
+        );
+      } catch {
+        setPrinting(false);
+        setPrintError(
+          'Error al contactar con la impresora. El pedido no se ha modificado; puedes reintentar.'
+        );
+      }
+      return;
+    }
+
+    // Navegador normal (sin APK): impresión CSS.
+    setPrintError(null);
     window.print();
   }
 
@@ -145,14 +273,24 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
 
           <KioskOrderTicket ticket={ticket} />
 
+          {printError ? (
+            <p
+              className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-center text-base text-amber-950 print:hidden lg:text-lg"
+              role="alert"
+            >
+              {printError}
+            </p>
+          ) : null}
+
           <div className="mt-6 flex flex-col gap-3 print:hidden lg:gap-4">
             <button
               type="button"
               onClick={printTicket}
-              className="flex h-16 items-center justify-center gap-2 rounded-2xl bg-slate-900 text-lg font-semibold text-white active:scale-[0.99] lg:h-20 lg:text-xl"
+              disabled={printing}
+              className="flex h-16 items-center justify-center gap-2 rounded-2xl bg-slate-900 text-lg font-semibold text-white active:scale-[0.99] disabled:opacity-60 lg:h-20 lg:text-xl"
             >
               <Printer className="h-6 w-6 lg:h-7 lg:w-7" />
-              Imprimir ticket
+              {printing ? 'Imprimiendo…' : 'Imprimir ticket'}
             </button>
             <Link
               href="/k"

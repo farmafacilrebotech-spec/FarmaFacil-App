@@ -154,5 +154,29 @@ function mapUpdatePayload(data: unknown): UpdateOrderStatusResult {
       code: 'amount_not_confirmed',
     };
   }
+  if (status === 'valuation_required') {
+    return {
+      ok: false,
+      error:
+        'Confirma disponibilidad y precios por producto antes de pasar a preparación.',
+      code: 'valuation_required',
+    };
+  }
+  if (status === 'quote_awaiting_customer_acceptance') {
+    return {
+      ok: false,
+      error:
+        'Presupuesto pendiente de aceptación del cliente. No se puede avanzar el estado operativo todavía.',
+      code: 'quote_awaiting_customer_acceptance',
+    };
+  }
+  if (status === 'quote_rejected') {
+    return {
+      ok: false,
+      error:
+        'El cliente rechazó el presupuesto. No se puede preparar este pedido.',
+      code: 'quote_rejected',
+    };
+  }
   return { ok: false, error: 'No se ha podido actualizar el pedido.' };
 }

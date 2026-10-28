@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { requireOrdersManage } from '@/lib/orders/authz';
 import { parseConfirmableEuroAmount } from '@/lib/orders/euro-amount';
+import { getPharmacyOrderDetail } from '@/lib/orders/queries';
 import type { OrderStatus, PaymentStatus } from '@/lib/orders/types';
 
 export { parseConfirmableEuroAmount } from '@/lib/orders/euro-amount';
@@ -19,7 +20,7 @@ export type ConfirmOrderAmountResult =
   | { ok: false; error: string; code?: string };
 
 /**
- * Confirma el importe total vía RPC 058.
+ * Confirma el importe total vía RPC 058 (no public_qr tras 060).
  * Tras OK: payment suele ser unpaid (sin cobrar).
  */
 export async function confirmPharmacyOrderAmount(input: {
@@ -30,6 +31,19 @@ export async function confirmPharmacyOrderAmount(input: {
   const auth = await requireOrdersManage(input.pharmacyId);
   if (!auth.ok) {
     return { ok: false, error: auth.error, code: 'forbidden' };
+  }
+
+  const detail = await getPharmacyOrderDetail(input.pharmacyId, input.orderId);
+  if (!detail.ok) {
+    return { ok: false, error: detail.error, code: detail.reason ?? 'not_found' };
+  }
+  if (detail.order.source === 'public_qr') {
+    return {
+      ok: false,
+      error:
+        'Las solicitudes del catálogo QR deben valorarse por producto (no por total libre).',
+      code: 'use_line_valuation',
+    };
   }
 
   const parsed = parseConfirmableEuroAmount(input.amount);
@@ -87,6 +101,8 @@ function mapConfirmPayload(data: unknown): ConfirmOrderAmountResult {
     already_paid:
       'El pedido ya está marcado como cobrado; no se puede cambiar el importe aquí.',
     refunded: 'No se puede confirmar importe en un pedido reembolsado.',
+    use_line_valuation:
+      'Las solicitudes del catálogo QR deben valorarse por producto.',
   };
 
   return {
