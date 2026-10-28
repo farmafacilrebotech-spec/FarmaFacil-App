@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { sha256Hex } from '@/lib/kiosk/crypto';
 import {
-  clearKioskSessionCookie,
   parseKioskSessionCookie,
   readKioskSessionCookie,
 } from '@/lib/kiosk/session-cookie';
@@ -65,7 +64,7 @@ export async function loadKioskHomeContext(
   const status = payload && 'status' in payload ? String(payload.status) : '';
 
   if (status === 'session_revoked' || status === 'session_invalid') {
-    clearKioskSessionCookie();
+    // No mutar cookies en este helper (puede ejecutarse desde RSC).
     return fallback;
   }
   if (status === 'commercially_blocked' || status !== 'ok') {

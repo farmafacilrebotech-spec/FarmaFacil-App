@@ -1,39 +1,40 @@
 import { createClient } from '@/lib/supabase/server';
 import { sha256Hex } from '@/lib/kiosk/crypto';
 import {
-  clearKioskSessionCookie,
   parseKioskSessionCookie,
   readKioskSessionCookie,
 } from '@/lib/kiosk/session-cookie';
+import {
+  mapValidateDeviceSessionRpc,
+  type KioskDeviceSessionResult,
+  type KioskSessionFailureReason,
+  type ValidKioskDeviceSession,
+} from '@/lib/kiosk/device-session-map';
 
-export type ValidKioskDeviceSession = {
-  pharmacyId: string;
-  deviceId: string;
-  sessionId: string;
-  displayName: string;
-};
+export type {
+  KioskDeviceSessionResult,
+  KioskSessionFailureReason,
+  ValidKioskDeviceSession,
+} from '@/lib/kiosk/device-session-map';
 
-export type KioskSessionFailureReason =
-  | 'missing'
-  | 'invalid'
-  | 'revoked'
-  | 'commercially_blocked';
+export { kioskSessionFailureRedirectPath } from '@/lib/kiosk/device-session-map';
 
 /**
  * Valida la cookie de dispositivo en cada operación protegida del runtime kiosko.
  *
- * - revoked / inválida → limpia cookie
- * - commercially_blocked → mantiene cookie (sesión intacta; acceso se recupera
- *   si la farmacia vuelve a ser operable / con módulo kiosk)
+ * Importante (Next.js RSC): **no** elimina ni modifica cookies aquí.
+ * Mutar cookies en Server Components provoca el error digest (p. ej. 4150501925).
+ * La cookie se sustituye al emparejar (`setKioskSessionCookie` en Server Action)
+ * o se limpia solo desde Server Actions / Route Handlers (`clearKioskSessionCookie`).
+ *
+ * - revoked / inválida → reason; UI controlada en `/k` o redirect a `/k/pair`
+ * - commercially_blocked → mantiene cookie (el derecho comercial puede volver)
  */
-export async function requireValidKioskDeviceSession(): Promise<
-  | { ok: true; session: ValidKioskDeviceSession }
-  | { ok: false; reason: KioskSessionFailureReason }
-> {
+export async function requireValidKioskDeviceSession(): Promise<KioskDeviceSessionResult> {
   const raw = readKioskSessionCookie();
   const parsed = parseKioskSessionCookie(raw);
   if (!parsed) {
-    return { ok: false, reason: 'missing' };
+    return mapValidateDeviceSessionRpc({ cookieMissing: true });
   }
 
   const supabase = createClient();
@@ -47,34 +48,8 @@ export async function requireValidKioskDeviceSession(): Promise<
 
   if (error) {
     console.error('[kiosk] validate session', error.message);
-    clearKioskSessionCookie();
-    return { ok: false, reason: 'invalid' };
+    return mapValidateDeviceSessionRpc({ rpcError: true });
   }
 
-  const payload =
-    data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
-  const status = payload && 'status' in payload ? String(payload.status) : '';
-
-  if (status === 'valid') {
-    return {
-      ok: true,
-      session: {
-        pharmacyId: String(payload!.pharmacy_id),
-        deviceId: String(payload!.device_id),
-        sessionId: String(payload!.session_id),
-        displayName: String(payload!.display_name ?? 'Tablet kiosko'),
-      },
-    };
-  }
-
-  if (status === 'commercially_blocked') {
-    // No borrar cookie: el derecho comercial puede restablecerse.
-    return { ok: false, reason: 'commercially_blocked' };
-  }
-
-  clearKioskSessionCookie();
-  if (status === 'revoked') {
-    return { ok: false, reason: 'revoked' };
-  }
-  return { ok: false, reason: 'invalid' };
+  return mapValidateDeviceSessionRpc({ data });
 }

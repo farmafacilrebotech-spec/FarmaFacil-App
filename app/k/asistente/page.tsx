@@ -8,7 +8,10 @@ import {
   DEMO_WELCOME_MESSAGE,
 } from '@/lib/kiosk/assistant/demo-content';
 import { loadAssistantRuntimeStatus } from '@/lib/kiosk/assistant/runtime';
-import { requireValidKioskDeviceSession } from '@/lib/kiosk/device-session';
+import {
+  kioskSessionFailureRedirectPath,
+  requireValidKioskDeviceSession,
+} from '@/lib/kiosk/device-session';
 import { loadKioskHomeContext } from '@/lib/kiosk/home-context';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +19,7 @@ export const dynamic = 'force-dynamic';
 export default async function KioskAssistantPage() {
   const session = await requireValidKioskDeviceSession();
   if (!session.ok) {
-    redirect(session.reason === 'commercially_blocked' ? '/k' : '/k/pair');
+    redirect(kioskSessionFailureRedirectPath(session.reason));
   }
 
   const home = await loadKioskHomeContext(session.session);

@@ -27,17 +27,30 @@ export function setKioskSessionCookie(
   });
 }
 
+/**
+ * Borra la cookie de sesión de dispositivo.
+ * Solo llamar desde Server Actions / Route Handlers.
+ * No usar en Server Components (provoca digest / Application error).
+ */
 export function clearKioskSessionCookie(): void {
-  const store = cookies();
-  store.set({
-    name: KIOSK_SESSION_COOKIE,
-    value: '',
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: KIOSK_SESSION_COOKIE_PATH,
-    maxAge: 0,
-  });
+  try {
+    const store = cookies();
+    store.set({
+      name: KIOSK_SESSION_COOKIE,
+      value: '',
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: KIOSK_SESSION_COOKIE_PATH,
+      maxAge: 0,
+    });
+  } catch (err) {
+    // Defensa: si se invocara por error desde RSC, no tumbar la página.
+    console.error(
+      '[kiosk] clearKioskSessionCookie skipped (not in mutable cookie context)',
+      err instanceof Error ? err.message : err
+    );
+  }
 }
 
 export function readKioskSessionCookie(): string | undefined {

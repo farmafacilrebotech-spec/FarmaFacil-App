@@ -1,7 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { sha256Hex } from '@/lib/kiosk/crypto';
 import {
-  clearKioskSessionCookie,
   parseKioskSessionCookie,
   readKioskSessionCookie,
 } from '@/lib/kiosk/session-cookie';
@@ -95,7 +94,7 @@ export async function searchKioskCatalog(input: {
   const status = payload && 'status' in payload ? String(payload.status) : '';
 
   if (status === 'session_revoked' || status === 'session_invalid') {
-    clearKioskSessionCookie();
+    // No mutar cookies aquí (searchKioskCatalog se usa también desde RSC).
     return {
       ok: false,
       code: status === 'session_revoked' ? 'session_revoked' : 'session_invalid',
