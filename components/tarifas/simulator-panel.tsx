@@ -6,9 +6,11 @@ import {
   calculateQuote,
   getPlan,
   formatCentsEur,
+  formatBpsPercent,
   type BillingInterval,
   type CommercialPlanId,
   type CommercialTariffConfig,
+  type SaasCohortPricing,
 } from '@/lib/tarifas';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -25,20 +27,18 @@ import { cn } from '@/lib/utils';
 
 export function SimulatorPanel({
   config,
-  canViewInternalCosts = false,
 }: {
   config: CommercialTariffConfig;
+  /** @deprecated La rentabilidad interna ya no se muestra en esta pantalla. */
   canViewInternalCosts?: boolean;
 }) {
   const [clientName, setClientName] = React.useState('');
   const [planId, setPlanId] = React.useState<CommercialPlanId>('general');
   const [interval, setInterval] = React.useState<BillingInterval>('monthly');
+  const [cohortPricing, setCohortPricing] =
+    React.useState<SaasCohortPricing>('normal');
   const [kioskCount, setKioskCount] = React.useState(1);
-  const [onsiteEuros, setOnsiteEuros] = React.useState(0);
-  const [extraEuros, setExtraEuros] = React.useState(0);
-  const [oneTimeDiscountEuros, setOneTimeDiscountEuros] = React.useState(0);
-  const [recurringDiscountEuros, setRecurringDiscountEuros] =
-    React.useState(0);
+  const [onsiteIncluded, setOnsiteIncluded] = React.useState(false);
   const [notes, setNotes] = React.useState('');
 
   const plan = getPlan(config, planId);
@@ -47,10 +47,8 @@ export function SimulatorPanel({
   React.useEffect(() => {
     if (isPilot) {
       setKioskCount(0);
-      setOnsiteEuros(0);
-      setExtraEuros(0);
-      setOneTimeDiscountEuros(0);
-      setRecurringDiscountEuros(0);
+      setOnsiteIncluded(false);
+      setCohortPricing('normal');
     }
   }, [isPilot]);
 
@@ -60,21 +58,18 @@ export function SimulatorPanel({
         planId,
         interval,
         kioskCount: isPilot ? 0 : kioskCount,
-        onsiteInstallCents: Math.round(onsiteEuros * 100),
-        additionalServicesCents: Math.round(extraEuros * 100),
-        oneTimeDiscountCents: Math.round(oneTimeDiscountEuros * 100),
-        recurringExtraDiscountCents: Math.round(recurringDiscountEuros * 100),
+        onsiteInstallIncluded: isPilot ? false : onsiteIncluded,
+        cohortPricing: isPilot ? 'normal' : cohortPricing,
+        includeAppSignupFee: !isPilot,
       }),
     [
       config,
       planId,
       interval,
+      cohortPricing,
       kioskCount,
       isPilot,
-      onsiteEuros,
-      extraEuros,
-      oneTimeDiscountEuros,
-      recurringDiscountEuros,
+      onsiteIncluded,
     ]
   );
 
@@ -133,19 +128,59 @@ export function SimulatorPanel({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="monthly">Mensual</SelectItem>
-                <SelectItem value="annual">Anual (−dto.)</SelectItem>
+                <SelectItem value="annual">
+                  Anual SaaS (−{formatBpsPercent(config.saasAnnualDiscountBps)})
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
 
+        <div className="space-y-1.5">
+          <Label>Cohorte / descuento SaaS</Label>
+          <Select
+            value={cohortPricing}
+            onValueChange={(v) => setCohortPricing(v as SaasCohortPricing)}
+            disabled={isPilot}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="normal">Tarifa normal</SelectItem>
+              <SelectItem value="launch_2027">
+                Lanzamiento 2027 (−60 % SaaS · máx.{' '}
+                {config.assumptions.launchSlots2027} plazas)
+              </SelectItem>
+              <SelectItem value="cohort_2027_in_2028">
+                Cohorte 2027 en 2028 (−30 % SaaS)
+              </SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">
+            El alquiler del kiosko no entra en el descuento SaaS. Prepago anual
+            previsto:{' '}
+            {formatBpsPercent(config.assumptions.annualPrepayAdoptionBps)}{' '}
+            (tesorería sigue mensual).
+          </p>
+        </div>
+
         {isPilot && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-            Piloto: 15 días · 0 € · sin kioskos físicos ni licencias. La
+            Piloto: 15 días · 0 € · sin kioskos físicos ni alquiler. La
             ampliación de +15 días se gestiona en «Gestión de pilotos», no
             como descuento.
           </div>
         )}
+
+        {config.assumptions.equivalenceSurchargeBps > 0 ? (
+          <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            Recargo de equivalencia / subida de venta activo:{' '}
+            {formatBpsPercent(config.assumptions.equivalenceSurchargeBps)} sobre
+            precios de venta SaaS, alta y personalización. No aplica al alquiler
+            ni a costes.
+          </div>
+        ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
@@ -158,71 +193,38 @@ export function SimulatorPanel({
               disabled={isPilot}
               value={isPilot ? 0 : kioskCount}
               onChange={(e) =>
-                setKioskCount(Math.max(0, Math.floor(Number(e.target.value) || 0)))
+                setKioskCount(
+                  Math.max(0, Math.floor(Number(e.target.value) || 0))
+                )
               }
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Hardware unitario</Label>
+            <Label>Personalización kiosko (unitario)</Label>
             <Input
               disabled
               value={formatCentsEur(config.kioskHardwareUnitCents)}
               readOnly
             />
           </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sim-onsite">Instalación presencial (€)</Label>
-            <Input
-              id="sim-onsite"
-              type="number"
-              min={0}
-              step={0.01}
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="sim-onsite">Instalación presencial</Label>
+            <Select
+              value={onsiteIncluded ? 'included' : 'excluded'}
+              onValueChange={(v) => setOnsiteIncluded(v === 'included')}
               disabled={isPilot}
-              value={onsiteEuros}
-              onChange={(e) => setOnsiteEuros(Number(e.target.value) || 0)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sim-extra">Otros servicios (€)</Label>
-            <Input
-              id="sim-extra"
-              type="number"
-              min={0}
-              step={0.01}
-              disabled={isPilot}
-              value={extraEuros}
-              onChange={(e) => setExtraEuros(Number(e.target.value) || 0)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sim-ot-disc">Dto. puntual pago único (€)</Label>
-            <Input
-              id="sim-ot-disc"
-              type="number"
-              min={0}
-              step={0.01}
-              disabled={isPilot}
-              value={oneTimeDiscountEuros}
-              onChange={(e) =>
-                setOneTimeDiscountEuros(Number(e.target.value) || 0)
-              }
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="sim-rec-disc">
-              Dto. extraordinario cuota (€/{periodLabel})
-            </Label>
-            <Input
-              id="sim-rec-disc"
-              type="number"
-              min={0}
-              step={0.01}
-              disabled={isPilot}
-              value={recurringDiscountEuros}
-              onChange={(e) =>
-                setRecurringDiscountEuros(Number(e.target.value) || 0)
-              }
-            />
+            >
+              <SelectTrigger id="sim-onsite">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="excluded">No incluida</SelectItem>
+                <SelectItem value="included">Incluida</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Extra contractual sin importe: no modifica precios, IVA ni cuotas.
+            </p>
           </div>
         </div>
 
@@ -242,18 +244,17 @@ export function SimulatorPanel({
         <Card className="p-5 shadow-soft">
           <h3 className="text-sm font-semibold text-foreground">Pago único</h3>
           <dl className="mt-3 space-y-2 text-sm">
-            <Row label="Hardware" value={formatCentsEur(quote.hardwareCents)} />
+            <Row
+              label="Alta de la aplicación (pago único)"
+              value={formatCentsEur(quote.appSignupFeeCents)}
+            />
+            <Row
+              label="Personalización kiosko"
+              value={formatCentsEur(quote.hardwareCents)}
+            />
             <Row
               label="Instalación presencial"
-              value={formatCentsEur(quote.onsiteInstallCents)}
-            />
-            <Row
-              label="Servicios adicionales"
-              value={formatCentsEur(quote.additionalServicesCents)}
-            />
-            <Row
-              label="Descuentos puntuales"
-              value={`−${formatCentsEur(quote.oneTimeDiscountCents)}`}
+              value={quote.onsiteInstallIncluded ? 'Incluida' : 'No incluida'}
             />
             <Row
               label="Neto sin IVA"
@@ -275,23 +276,22 @@ export function SimulatorPanel({
           </h3>
           <dl className="mt-3 space-y-2 text-sm">
             <Row
-              label={`Plan ${plan.name}`}
+              label={`Plan ${plan.name} (SaaS)`}
               value={formatCentsEur(quote.planRecurringCents)}
             />
             <Row
-              label={`Licencias kiosko (${quote.kioskCount})`}
+              label={`Alquiler kiosko (${quote.kioskCount})`}
               value={formatCentsEur(quote.kioskLicenseRecurringCents)}
-            />
-            <Row
-              label="Dto. extraordinario"
-              value={`−${formatCentsEur(quote.recurringExtraDiscountCents)}`}
             />
             <Row
               label="Cuota neta sin IVA"
               value={formatCentsEur(quote.recurringNetCents)}
               strong
             />
-            <Row label="IVA cuota" value={formatCentsEur(quote.recurringVatCents)} />
+            <Row
+              label="IVA cuota"
+              value={formatCentsEur(quote.recurringVatCents)}
+            />
             <Row
               label="Cuota con IVA"
               value={formatCentsEur(quote.recurringGrossCents)}
@@ -305,7 +305,9 @@ export function SimulatorPanel({
             Resumen primer año
           </h3>
           {clientName.trim() ? (
-            <p className="mt-1 text-xs text-muted-foreground">{clientName.trim()}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {clientName.trim()}
+            </p>
           ) : null}
           <dl className="mt-3 space-y-2 text-sm">
             <Row
@@ -321,7 +323,10 @@ export function SimulatorPanel({
               value={formatCentsEur(quote.firstYearNetCents)}
               strong
             />
-            <Row label="IVA año 1" value={formatCentsEur(quote.firstYearVatCents)} />
+            <Row
+              label="IVA año 1"
+              value={formatCentsEur(quote.firstYearVatCents)}
+            />
             <Row
               label="Total año 1 con IVA"
               value={formatCentsEur(quote.firstYearGrossCents)}
@@ -333,47 +338,11 @@ export function SimulatorPanel({
               value={formatCentsEur(quote.laterYearsRecurringNetCents)}
             />
           </dl>
+          <p className="mt-3 text-[11px] text-muted-foreground">
+            El alta de la aplicación forma parte del pago inicial / año 1 y no
+            se incluye en las cuotas de años posteriores.
+          </p>
         </Card>
-
-        {canViewInternalCosts && config.kioskInternalCostCents != null ? (
-          <Card className="border-border/80 bg-muted/30 p-5">
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-foreground">
-                Rentabilidad hardware (interno)
-              </h3>
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Solo SuperAdmin · no comercial
-              </span>
-            </div>
-            <dl className="mt-3 space-y-2 text-sm">
-              <Row
-                label="Precio de venta"
-                value={formatCentsEur(quote.hardwareSaleCents)}
-              />
-              <Row
-                label="Coste estimado"
-                value={formatCentsEur(quote.hardwareCostCents)}
-              />
-              <Row
-                label="Beneficio bruto"
-                value={formatCentsEur(quote.hardwareProfitCents)}
-                strong
-              />
-              <Row
-                label="Margen bruto"
-                value={
-                  quote.hardwareMarginPercent == null
-                    ? '—'
-                    : `${quote.hardwareMarginPercent.toLocaleString('es-ES', {
-                        maximumFractionDigits: 2,
-                        minimumFractionDigits: 2,
-                      })} %`
-                }
-                strong
-              />
-            </dl>
-          </Card>
-        ) : null}
       </div>
     </div>
   );

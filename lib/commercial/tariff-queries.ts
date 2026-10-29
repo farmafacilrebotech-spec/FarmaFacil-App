@@ -1,10 +1,27 @@
 import { createClient } from '@/lib/supabase/server';
 import { hasPlatformPermission } from '@/lib/auth/platform';
 import {
+  DEFAULT_COMMERCIAL_ASSUMPTIONS,
   DEFAULT_COMMERCIAL_TARIFF_CONFIG,
   withoutInternalCosts,
   type CommercialTariffConfig,
 } from '@/lib/tarifas';
+
+function withDefaultAssumptions(
+  config: CommercialTariffConfig
+): CommercialTariffConfig {
+  return {
+    ...config,
+    assumptions: {
+      ...DEFAULT_COMMERCIAL_ASSUMPTIONS,
+      ...config.assumptions,
+      kioskProvisioningHypotheses:
+        config.assumptions?.kioskProvisioningHypotheses?.length
+          ? config.assumptions.kioskProvisioningHypotheses
+          : DEFAULT_COMMERCIAL_ASSUMPTIONS.kioskProvisioningHypotheses,
+    },
+  };
+}
 
 export type TariffConfigLoadResult = {
   config: CommercialTariffConfig;
@@ -27,7 +44,9 @@ export async function loadTariffConfigForSession(): Promise<TariffConfigLoadResu
 
   if (!write.ok && !read.ok) {
     return {
-      config: withoutInternalCosts(DEFAULT_COMMERCIAL_TARIFF_CONFIG),
+      config: withoutInternalCosts(
+        withDefaultAssumptions(DEFAULT_COMMERCIAL_TARIFF_CONFIG)
+      ),
       canViewInternalCosts: false,
       source: 'defaults',
     };
@@ -43,7 +62,9 @@ export async function loadTariffConfigForSession(): Promise<TariffConfigLoadResu
       console.error('[tariffs] internal list', error.code, error.message);
       // Fallback seguro: sin costes en payload hasta poder cargar
       return {
-        config: withoutInternalCosts(DEFAULT_COMMERCIAL_TARIFF_CONFIG),
+        config: withoutInternalCosts(
+          withDefaultAssumptions(DEFAULT_COMMERCIAL_TARIFF_CONFIG)
+        ),
         canViewInternalCosts: true,
         source: 'defaults',
       };
@@ -53,41 +74,25 @@ export async function loadTariffConfigForSession(): Promise<TariffConfigLoadResu
       rows.find((r) => (r as { is_current?: boolean }).is_current) ?? rows[0];
     if (!current || typeof current !== 'object') {
       return {
-        config: DEFAULT_COMMERCIAL_TARIFF_CONFIG,
+        config: withDefaultAssumptions(DEFAULT_COMMERCIAL_TARIFF_CONFIG),
         canViewInternalCosts: true,
         source: 'defaults',
       };
     }
     const row = current as Record<string, unknown>;
     return {
-      config: {
+      // Precios/kiosko/coste interno/supuestos: paquete comercial vigente en código
+      // (p. ej. personalización 1.090 €). No heredar 1.290 € / 19 € / 800 € de
+      // seeds antiguas en commercial_tariff_versions.
+      // IVA y dto. anual SaaS pueden venir de la versión en BD.
+      config: withDefaultAssumptions({
         ...DEFAULT_COMMERCIAL_TARIFF_CONFIG,
         vatBps: Number(row.vat_bps ?? DEFAULT_COMMERCIAL_TARIFF_CONFIG.vatBps),
         saasAnnualDiscountBps: Number(
           row.saas_annual_discount_bps ??
             DEFAULT_COMMERCIAL_TARIFF_CONFIG.saasAnnualDiscountBps
         ),
-        kioskLicenseAnnualDiscountBps: Number(
-          row.kiosk_license_annual_discount_bps ??
-            DEFAULT_COMMERCIAL_TARIFF_CONFIG.kioskLicenseAnnualDiscountBps
-        ),
-        kioskHardwareUnitCents: Number(
-          row.kiosk_hardware_unit_cents ??
-            DEFAULT_COMMERCIAL_TARIFF_CONFIG.kioskHardwareUnitCents
-        ),
-        kioskLicenseMonthlyCents: Number(
-          row.kiosk_license_monthly_cents ??
-            DEFAULT_COMMERCIAL_TARIFF_CONFIG.kioskLicenseMonthlyCents
-        ),
-        kioskInternalCostCents: Number(
-          row.kiosk_internal_cost_cents ??
-            DEFAULT_COMMERCIAL_TARIFF_CONFIG.kioskInternalCostCents
-        ),
-        defaultOnsiteInstallCents: Number(
-          row.default_onsite_install_cents ??
-            DEFAULT_COMMERCIAL_TARIFF_CONFIG.defaultOnsiteInstallCents
-        ),
-      },
+      }),
       canViewInternalCosts: true,
       source: 'internal_rpc',
     };
@@ -100,7 +105,9 @@ export async function loadTariffConfigForSession(): Promise<TariffConfigLoadResu
   if (error) {
     console.error('[tariffs] commercial list', error.code, error.message);
     return {
-      config: withoutInternalCosts(DEFAULT_COMMERCIAL_TARIFF_CONFIG),
+      config: withoutInternalCosts(
+        withDefaultAssumptions(DEFAULT_COMMERCIAL_TARIFF_CONFIG)
+      ),
       canViewInternalCosts: false,
       source: 'defaults',
     };
@@ -110,38 +117,26 @@ export async function loadTariffConfigForSession(): Promise<TariffConfigLoadResu
     rows.find((r) => (r as { is_current?: boolean }).is_current) ?? rows[0];
   if (!current || typeof current !== 'object') {
     return {
-      config: withoutInternalCosts(DEFAULT_COMMERCIAL_TARIFF_CONFIG),
+      config: withoutInternalCosts(
+        withDefaultAssumptions(DEFAULT_COMMERCIAL_TARIFF_CONFIG)
+      ),
       canViewInternalCosts: false,
       source: 'defaults',
     };
   }
   const row = current as Record<string, unknown>;
   // Defensa: aunque la RPC filtrara mal, no propagar claves de coste.
-  const safe = withoutInternalCosts({
-    ...DEFAULT_COMMERCIAL_TARIFF_CONFIG,
-    vatBps: Number(row.vat_bps ?? DEFAULT_COMMERCIAL_TARIFF_CONFIG.vatBps),
-    saasAnnualDiscountBps: Number(
-      row.saas_annual_discount_bps ??
-        DEFAULT_COMMERCIAL_TARIFF_CONFIG.saasAnnualDiscountBps
-    ),
-    kioskLicenseAnnualDiscountBps: Number(
-      row.kiosk_license_annual_discount_bps ??
-        DEFAULT_COMMERCIAL_TARIFF_CONFIG.kioskLicenseAnnualDiscountBps
-    ),
-    kioskHardwareUnitCents: Number(
-      row.kiosk_hardware_unit_cents ??
-        DEFAULT_COMMERCIAL_TARIFF_CONFIG.kioskHardwareUnitCents
-    ),
-    kioskLicenseMonthlyCents: Number(
-      row.kiosk_license_monthly_cents ??
-        DEFAULT_COMMERCIAL_TARIFF_CONFIG.kioskLicenseMonthlyCents
-    ),
-    kioskInternalCostCents: null,
-    defaultOnsiteInstallCents: Number(
-      row.default_onsite_install_cents ??
-        DEFAULT_COMMERCIAL_TARIFF_CONFIG.defaultOnsiteInstallCents
-    ),
-  });
+  const safe = withoutInternalCosts(
+    withDefaultAssumptions({
+      ...DEFAULT_COMMERCIAL_TARIFF_CONFIG,
+      vatBps: Number(row.vat_bps ?? DEFAULT_COMMERCIAL_TARIFF_CONFIG.vatBps),
+      saasAnnualDiscountBps: Number(
+        row.saas_annual_discount_bps ??
+          DEFAULT_COMMERCIAL_TARIFF_CONFIG.saasAnnualDiscountBps
+      ),
+      kioskInternalCostCents: null,
+    })
+  );
 
   return {
     config: safe,
