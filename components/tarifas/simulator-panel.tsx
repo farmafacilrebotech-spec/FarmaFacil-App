@@ -1,6 +1,9 @@
 'use client';
 
 import * as React from 'react';
+import { Loader2, Save } from 'lucide-react';
+import { toast } from 'sonner';
+import { useRouter } from 'next/navigation';
 
 import {
   calculateQuote,
@@ -12,10 +15,14 @@ import {
   type CommercialTariffConfig,
   type SaasCohortPricing,
 } from '@/lib/tarifas';
+import type { QuotePharmacyOption } from '@/lib/commercial/quote-types';
+import { defaultValidUntilIso } from '@/lib/commercial/quote-document';
+import { saveCommercialQuoteAction } from '@/app/(app)/tarifas/quote-actions';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Button } from '@/components/ui/button';
 import {
   Select,
   SelectContent,
@@ -27,12 +34,23 @@ import { cn } from '@/lib/utils';
 
 export function SimulatorPanel({
   config,
+  pharmacies = [],
+  canSaveQuotes = false,
+  onQuoteSaved,
 }: {
   config: CommercialTariffConfig;
+  pharmacies?: QuotePharmacyOption[];
+  canSaveQuotes?: boolean;
+  onQuoteSaved?: (quoteId: string) => void;
   /** @deprecated La rentabilidad interna ya no se muestra en esta pantalla. */
   canViewInternalCosts?: boolean;
 }) {
+  const router = useRouter();
+  const lock = React.useRef(false);
+  const [pharmacyId, setPharmacyId] = React.useState<string>('none');
   const [clientName, setClientName] = React.useState('');
+  const [contactName, setContactName] = React.useState('');
+  const [contactEmail, setContactEmail] = React.useState('');
   const [planId, setPlanId] = React.useState<CommercialPlanId>('general');
   const [interval, setInterval] = React.useState<BillingInterval>('monthly');
   const [cohortPricing, setCohortPricing] =
@@ -40,9 +58,15 @@ export function SimulatorPanel({
   const [kioskCount, setKioskCount] = React.useState(1);
   const [onsiteIncluded, setOnsiteIncluded] = React.useState(false);
   const [notes, setNotes] = React.useState('');
+  const [validUntil, setValidUntil] = React.useState(defaultValidUntilIso());
+  const [saving, setSaving] = React.useState(false);
 
   const plan = getPlan(config, planId);
   const isPilot = planId === 'pilot';
+  const selectedPharmacy =
+    pharmacyId !== 'none'
+      ? pharmacies.find((p) => p.id === pharmacyId) ?? null
+      : null;
 
   React.useEffect(() => {
     if (isPilot) {
@@ -51,6 +75,14 @@ export function SimulatorPanel({
       setCohortPricing('normal');
     }
   }, [isPilot]);
+
+  React.useEffect(() => {
+    if (!selectedPharmacy) return;
+    setClientName(selectedPharmacy.name);
+    if (selectedPharmacy.email) {
+      setContactEmail((prev) => prev.trim() || selectedPharmacy.email || '');
+    }
+  }, [selectedPharmacy]);
 
   const quote = React.useMemo(
     () =>
@@ -75,6 +107,40 @@ export function SimulatorPanel({
 
   const periodLabel = interval === 'monthly' ? 'mes' : 'año';
 
+  async function onSave() {
+    if (!canSaveQuotes || lock.current || isPilot) return;
+    lock.current = true;
+    setSaving(true);
+    try {
+      const result = await saveCommercialQuoteAction({
+        pharmacyId: pharmacyId === 'none' ? null : pharmacyId,
+        pharmacyName: selectedPharmacy?.name ?? null,
+        clientName: clientName.trim() || selectedPharmacy?.name || '',
+        contactName,
+        contactEmail,
+        planId,
+        interval,
+        cohortPricing,
+        kioskCount,
+        onsiteInstallIncluded: onsiteIncluded,
+        notes,
+        validUntil,
+      });
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success(`Presupuesto ${result.referenceCode} guardado.`, {
+        description: 'Revísalo en la pestaña Presupuestos.',
+      });
+      onQuoteSaved?.(result.quoteId);
+      router.refresh();
+    } finally {
+      setSaving(false);
+      lock.current = false;
+    }
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
       <Card className="space-y-5 p-5 shadow-soft">
@@ -83,18 +149,58 @@ export function SimulatorPanel({
             Datos de la oferta
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Cálculo en memoria. No se guarda ni se factura.
+            Calcula en vivo y, si procede, guarda una propuesta asociada a
+            farmacia y contacto.
           </p>
         </div>
 
         <div className="space-y-1.5">
-          <Label htmlFor="sim-client">Farmacia o cliente potencial</Label>
+          <Label>Farmacia (opcional)</Label>
+          <Select value={pharmacyId} onValueChange={setPharmacyId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Seleccionar farmacia" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Cliente potencial (sin farmacia)</SelectItem>
+              {pharmacies.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="sim-client">Nombre comercial</Label>
           <Input
             id="sim-client"
             value={clientName}
             onChange={(e) => setClientName(e.target.value)}
-            placeholder="Nombre comercial (opcional)"
+            placeholder="Farmacia o cliente potencial"
           />
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="sim-contact">Persona de contacto</Label>
+            <Input
+              id="sim-contact"
+              value={contactName}
+              onChange={(e) => setContactName(e.target.value)}
+              placeholder="Nombre y apellidos"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="sim-email">Email de contacto</Label>
+            <Input
+              id="sim-email"
+              type="email"
+              value={contactEmail}
+              onChange={(e) => setContactEmail(e.target.value)}
+              placeholder="contacto@farmacia.es"
+            />
+          </div>
         </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -167,9 +273,9 @@ export function SimulatorPanel({
 
         {isPilot && (
           <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-            Piloto: 15 días · 0 € · sin kioskos físicos ni alquiler. La
-            ampliación de +15 días se gestiona en «Gestión de pilotos», no
-            como descuento.
+            Piloto: 15 días · 0 € · sin kioskos físicos ni alquiler. No se
+            guarda como presupuesto de contratación; actívalo solo en «Gestión
+            de pilotos».
           </div>
         )}
 
@@ -226,6 +332,16 @@ export function SimulatorPanel({
               Extra contractual sin importe: no modifica precios, IVA ni cuotas.
             </p>
           </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label htmlFor="sim-valid">Vigencia de la oferta</Label>
+            <Input
+              id="sim-valid"
+              type="date"
+              value={validUntil}
+              onChange={(e) => setValidUntil(e.target.value)}
+              disabled={isPilot}
+            />
+          </div>
         </div>
 
         <div className="space-y-1.5">
@@ -234,10 +350,29 @@ export function SimulatorPanel({
             id="sim-notes"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            placeholder="Observaciones comerciales (no se persisten en Fase 2)"
+            placeholder="Observaciones comerciales (se guardan con la propuesta)"
             rows={3}
           />
         </div>
+
+        <Button
+          type="button"
+          className="w-full gap-1.5 sm:w-auto"
+          disabled={!canSaveQuotes || saving || isPilot}
+          onClick={() => void onSave()}
+        >
+          {saving ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Save className="h-4 w-4" />
+          )}
+          Guardar propuesta
+        </Button>
+        {!canSaveQuotes ? (
+          <p className="text-[11px] text-muted-foreground">
+            Necesitas permiso platform.commercial_quotes.manage para guardar.
+          </p>
+        ) : null}
       </Card>
 
       <div className="space-y-4">
@@ -307,6 +442,7 @@ export function SimulatorPanel({
           {clientName.trim() ? (
             <p className="mt-1 text-xs text-muted-foreground">
               {clientName.trim()}
+              {contactName.trim() ? ` · ${contactName.trim()}` : ''}
             </p>
           ) : null}
           <dl className="mt-3 space-y-2 text-sm">
@@ -340,7 +476,8 @@ export function SimulatorPanel({
           </dl>
           <p className="mt-3 text-[11px] text-muted-foreground">
             El alta de la aplicación forma parte del pago inicial / año 1 y no
-            se incluye en las cuotas de años posteriores.
+            se incluye en las cuotas de años posteriores. Vigencia de oferta:{' '}
+            {validUntil || '—'}.
           </p>
         </Card>
       </div>

@@ -1,6 +1,7 @@
 /**
  * Envío transaccional FarmaFácil vía Resend HTTP API (sin SDK).
- * Requiere RESEND_API_KEY. Opcional: EMAIL_FROM (p.ej. "FarmaFácil <noreply@dominio>").
+ * Requiere RESEND_API_KEY y un remitente configurado (EMAIL_FROM o `from` explícito).
+ * No usa direcciones de desarrollo inventadas.
  */
 
 export type SendEmailResult =
@@ -12,11 +13,13 @@ export async function sendTransactionalEmail(input: {
   subject: string;
   html: string;
   text: string;
+  /** Remitente opcional; si no se indica, se usa EMAIL_FROM. */
+  from?: string;
+  /** Reply-To opcional. */
+  replyTo?: string;
 }): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from =
-    process.env.EMAIL_FROM?.trim() ||
-    'FarmaFácil <onboarding@resend.dev>';
+  const from = input.from?.trim() || process.env.EMAIL_FROM?.trim() || '';
 
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY no configurada; email no enviado', {
@@ -31,20 +34,35 @@ export async function sendTransactionalEmail(input: {
     };
   }
 
+  if (!from) {
+    return {
+      ok: false,
+      error:
+        'El envío de email no está configurado (falta EMAIL_FROM o remitente explícito). No se ha enviado ningún correo.',
+      code: 'not_configured',
+    };
+  }
+
   try {
+    const payload: Record<string, unknown> = {
+      from,
+      to: [input.to],
+      subject: input.subject,
+      html: input.html,
+      text: input.text,
+    };
+    const replyTo = input.replyTo?.trim();
+    if (replyTo) {
+      payload.reply_to = replyTo;
+    }
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from,
-        to: [input.to],
-        subject: input.subject,
-        html: input.html,
-        text: input.text,
-      }),
+      body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
@@ -52,7 +70,7 @@ export async function sendTransactionalEmail(input: {
       console.error('[email] Resend error', res.status, body);
       return {
         ok: false,
-        error: 'No se ha podido enviar el email de invitación.',
+        error: 'No se ha podido enviar el email.',
         code: 'send_failed',
       };
     }
@@ -63,7 +81,7 @@ export async function sendTransactionalEmail(input: {
     console.error('[email] fetch failed', err);
     return {
       ok: false,
-      error: 'No se ha podido enviar el email de invitación.',
+      error: 'No se ha podido enviar el email.',
       code: 'send_failed',
     };
   }

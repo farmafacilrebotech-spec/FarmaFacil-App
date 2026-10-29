@@ -34,12 +34,27 @@ import { PendingIntegrationBadge } from './pending-integration-badge';
  * Sin RPC unificada (056 en drafts). Operaciones parciales: mode + attach.
  * No pagos ni conversión automática.
  */
-export function PlanAssignmentPanel({ canManage }: { canManage: boolean }) {
+export function PlanAssignmentPanel({
+  canManage,
+  initialPharmacyId = null,
+}: {
+  canManage: boolean;
+  /** Prefill desde «Preparar contrato» en presupuestos aceptados. */
+  initialPharmacyId?: string | null;
+}) {
   const router = useRouter();
   const mutationLock = React.useRef(false);
-  const [pharmacyId, setPharmacyId] = React.useState('');
+  const [pharmacyId, setPharmacyId] = React.useState(
+    initialPharmacyId?.trim() ?? ''
+  );
   const [plan, setPlan] = React.useState<CommercialPlanCode>('general');
   const [busy, setBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (initialPharmacyId?.trim()) {
+      setPharmacyId(initialPharmacyId.trim());
+    }
+  }, [initialPharmacyId]);
 
   const expectation = PLAN_CATALOG_EXPECTATIONS.find((p) => p.planCode === plan);
 
