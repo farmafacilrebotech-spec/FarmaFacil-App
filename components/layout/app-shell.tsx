@@ -4,7 +4,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Sidebar } from './sidebar';
 import { Header } from './header';
-import type { NavItem } from '@/lib/navigation';
+import { navItemsForPlatformScope } from '@/lib/navigation';
 import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 
 export type ShellUser = {
@@ -16,15 +16,17 @@ export function AppShell({
   children,
   user,
   pharmacies,
-  navItems,
+  platformScope = 'superadmin',
 }: {
   children: React.ReactNode;
   user: ShellUser;
   pharmacies: ShellPharmacyOption[];
-  navItems: NavItem[];
+  /** Filtrado de nav en cliente (no pasar iconos Lucide desde RSC). */
+  platformScope?: 'superadmin' | 'support';
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
+  const navItems = navItemsForPlatformScope(platformScope);
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-background">
