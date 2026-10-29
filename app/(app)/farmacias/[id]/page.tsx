@@ -19,6 +19,9 @@ import { loadOrEnsurePharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-ho
 import { PharmacyDetailClient } from '@/components/pharmacies/pharmacy-detail-client';
 import { getCurrentProfile } from '@/lib/auth/platform';
 import { buildPharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
+import { requireOrdersView } from '@/lib/orders/authz';
+import { listPharmacyOrders } from '@/lib/orders/queries';
+import type { PharmacyOrderSummary } from '@/lib/orders/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,6 +30,8 @@ export default async function PharmacyDetailPage({
 }: {
   params: { id: string };
 }) {
+  const pharmacyId = params.id;
+
   const [
     pharmacy,
     plans,
@@ -41,24 +46,40 @@ export default async function PharmacyDetailPage({
     assistantUsage,
     profileResult,
     homeQr,
+    ordersView,
   ] = await Promise.all([
-    getPharmacyById(params.id),
+    getPharmacyById(pharmacyId),
     listActivePlans(),
-    listPharmacyMembers(params.id),
+    listPharmacyMembers(pharmacyId),
     listPharmacyRoles(),
-    listPharmacyProducts(params.id, { status: 'all' }),
-    getPharmacyCatalogMode(params.id),
-    pharmacyHasMasterCatalogProjection(params.id),
-    listPharmacyKioskDevices(params.id),
-    getPharmacyKioskEntitlement(params.id),
-    getPharmacyAssistantEntitlement(params.id),
-    getPharmacyAssistantUsageCurrentMonth(params.id),
+    listPharmacyProducts(pharmacyId, { status: 'all' }),
+    getPharmacyCatalogMode(pharmacyId),
+    pharmacyHasMasterCatalogProjection(pharmacyId),
+    listPharmacyKioskDevices(pharmacyId),
+    getPharmacyKioskEntitlement(pharmacyId),
+    getPharmacyAssistantEntitlement(pharmacyId),
+    getPharmacyAssistantUsageCurrentMonth(pharmacyId),
     getCurrentProfile(),
-    loadOrEnsurePharmacyHomeEntrypoint(params.id),
+    loadOrEnsurePharmacyHomeEntrypoint(pharmacyId),
+    requireOrdersView(pharmacyId),
   ]);
 
   if (!pharmacy) {
     notFound();
+  }
+
+  let orders: PharmacyOrderSummary[] = [];
+  let ordersError: string | null = null;
+
+  if (!ordersView.ok) {
+    ordersError = ordersView.error;
+  } else {
+    const listed = await listPharmacyOrders(pharmacyId, { limit: 80 });
+    if (!listed.ok) {
+      ordersError = listed.error;
+    } else {
+      orders = listed.orders;
+    }
   }
 
   const actorProfileId = profileResult.profile?.id ?? '';
@@ -90,6 +111,8 @@ export default async function PharmacyDetailPage({
       assistantUsagePeriodYm={assistantUsage?.periodYm ?? ''}
       homeEntrypoint={homeQr.ok ? homeQr.entrypoint : null}
       homeEntrypointError={homeQr.ok ? null : homeQr.error}
+      orders={orders}
+      ordersError={ordersError}
     />
   );
 }
