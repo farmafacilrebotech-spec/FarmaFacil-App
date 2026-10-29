@@ -6,6 +6,7 @@ import {
   addOrUpdateCartLine,
   bindCartToPharmacy,
   cartDisplayTotal,
+  cartLineCount,
   clearCart,
   emptyKioskCart,
   isCartIdle,
@@ -143,5 +144,82 @@ describe('kiosk cart — aislamiento farmacia e idle', () => {
     );
     assert.ok(parsed);
     assert.equal(parsed!.lines[0]?.productId, PRODUCT_1);
+  });
+});
+
+/**
+ * Simula la UI del catálogo dispositivo (Añadir / + / − → qty 0)
+ * contra el mismo estado que usa kiosk-cart-provider (sin segundo carrito).
+ */
+describe('kiosk cart — selección visual catálogo (sync)', () => {
+  function qtyOf(
+    cart: ReturnType<typeof emptyKioskCart>,
+    productId: string
+  ): number {
+    return cart.lines.find((l) => l.productId === productId)?.quantity ?? 0;
+  }
+
+  it('añade, incrementa, reduce, elimina y respeta stock', () => {
+    let cart = emptyKioskCart(PHARMACY_A);
+    const base = {
+      productId: PRODUCT_1,
+      name: 'Protector solar spray',
+      brand: 'Farm',
+      unitPrice: 8.7,
+      stock: 3,
+    };
+
+    // Añadir
+    cart = addOrUpdateCartLine(cart, { ...base, quantityDelta: 1 });
+    assert.equal(qtyOf(cart, PRODUCT_1), 1);
+    assert.equal(cartLineCount(cart), 1);
+
+    // Incrementar (+)
+    cart = addOrUpdateCartLine(cart, { ...base, quantityDelta: 1 });
+    assert.equal(qtyOf(cart, PRODUCT_1), 2);
+    assert.equal(cartLineCount(cart), 2);
+
+    // Límite de stock
+    cart = addOrUpdateCartLine(cart, { ...base, quantityDelta: 5 });
+    assert.equal(qtyOf(cart, PRODUCT_1), 3);
+    assert.equal(cartLineCount(cart), 3);
+
+    // Reducir (−)
+    cart = setCartLineQuantity(cart, PRODUCT_1, qtyOf(cart, PRODUCT_1) - 1);
+    assert.equal(qtyOf(cart, PRODUCT_1), 2);
+
+    // Eliminar (qty → 0 recupera estado inicial en UI)
+    cart = setCartLineQuantity(cart, PRODUCT_1, 0);
+    assert.equal(qtyOf(cart, PRODUCT_1), 0);
+    assert.equal(cart.lines.length, 0);
+    assert.equal(cartLineCount(cart), 0);
+
+    // removeCartLine también vacía
+    cart = addOrUpdateCartLine(cart, { ...base, quantityDelta: 1 });
+    cart = removeCartLine(cart, PRODUCT_1);
+    assert.equal(qtyOf(cart, PRODUCT_1), 0);
+  });
+
+  it('sincroniza contador del carrito con varias líneas', () => {
+    let cart = emptyKioskCart(PHARMACY_A);
+    cart = addOrUpdateCartLine(cart, {
+      productId: PRODUCT_1,
+      name: 'A',
+      brand: null,
+      unitPrice: 1,
+      stock: 5,
+      quantityDelta: 2,
+    });
+    cart = addOrUpdateCartLine(cart, {
+      productId: PRODUCT_2,
+      name: 'B',
+      brand: null,
+      unitPrice: 2,
+      stock: 5,
+      quantityDelta: 1,
+    });
+    assert.equal(cartLineCount(cart), 3);
+    cart = setCartLineQuantity(cart, PRODUCT_1, 1);
+    assert.equal(cartLineCount(cart), 2);
   });
 });

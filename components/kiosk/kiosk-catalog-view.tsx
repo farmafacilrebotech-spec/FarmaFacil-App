@@ -4,8 +4,9 @@ import * as React from 'react';
 import Link from 'next/link';
 import {
   ArrowLeft,
-  Check,
+  Minus,
   Package,
+  Plus,
   Search,
   ShoppingCart,
 } from 'lucide-react';
@@ -13,6 +14,8 @@ import { useRouter } from 'next/navigation';
 
 import { searchKioskCatalogAction } from '@/app/k/catalogo/actions';
 import { useKioskCart } from '@/components/kiosk/kiosk-cart-provider';
+import { resolveMasterCategoryIcon } from '@/lib/catalog/category-icons';
+import { resolveProductIllustration } from '@/lib/catalog/product-illustration';
 import type { KioskCatalogProduct } from '@/lib/kiosk/catalog';
 import {
   canAddKioskProductToCart,
@@ -33,6 +36,20 @@ function useDebounced(value: string, ms: number) {
   return v;
 }
 
+function productIllustration(product: KioskCatalogProduct) {
+  const categoryIcon = resolveMasterCategoryIcon(product.category);
+  return resolveProductIllustration(
+    {
+      name: product.name,
+      category: product.category,
+      subcategory: product.subcategory ?? null,
+    },
+    categoryIcon
+      ? { src: categoryIcon.iconSrc, slug: categoryIcon.slug }
+      : null
+  );
+}
+
 export function KioskCatalogView({
   pharmacyName,
   initialItems,
@@ -41,15 +58,22 @@ export function KioskCatalogView({
   initialItems: KioskCatalogProduct[];
 }) {
   const router = useRouter();
-  const { addProduct, itemCount } = useKioskCart();
+  const { cart, addProduct, setQuantity, itemCount } = useKioskCart();
   const [query, setQuery] = React.useState('');
   const debounced = useDebounced(query, SEARCH_DEBOUNCE_MS);
   const [items, setItems] = React.useState(initialItems);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-  const [flashId, setFlashId] = React.useState<string | null>(null);
   // El SSR ya cargó query ''; evita un segundo RPC idéntico al montar.
   const skipSeededEmptySearch = React.useRef(true);
+
+  const qtyByProductId = React.useMemo(() => {
+    const map = new Map<string, number>();
+    for (const line of cart.lines) {
+      map.set(line.productId, line.quantity);
+    }
+    return map;
+  }, [cart.lines]);
 
   React.useEffect(() => {
     if (skipSeededEmptySearch.current && debounced === '') {
@@ -93,6 +117,10 @@ export function KioskCatalogView({
     };
   }, [debounced, router]);
 
+  function qtyOf(productId: string): number {
+    return qtyByProductId.get(productId) ?? 0;
+  }
+
   function onAdd(product: KioskCatalogProduct) {
     if (!canAddKioskProductToCart(product)) return;
     const unitPrice = product.price;
@@ -105,8 +133,19 @@ export function KioskCatalogView({
       unitPrice,
       stock,
     });
-    setFlashId(product.id);
-    window.setTimeout(() => setFlashId((id) => (id === product.id ? null : id)), 900);
+  }
+
+  function onIncrement(product: KioskCatalogProduct) {
+    const qty = qtyOf(product.id);
+    const stock = product.stock ?? 0;
+    if (qty >= stock) return;
+    onAdd(product);
+  }
+
+  function onDecrement(product: KioskCatalogProduct) {
+    const qty = qtyOf(product.id);
+    if (qty <= 0) return;
+    setQuantity(product.id, qty - 1);
   }
 
   return (
@@ -185,19 +224,37 @@ export function KioskCatalogView({
 
         <ul className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 lg:gap-5">
           {items.map((product) => {
-            const justAdded = flashId === product.id;
+            const qty = qtyOf(product.id);
+            const selected = qty > 0;
+            const canAdd = canAddKioskProductToCart(product);
+            const stock = product.stock ?? 0;
+            const atStockLimit = selected && stock > 0 && qty >= stock;
+            const illustration = productIllustration(product);
+
             return (
               <li key={product.id} className="min-w-0">
                 <article
                   className={cn(
                     'flex h-full flex-col rounded-2xl bg-white p-3 shadow-sm sm:rounded-3xl sm:p-4 lg:p-5',
-                    !product.available && 'opacity-70'
+                    selected
+                      ? 'ring-2 ring-[#2EC4C7] ring-offset-2 ring-offset-[#e8f7f7]'
+                      : 'ring-1 ring-transparent',
+                    !product.available && !selected && 'opacity-70'
                   )}
+                  data-selected={selected ? 'true' : 'false'}
+                  data-qty={qty}
                 >
-                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-400 sm:h-20 sm:w-20 sm:rounded-2xl lg:h-24 lg:w-24">
-                    <Package
-                      className="h-8 w-8 sm:h-9 sm:w-9 lg:h-11 lg:w-11"
-                      aria-hidden
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl bg-[#F2F7F7] sm:h-20 sm:w-20 sm:rounded-2xl lg:h-24 lg:w-24">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- SVG estáticos del catálogo Canva */}
+                    <img
+                      src={illustration.src}
+                      alt=""
+                      width={96}
+                      height={96}
+                      className="h-full w-full object-contain p-1.5 sm:p-2"
+                      data-illustration-kind={illustration.kind}
+                      data-illustration-slug={illustration.slug}
+                      draggable={false}
                     />
                   </div>
                   <h2 className="mt-3 line-clamp-2 min-h-[2.75rem] text-center text-sm font-semibold leading-snug text-slate-900 sm:min-h-[3.25rem] sm:text-base lg:min-h-[3.5rem] lg:text-lg">
@@ -212,36 +269,56 @@ export function KioskCatalogView({
                   <span
                     className={cn(
                       'mx-auto mt-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold sm:text-xs lg:mt-2 lg:px-3 lg:py-1 lg:text-sm',
-                      canAddKioskProductToCart(product)
+                      canAdd
                         ? 'bg-emerald-50 text-emerald-700'
                         : 'bg-amber-50 text-amber-800'
                     )}
                   >
                     {formatKioskProductAvailability(product)}
                   </span>
-                  <button
-                    type="button"
-                    disabled={!canAddKioskProductToCart(product)}
-                    onClick={() => onAdd(product)}
-                    className={cn(
-                      'mt-3 flex h-12 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:mt-auto sm:h-14 sm:rounded-2xl sm:text-base',
-                      'lg:mt-4 lg:h-16 lg:gap-2 lg:rounded-2xl lg:text-lg',
-                      justAdded
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-[#2EC4C7] text-white'
-                    )}
-                  >
-                    {justAdded ? (
-                      <>
-                        <Check className="h-5 w-5 lg:h-6 lg:w-6" /> Añadido
-                      </>
+                  <div className="mt-3 sm:mt-auto sm:pt-3 lg:mt-4">
+                    {selected ? (
+                      <div className="flex h-12 w-full items-center justify-between gap-2 rounded-xl bg-[#2EC4C7]/12 px-1.5 sm:h-14 sm:rounded-2xl lg:h-16">
+                        <button
+                          type="button"
+                          aria-label={`Quitar uno de ${product.name}`}
+                          onClick={() => onDecrement(product)}
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-[#0F2A2E] shadow-sm active:scale-95 sm:h-11 sm:w-11 lg:h-12 lg:w-12"
+                        >
+                          <Minus className="h-5 w-5 lg:h-6 lg:w-6" />
+                        </button>
+                        <span
+                          className="min-w-[2rem] text-center text-lg font-bold tabular-nums text-[#0F2A2E] sm:text-xl lg:text-2xl"
+                          aria-live="polite"
+                        >
+                          {qty}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`Añadir uno de ${product.name}`}
+                          disabled={!canAdd || atStockLimit}
+                          onClick={() => onIncrement(product)}
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2EC4C7] text-white shadow-sm active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:h-11 sm:w-11 lg:h-12 lg:w-12"
+                        >
+                          <Plus className="h-5 w-5 lg:h-6 lg:w-6" />
+                        </button>
+                      </div>
                     ) : (
-                      <>
+                      <button
+                        type="button"
+                        disabled={!canAdd}
+                        onClick={() => onAdd(product)}
+                        className={cn(
+                          'flex h-12 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:h-14 sm:rounded-2xl sm:text-base',
+                          'lg:h-16 lg:gap-2 lg:rounded-2xl lg:text-lg',
+                          'bg-[#2EC4C7] text-white'
+                        )}
+                      >
                         <ShoppingCart className="h-5 w-5 lg:h-6 lg:w-6" />{' '}
                         Añadir
-                      </>
+                      </button>
                     )}
-                  </button>
+                  </div>
                 </article>
               </li>
             );
