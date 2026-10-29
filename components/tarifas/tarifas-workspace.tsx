@@ -104,10 +104,7 @@ export function TarifasWorkspace({
         value="simulador"
         className="mt-0 focus-visible:outline-none"
       >
-        <SimulatorPanel
-          config={config}
-          canViewInternalCosts={canViewInternalCosts}
-        />
+        <SimulatorPanel config={config} />
       </TabsContent>
       <TabsContent
         value="presupuestos"

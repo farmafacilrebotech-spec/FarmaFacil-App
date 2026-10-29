@@ -34,12 +34,26 @@ export function annualFromMonthly(
   return applyDiscountBps(monthlyCents * 12, annualDiscountBps);
 }
 
+/** Redondeo comercial a euro entero (para referencias de prepago anual). */
+export function roundCentsToEuro(cents: number): number {
+  return Math.round(cents / 100) * 100;
+}
+
 export function formatCentsEur(cents: number): string {
   return new Intl.NumberFormat('es-ES', {
     style: 'currency',
     currency: 'EUR',
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
+  }).format(centsToEuros(cents));
+}
+
+export function formatCentsEurWhole(cents: number): string {
+  return new Intl.NumberFormat('es-ES', {
+    style: 'currency',
+    currency: 'EUR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
   }).format(centsToEuros(cents));
 }
 
@@ -59,6 +73,20 @@ export function grossMarginPercent(
   return ((saleCents - costCents) / saleCents) * 100;
 }
 
+/**
+ * Incremento sobre precio de venta (p. ej. recargo de equivalencia).
+ * No altera tarifas base, descuentos ni costes.
+ */
+export function applySaleSurchargeBps(
+  saleCents: number,
+  surchargeBps: BasisPoints
+): number {
+  if (!Number.isFinite(surchargeBps) || surchargeBps <= 0) {
+    return Math.round(saleCents);
+  }
+  return Math.round(saleCents) + applyBps(Math.round(saleCents), surchargeBps);
+}
+
 export type CommercialPlanId =
   | 'pilot'
   | 'general'
@@ -66,6 +94,12 @@ export type CommercialPlanId =
   | 'ai_personalized';
 
 export type BillingInterval = 'monthly' | 'annual';
+
+/** Modo de cuota SaaS según cohorte / año de facturación. */
+export type SaasCohortPricing =
+  | 'normal'
+  | 'launch_2027'
+  | 'cohort_2027_in_2028';
 
 export type FeatureMatrixKey =
   | 'monthlyPrice'
@@ -98,11 +132,55 @@ export type CommercialPlanDefinition = {
   active: boolean;
 };
 
+/**
+ * Supuestos comerciales y de aprovisionamiento (sesión / memoria).
+ * Cantidades de inventario se expresan en unidades o meses, no en %.
+ */
+export type CommercialAssumptions = {
+  /** Descuento lanzamiento 2027 sobre cuota SaaS (bps). */
+  launchDiscount2027Bps: BasisPoints;
+  /** Descuento 2028 para cohorte que firmó en 2027 (bps). */
+  launchCohort2028DiscountBps: BasisPoints;
+  /** Plazas máximas con dto. de lanzamiento 2027. */
+  launchSlots2027: number;
+  /** Previsión de altas 2027 (independiente del tope de plazas). */
+  forecastSignups2027: number;
+  /** Alta de aplicación por farmacia (pago único). */
+  appSignupFeeCents: number;
+  /** Seguro por kiosko (€/año). */
+  kioskInsuranceAnnualCents: number;
+  /** Kioskos en la inversión inicial (unidades). */
+  initialKioskInventoryUnits: number;
+  /** Compras posteriores: tamaño de lote (unidades). */
+  kioskPurchaseBatchUnits: number;
+  /** Plazo de entrega tras pedido (meses). */
+  kioskDeliveryMonths: number;
+  /** Adopción prevista de prepago anual (0 = no validado). */
+  annualPrepayAdoptionBps: BasisPoints;
+  /** Bajas mensuales (churn). */
+  monthlyChurnBps: BasisPoints;
+  /** Equivalente anual aproximado del churn (solo visualización). */
+  approximateAnnualChurnBps: BasisPoints;
+  /**
+   * Recargo de equivalencia / subida de precio de venta (editable).
+   * 0 por defecto; p. ej. 400 = 4 %. No se aplica al alquiler ni a costes.
+   */
+  equivalenceSurchargeBps: BasisPoints;
+  /** Hipótesis de aprovisionamiento (no son garantías). */
+  kioskProvisioningHypotheses: string[];
+};
+
 export type CommercialTariffConfig = {
   vatBps: number;
   saasAnnualDiscountBps: number;
+  /**
+   * Dto. anual sobre alquiler kiosko. Por defecto 0: el alquiler se cobra
+   * mensualmente y no entra en el prepago/descuento SaaS.
+   */
   kioskLicenseAnnualDiscountBps: number;
+  /** Personalización de kiosko por farmacia (concepto comercial de venta). */
   kioskHardwareUnitCents: number;
+  /** Alquiler del kiosko (€/mes). Fuera de descuentos SaaS. */
   kioskLicenseMonthlyCents: number;
   /**
    * Coste interno hardware. Null = no autorizado / no incluido en payload
@@ -112,6 +190,7 @@ export type CommercialTariffConfig = {
   kioskInternalCostCents: number | null;
   defaultOnsiteInstallCents: number;
   plans: CommercialPlanDefinition[];
+  assumptions: CommercialAssumptions;
 };
 
 /** Configuración pública sin costes internos (safe para Support / read). */
@@ -121,14 +200,36 @@ export function withoutInternalCosts(
   return { ...config, kioskInternalCostCents: null };
 }
 
+export const DEFAULT_COMMERCIAL_ASSUMPTIONS: CommercialAssumptions = {
+  launchDiscount2027Bps: 6000,
+  launchCohort2028DiscountBps: 3000,
+  launchSlots2027: 20,
+  forecastSignups2027: 15,
+  appSignupFeeCents: eurosToCents(190),
+  kioskInsuranceAnnualCents: eurosToCents(100),
+  initialKioskInventoryUnits: 11,
+  kioskPurchaseBatchUnits: 10,
+  kioskDeliveryMonths: 2,
+  annualPrepayAdoptionBps: 0,
+  monthlyChurnBps: 200,
+  approximateAnnualChurnBps: 2150,
+  equivalenceSurchargeBps: 0,
+  kioskProvisioningHypotheses: [
+    'Los kioskos se recuperan al cancelar y pueden reutilizarse (hipótesis de trabajo).',
+    'Se asegura todo el inventario propiedad de FarmaFácil, instalado y almacenado (hipótesis).',
+    'Los lotes se pagan al recibirlos (hipótesis de tesorería).',
+  ],
+};
+
 export const DEFAULT_COMMERCIAL_TARIFF_CONFIG: CommercialTariffConfig = {
   vatBps: 2100,
   saasAnnualDiscountBps: 1500,
-  kioskLicenseAnnualDiscountBps: 1500,
-  kioskHardwareUnitCents: eurosToCents(1290),
-  kioskLicenseMonthlyCents: eurosToCents(19),
-  kioskInternalCostCents: eurosToCents(800),
+  kioskLicenseAnnualDiscountBps: 0,
+  kioskHardwareUnitCents: eurosToCents(1090),
+  kioskLicenseMonthlyCents: eurosToCents(49),
+  kioskInternalCostCents: eurosToCents(680),
   defaultOnsiteInstallCents: eurosToCents(0),
+  assumptions: { ...DEFAULT_COMMERCIAL_ASSUMPTIONS },
   plans: [
     {
       id: 'pilot',
@@ -148,7 +249,7 @@ export const DEFAULT_COMMERCIAL_TARIFF_CONFIG: CommercialTariffConfig = {
       id: 'general',
       name: 'General',
       tagline: 'QR, catálogo genérico y asistente genérico',
-      monthlyCents: eurosToCents(39),
+      monthlyCents: eurosToCents(97.5),
       trialDays: null,
       extensionDays: null,
       allowsKiosk: true,
@@ -162,7 +263,7 @@ export const DEFAULT_COMMERCIAL_TARIFF_CONFIG: CommercialTariffConfig = {
       id: 'personalized',
       name: 'Personalizado',
       tagline: 'Catálogo propio, precios y cuenta de cliente',
-      monthlyCents: eurosToCents(69),
+      monthlyCents: eurosToCents(172.5),
       trialDays: null,
       extensionDays: null,
       allowsKiosk: true,
@@ -174,9 +275,10 @@ export const DEFAULT_COMMERCIAL_TARIFF_CONFIG: CommercialTariffConfig = {
     },
     {
       id: 'ai_personalized',
-      name: 'Con Asistente IA personalizado',
-      tagline: 'Todo lo Personalizado + asistente ligado al catálogo',
-      monthlyCents: eurosToCents(99),
+      name: 'IA',
+      tagline:
+        'Todo lo Personalizado + asistente ligado al catálogo · kiosko opcional (alquiler aparte)',
+      monthlyCents: eurosToCents(247.5),
       trialDays: null,
       extensionDays: null,
       allowsKiosk: true,
@@ -200,18 +302,90 @@ export function getPlan(
   return plan;
 }
 
+export function cohortDiscountBps(
+  assumptions: CommercialAssumptions,
+  cohort: SaasCohortPricing
+): BasisPoints {
+  if (cohort === 'launch_2027') return assumptions.launchDiscount2027Bps;
+  if (cohort === 'cohort_2027_in_2028') {
+    return assumptions.launchCohort2028DiscountBps;
+  }
+  return 0;
+}
+
+/**
+ * Cuota SaaS mensual según tarifa base y cohorte (sin recargo de equivalencia).
+ * El alquiler de kiosko no entra en esta base.
+ */
+export function saasMonthlyCentsForCohort(
+  baseMonthlyCents: number,
+  assumptions: CommercialAssumptions,
+  cohort: SaasCohortPricing = 'normal'
+): number {
+  if (baseMonthlyCents <= 0) return 0;
+  const discount = cohortDiscountBps(assumptions, cohort);
+  return discount > 0
+    ? applyDiscountBps(baseMonthlyCents, discount)
+    : Math.round(baseMonthlyCents);
+}
+
+/**
+ * Precio de venta SaaS mensual (tras dto. de cohorte y recargo de equivalencia).
+ */
+export function saasMonthlySaleCents(
+  config: CommercialTariffConfig,
+  planId: CommercialPlanId,
+  cohort: SaasCohortPricing = 'normal'
+): number {
+  const plan = getPlan(config, planId);
+  const discounted = saasMonthlyCentsForCohort(
+    plan.monthlyCents,
+    config.assumptions,
+    cohort
+  );
+  return applySaleSurchargeBps(
+    discounted,
+    config.assumptions.equivalenceSurchargeBps
+  );
+}
+
 export function planAnnualCents(
+  config: CommercialTariffConfig,
+  id: CommercialPlanId,
+  cohort: SaasCohortPricing = 'normal'
+): number {
+  const plan = getPlan(config, id);
+  if (plan.monthlyCents === 0) return 0;
+  const monthly = saasMonthlyCentsForCohort(
+    plan.monthlyCents,
+    config.assumptions,
+    cohort
+  );
+  const annual = annualFromMonthly(monthly, config.saasAnnualDiscountBps);
+  return applySaleSurchargeBps(
+    annual,
+    config.assumptions.equivalenceSurchargeBps
+  );
+}
+
+/** Referencia de prepago anual redondeada al euro (solo visualización). */
+export function planAnnualReferenceCents(
   config: CommercialTariffConfig,
   id: CommercialPlanId
 ): number {
   const plan = getPlan(config, id);
   if (plan.monthlyCents === 0) return 0;
-  return annualFromMonthly(plan.monthlyCents, config.saasAnnualDiscountBps);
+  const exact = annualFromMonthly(
+    plan.monthlyCents,
+    config.saasAnnualDiscountBps
+  );
+  return roundCentsToEuro(exact);
 }
 
 export function kioskLicenseAnnualCents(
   config: CommercialTariffConfig
 ): number {
+  // Alquiler: cobro mensual × 12; dto. anual de licencia = 0 en supuestos actuales.
   return annualFromMonthly(
     config.kioskLicenseMonthlyCents,
     config.kioskLicenseAnnualDiscountBps
@@ -228,9 +402,9 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     label: 'Precio mensual',
     values: {
       pilot: 'Gratis',
-      general: '39 €',
-      personalized: '69 €',
-      ai_personalized: '99 €',
+      general: '97,50 €',
+      personalized: '172,50 €',
+      ai_personalized: '247,50 €',
     },
   },
   {
@@ -335,7 +509,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
   },
   {
     key: 'physicalKioskOptional',
-    label: 'Kiosko físico opcional',
+    label: 'Kiosko físico opcional (alquiler aparte)',
     values: {
       pilot: false,
       general: true,
@@ -358,10 +532,32 @@ export type SimulatorInput = {
   kioskCount: number;
   hardwareUnitCents?: number;
   licenseMonthlyCents?: number;
-  onsiteInstallCents: number;
-  additionalServicesCents: number;
-  oneTimeDiscountCents: number;
-  recurringExtraDiscountCents: number;
+  /**
+   * @deprecated La instalación presencial ya no es un importe: usar
+   * `onsiteInstallIncluded`. Cualquier valor se ignora (forzado a 0).
+   */
+  onsiteInstallCents?: number;
+  /**
+   * Extra contractual sin importe: «Incluida» / «No incluida».
+   * No altera pago inicial, cuotas, descuentos ni IVA.
+   */
+  onsiteInstallIncluded?: boolean;
+  /**
+   * @deprecated Eliminado del presupuesto comercial. Se ignora (0).
+   */
+  additionalServicesCents?: number;
+  /**
+   * @deprecated Eliminado del presupuesto comercial. Se ignora (0).
+   */
+  oneTimeDiscountCents?: number;
+  /**
+   * @deprecated Eliminado del presupuesto comercial. Se ignora (0).
+   */
+  recurringExtraDiscountCents?: number;
+  /** Cohorte / año de cuota SaaS. Por defecto tarifa normal. */
+  cohortPricing?: SaasCohortPricing;
+  /** Incluir alta de aplicación (190 €). Default true fuera de piloto. */
+  includeAppSignupFee?: boolean;
 };
 
 export type SimulatorBreakdown = {
@@ -369,15 +565,24 @@ export type SimulatorBreakdown = {
   interval: BillingInterval;
   kioskCount: number;
   isPilot: boolean;
+  cohortPricing: SaasCohortPricing;
+  /** Alta de la aplicación (pago único). */
+  appSignupFeeCents: number;
   hardwareCents: number;
+  /** Siempre 0: la instalación no aporta importe. */
   onsiteInstallCents: number;
+  /** Indicador contractual sin efecto económico. */
+  onsiteInstallIncluded: boolean;
+  /** Siempre 0 (campo retirado; legado ignorado). */
   additionalServicesCents: number;
+  /** Siempre 0 (campo retirado; legado ignorado). */
   oneTimeDiscountCents: number;
   oneTimeNetCents: number;
   oneTimeVatCents: number;
   oneTimeGrossCents: number;
   planRecurringCents: number;
   kioskLicenseRecurringCents: number;
+  /** Siempre 0 (campo retirado; legado ignorado). */
   recurringExtraDiscountCents: number;
   recurringNetCents: number;
   recurringVatCents: number;
@@ -391,6 +596,7 @@ export type SimulatorBreakdown = {
   hardwareCostCents: number;
   hardwareProfitCents: number;
   hardwareMarginPercent: number | null;
+  equivalenceSurchargeBps: BasisPoints;
 };
 
 function clampNonNeg(n: number): number {
@@ -418,14 +624,18 @@ export function normalizeSimulatorInput(
     licenseMonthlyCents: clampNonNeg(
       input.licenseMonthlyCents ?? config.kioskLicenseMonthlyCents
     ),
-    onsiteInstallCents: isPilot ? 0 : clampNonNeg(input.onsiteInstallCents),
-    additionalServicesCents: isPilot
-      ? 0
-      : clampNonNeg(input.additionalServicesCents),
-    oneTimeDiscountCents: isPilot ? 0 : clampNonNeg(input.oneTimeDiscountCents),
-    recurringExtraDiscountCents: isPilot
-      ? 0
-      : clampNonNeg(input.recurringExtraDiscountCents),
+    // Campos retirados / sin importe: siempre 0 aunque lleguen valores antiguos.
+    onsiteInstallCents: 0,
+    onsiteInstallIncluded: isPilot
+      ? false
+      : Boolean(input.onsiteInstallIncluded),
+    additionalServicesCents: 0,
+    oneTimeDiscountCents: 0,
+    recurringExtraDiscountCents: 0,
+    cohortPricing: isPilot ? 'normal' : input.cohortPricing ?? 'normal',
+    includeAppSignupFee: isPilot
+      ? false
+      : input.includeAppSignupFee !== false,
   };
 }
 
@@ -437,25 +647,37 @@ export function calculateQuote(
   const plan = getPlan(config, input.planId);
   const isPilot = plan.id === 'pilot';
   const vatBps = config.vatBps;
+  const surchargeBps = config.assumptions.equivalenceSurchargeBps;
+  const cohort = input.cohortPricing ?? 'normal';
 
-  const hardwareUnit = input.hardwareUnitCents ?? config.kioskHardwareUnitCents;
+  const hardwareUnitRaw =
+    input.hardwareUnitCents ?? config.kioskHardwareUnitCents;
   const licenseMonthly =
     input.licenseMonthlyCents ?? config.kioskLicenseMonthlyCents;
 
-  const hardwareCents = isPilot ? 0 : input.kioskCount * hardwareUnit;
-  const onsiteInstallCents = input.onsiteInstallCents;
-  const additionalServicesCents = input.additionalServicesCents;
-  const oneTimeDiscountCents = Math.min(
-    input.oneTimeDiscountCents,
-    hardwareCents + onsiteInstallCents + additionalServicesCents
-  );
+  // Personalización kiosko: precio de venta (puede llevar recargo); coste aparte.
+  const hardwareUnitSale = isPilot
+    ? 0
+    : applySaleSurchargeBps(hardwareUnitRaw, surchargeBps);
+  const hardwareCents = isPilot ? 0 : input.kioskCount * hardwareUnitSale;
 
-  const oneTimeBeforeDiscount =
-    hardwareCents + onsiteInstallCents + additionalServicesCents;
-  const oneTimeNetCents = Math.max(
-    0,
-    oneTimeBeforeDiscount - oneTimeDiscountCents
-  );
+  const appSignupFeeCents =
+    !isPilot && input.includeAppSignupFee
+      ? applySaleSurchargeBps(
+          config.assumptions.appSignupFeeCents,
+          surchargeBps
+        )
+      : 0;
+
+  // Instalación presencial: solo indicador contractual (sin importe).
+  const onsiteInstallIncluded = Boolean(input.onsiteInstallIncluded);
+  const onsiteInstallCents = 0;
+  // Campos retirados: ignorados aunque el caller envíe valores legacy.
+  const additionalServicesCents = 0;
+  const oneTimeDiscountCents = 0;
+  const recurringExtraDiscountCents = 0;
+
+  const oneTimeNetCents = hardwareCents + appSignupFeeCents;
   const oneTimeVatCents = applyBps(oneTimeNetCents, vatBps);
   const oneTimeGrossCents = oneTimeNetCents + oneTimeVatCents;
 
@@ -463,14 +685,21 @@ export function calculateQuote(
   let kioskLicenseRecurringCents = 0;
 
   if (!isPilot) {
+    const saasMonthly = saasMonthlyCentsForCohort(
+      plan.monthlyCents,
+      config.assumptions,
+      cohort
+    );
     if (input.interval === 'monthly') {
-      planRecurringCents = plan.monthlyCents;
+      planRecurringCents = applySaleSurchargeBps(saasMonthly, surchargeBps);
+      // Alquiler: fuera de descuentos SaaS y del recargo de equivalencia.
       kioskLicenseRecurringCents = input.kioskCount * licenseMonthly;
     } else {
-      planRecurringCents = annualFromMonthly(
-        plan.monthlyCents,
+      const saasAnnual = annualFromMonthly(
+        saasMonthly,
         config.saasAnnualDiscountBps
       );
+      planRecurringCents = applySaleSurchargeBps(saasAnnual, surchargeBps);
       kioskLicenseRecurringCents =
         input.kioskCount *
         annualFromMonthly(
@@ -480,15 +709,7 @@ export function calculateQuote(
     }
   }
 
-  const recurringBeforeExtra = planRecurringCents + kioskLicenseRecurringCents;
-  const recurringExtraDiscountCents = Math.min(
-    input.recurringExtraDiscountCents,
-    recurringBeforeExtra
-  );
-  const recurringNetCents = Math.max(
-    0,
-    recurringBeforeExtra - recurringExtraDiscountCents
-  );
+  const recurringNetCents = planRecurringCents + kioskLicenseRecurringCents;
   const recurringVatCents = applyBps(recurringNetCents, vatBps);
   const recurringGrossCents = recurringNetCents + recurringVatCents;
 
@@ -501,6 +722,7 @@ export function calculateQuote(
     }
   }
 
+  // Alta (pago único) entra en pago inicial / año 1; no en cuotas posteriores.
   const firstYearNetCents = oneTimeNetCents + firstYearSubscriptionCents;
   const firstYearVatCents = applyBps(firstYearNetCents, vatBps);
   const firstYearGrossCents = firstYearNetCents + firstYearVatCents;
@@ -530,8 +752,11 @@ export function calculateQuote(
     interval: input.interval,
     kioskCount: input.kioskCount,
     isPilot,
+    cohortPricing: cohort,
+    appSignupFeeCents,
     hardwareCents,
     onsiteInstallCents,
+    onsiteInstallIncluded,
     additionalServicesCents,
     oneTimeDiscountCents,
     oneTimeNetCents,
@@ -552,5 +777,6 @@ export function calculateQuote(
     hardwareCostCents,
     hardwareProfitCents,
     hardwareMarginPercent,
+    equivalenceSurchargeBps: surchargeBps,
   };
 }
