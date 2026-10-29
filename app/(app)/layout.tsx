@@ -5,6 +5,7 @@ import { AuthError } from '@/components/auth/auth-error';
 import { Toaster } from '@/components/ui/sonner';
 import { resolvePlatformAccess } from '@/lib/auth/platform';
 import { displayNameFromIdentity } from '@/lib/format';
+import { navItemsForPlatformScope } from '@/lib/navigation';
 import { listPharmacies } from '@/lib/pharmacies/queries';
 import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 
@@ -25,12 +26,13 @@ export default async function AuthenticatedLayout({
     return <AuthError message={access.message} email={access.email} />;
   }
 
-  // Sesión válida sin PLATFORM_SUPERADMIN → denegado (no /login).
+  // Sesión válida sin SuperAdmin ni soporte inventario → denegado (no /login).
   if (access.status === 'forbidden') {
     return <AccessDenied email={access.profile.email} />;
   }
 
   const profile = access.profile;
+  const platformScope = access.platformScope;
   // Fallback visual: no escribe en Supabase. Si no hay full_name, usa local-part del email.
   const displayName = displayNameFromIdentity(
     profile.fullName,
@@ -52,6 +54,8 @@ export default async function AuthenticatedLayout({
     console.error('[app-layout] listPharmacies', err);
   }
 
+  const shellNav = navItemsForPlatformScope(platformScope);
+
   return (
     <>
       <AppShell
@@ -60,6 +64,7 @@ export default async function AuthenticatedLayout({
           email: profile.email,
         }}
         pharmacies={pharmacies}
+        navItems={shellNav}
       >
         {children}
       </AppShell>

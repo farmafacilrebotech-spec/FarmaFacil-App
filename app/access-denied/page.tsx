@@ -25,6 +25,9 @@ export default async function AccessDeniedPage() {
   if (access.status === 'platform') {
     redirect('/dashboard');
   }
+  if (access.status === 'platform_support') {
+    redirect('/inventario-kioskos');
+  }
   if (access.status === 'pharmacy') {
     redirect(`/f/${access.membership.pharmacyId}/dashboard`);
   }

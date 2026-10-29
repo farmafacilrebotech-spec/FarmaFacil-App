@@ -149,11 +149,11 @@ export type CommercialAssumptions = {
   appSignupFeeCents: number;
   /** Seguro por kiosko (€/año). */
   kioskInsuranceAnnualCents: number;
-  /** Kioskos en la inversión inicial (unidades). */
+  /** Previsión: kioskos en la inversión inicial (no es inventario real). */
   initialKioskInventoryUnits: number;
-  /** Compras posteriores: tamaño de lote (unidades). */
+  /** Previsión: tamaño de lote de compra posterior (no crea activos). */
   kioskPurchaseBatchUnits: number;
-  /** Plazo de entrega tras pedido (meses). */
+  /** Previsión: plazo de entrega tras pedido (meses). */
   kioskDeliveryMonths: number;
   /** Adopción prevista de prepago anual (0 = no validado). */
   annualPrepayAdoptionBps: BasisPoints;

@@ -376,10 +376,11 @@ export function PlansTariffsPanel({
 
       <Card className="p-5 shadow-soft">
         <h3 className="text-sm font-semibold text-foreground">
-          Aprovisionamiento de kioskos (cantidades)
+          Aprovisionamiento previsto (simulador)
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          Valores en unidades o meses — no son porcentajes.
+          Hipótesis financieras en unidades o meses. No crean ni modifican el
+          inventario físico real (ver Inventario kioskos).
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-3">
           <UnitField
