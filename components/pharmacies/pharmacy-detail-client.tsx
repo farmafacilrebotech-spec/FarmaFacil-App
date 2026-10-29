@@ -79,7 +79,7 @@ import type { PharmacyOrderSummary } from '@/lib/orders/types';
 const tabs = [
   { id: 'general', label: 'General', icon: LayoutDashboard, ready: true },
   { id: 'personalizacion', label: 'Personalización', icon: Palette, ready: true },
-  { id: 'contrato', label: 'Contrato', icon: FileText, ready: false },
+  { id: 'contrato', label: 'Contrato', icon: FileText, ready: true },
   { id: 'qr', label: 'QR', icon: QrCode, ready: true },
   { id: 'usuarios', label: 'Usuarios', icon: Users, ready: true },
   { id: 'clientes', label: 'Clientes', icon: User, ready: false },
@@ -584,8 +584,6 @@ export function PharmacyDetailClient({
       {success && activeTab !== 'usuarios' ? (
         <SuccessBanner message={success} />
       ) : null}
-
-      <PharmacySubscriptionPanel pharmacy={pharmacy} />
 
       <div>
         {activeTab === 'general' && (
@@ -1185,6 +1183,10 @@ export function PharmacyDetailClient({
           />
         )}
 
+        {activeTab === 'contrato' && (
+          <PharmacySubscriptionPanel pharmacy={pharmacy} />
+        )}
+
         {activeTab === 'pedidos' &&
           (ordersError ? (
             <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-6 text-sm text-destructive">
@@ -1206,6 +1208,7 @@ export function PharmacyDetailClient({
           activeTab !== 'kiosko' &&
           activeTab !== 'asistente' &&
           activeTab !== 'qr' &&
+          activeTab !== 'contrato' &&
           activeTab !== 'pedidos' && (
           <PendingPanel
             title={tabs.find((t) => t.id === activeTab)?.label ?? 'Sección'}
