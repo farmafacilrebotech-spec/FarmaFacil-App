@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { MessageCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, MessageCircle, RefreshCw } from 'lucide-react';
 
 import {
   confirmPublicQrLineValuationAction,
@@ -152,7 +152,10 @@ export function PharmacyOrdersPanel({
 }) {
   const [orders, setOrders] = React.useState(initialOrders);
   const [filter, setFilter] = React.useState<OrderStatus | 'all'>('all');
+  /** Pedido en vista detalle; null = vista listado. */
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  /** Resaltado en listado tras «Volver» (no abre detalle). */
+  const [lastViewedId, setLastViewedId] = React.useState<string | null>(null);
   const [detail, setDetail] = React.useState<PharmacyOrderDetail | null>(null);
   const [loadingDetail, setLoadingDetail] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
@@ -168,9 +171,40 @@ export function PharmacyOrdersPanel({
   const [lineDrafts, setLineDrafts] = React.useState<Record<string, LineDraft>>(
     {}
   );
+  const rootRef = React.useRef<HTMLDivElement>(null);
+  const savedScrollYRef = React.useRef(0);
 
   const visible =
     filter === 'all' ? orders : orders.filter((o) => o.status === filter);
+  const showingDetail = selectedId != null;
+
+  function openOrder(orderId: string) {
+    savedScrollYRef.current = window.scrollY;
+    setLastViewedId(orderId);
+    setSelectedId(orderId);
+    setLoadingDetail(true);
+    setDetail(null);
+    setError(null);
+    setMessage(null);
+    requestAnimationFrame(() => {
+      rootRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
+
+  function backToList() {
+    setSelectedId(null);
+    setDetail(null);
+    setLoadingDetail(false);
+    setError(null);
+    setWhatsappError(null);
+    setQuoteLinkUrl(null);
+    setQuoteEvents([]);
+    setQuoteEventsAvailable(false);
+    setConfirmRevision(false);
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: savedScrollYRef.current, behavior: 'auto' });
+    });
+  }
 
   async function refreshList(options?: { preserveSuccessMessage?: boolean }) {
     const result = await listPharmacyOrdersAction(pharmacyId, { limit: 80 });
@@ -193,6 +227,7 @@ export function PharmacyOrdersPanel({
       return;
     }
     let cancelled = false;
+    const orderId = selectedId;
     async function load() {
       setLoadingDetail(true);
       setError(null);
@@ -201,25 +236,34 @@ export function PharmacyOrdersPanel({
       setQuoteEvents([]);
       setQuoteEventsAvailable(false);
       setConfirmRevision(false);
-      const result = await getPharmacyOrderDetailAction(pharmacyId, selectedId!);
-      if (cancelled) return;
-      setLoadingDetail(false);
-      if (!result.ok) {
-        setError(result.error);
-        setDetail(null);
-        return;
-      }
-      setDetail(result.order);
-      setLineDrafts(draftsFromOrder(result.order));
-      if (result.order.source === 'public_qr') {
-        const hist = await listPharmacyOrderQuoteEventsAction({
-          pharmacyId,
-          orderId: result.order.id,
-        });
+      try {
+        const result = await getPharmacyOrderDetailAction(pharmacyId, orderId);
         if (cancelled) return;
-        if (hist.ok) {
-          setQuoteEvents(hist.events);
-          setQuoteEventsAvailable(hist.available);
+        if (!result.ok) {
+          setError(result.error);
+          setDetail(null);
+          return;
+        }
+        setDetail(result.order);
+        setLineDrafts(draftsFromOrder(result.order));
+        if (result.order.source === 'public_qr') {
+          const hist = await listPharmacyOrderQuoteEventsAction({
+            pharmacyId,
+            orderId: result.order.id,
+          });
+          if (cancelled) return;
+          if (hist.ok) {
+            setQuoteEvents(hist.events);
+            setQuoteEventsAvailable(hist.available);
+          }
+        }
+      } catch {
+        if (cancelled) return;
+        setError('No se ha podido cargar el detalle del pedido.');
+        setDetail(null);
+      } finally {
+        if (!cancelled) {
+          setLoadingDetail(false);
         }
       }
     }
@@ -529,7 +573,8 @@ export function PharmacyOrdersPanel({
     detail && showLineValuation ? previewTotal(detail, lineDrafts) : null;
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+    <div ref={rootRef} className="min-w-0 space-y-4">
+      {!showingDetail ? (
       <Card className="min-w-0 overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="flex flex-wrap gap-2">
@@ -570,17 +615,10 @@ export function PharmacyOrdersPanel({
               <li key={order.id}>
                 <button
                   type="button"
-                  onClick={() => {
-                    // Evitar flash «No se ha podido cargar el detalle» entre el
-                    // click y el useEffect (selectedId sin detail ni loading).
-                    setSelectedId(order.id);
-                    setLoadingDetail(true);
-                    setDetail(null);
-                    setError(null);
-                  }}
+                  onClick={() => openOrder(order.id)}
                   className={cn(
                     'flex w-full items-start justify-between gap-3 px-4 py-4 text-left transition hover:bg-muted/40',
-                    selectedId === order.id && 'bg-muted/50'
+                    lastViewedId === order.id && 'bg-muted/50'
                   )}
                 >
                   <div className="min-w-0">
@@ -642,18 +680,51 @@ export function PharmacyOrdersPanel({
           </ul>
         )}
       </Card>
-
+      ) : (
       <Card className="min-w-0 p-5">
-        {!selectedId ? (
-          <p className="text-sm text-muted-foreground">
-            Selecciona un pedido para ver el detalle.
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={backToList}
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Volver a pedidos
+          </Button>
+          {detail ? (
+            <p className="text-xs text-muted-foreground tabular-nums">
+              #{detail.displayNumber}
+            </p>
+          ) : null}
+        </div>
+
+        {loadingDetail ? (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            Cargando detalle…
           </p>
-        ) : loadingDetail || (!detail && !error) ? (
-          <p className="text-sm text-muted-foreground">Cargando detalle…</p>
+        ) : error && !detail ? (
+          <div className="space-y-4 py-6 text-center">
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              No se ha podido cargar el detalle.
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={backToList}>
+              Volver a pedidos
+            </Button>
+          </div>
         ) : !detail ? (
-          <p className="text-sm text-muted-foreground">
-            No se ha podido cargar el detalle.
-          </p>
+          <div className="space-y-4 py-6 text-center">
+            <p className="text-sm text-muted-foreground">
+              No se ha podido cargar el detalle.
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={backToList}>
+              Volver a pedidos
+            </Button>
+          </div>
         ) : (
           <div className="space-y-5">
             <div>
@@ -1139,6 +1210,7 @@ export function PharmacyOrdersPanel({
           </div>
         )}
       </Card>
+      )}
     </div>
   );
 }
