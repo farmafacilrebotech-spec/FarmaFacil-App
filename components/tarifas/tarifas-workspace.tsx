@@ -10,16 +10,11 @@ import type {
   CommercialPilotRow,
   PilotKpis,
 } from '@/lib/commercial/pilots-queries';
-import type {
-  MasterCatalogProduct,
-  PharmacyCatalogSummary,
-} from '@/lib/commercial/master-catalog-queries';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PlansTariffsPanel } from './plans-tariffs-panel';
 import { SimulatorPanel } from './simulator-panel';
 import { QuotesPanel } from './quotes-panel';
 import { PilotsPanel } from './pilots-panel';
-import { MasterCatalogPanel } from './master-catalog-panel';
 import { PlanAssignmentPanel } from './plan-assignment-panel';
 
 export type TarifasWorkspaceProps = {
@@ -33,16 +28,6 @@ export type TarifasWorkspaceProps = {
     kpis: PilotKpis;
     error: string | null;
   };
-  master: {
-    products: MasterCatalogProduct[];
-    categories: string[];
-    activeCount: number;
-    error: string | null;
-  };
-  pharmacyCatalog: {
-    rows: PharmacyCatalogSummary[];
-    error: string | null;
-  };
 };
 
 export function TarifasWorkspace({
@@ -51,17 +36,13 @@ export function TarifasWorkspace({
   canViewInternalCosts,
   initialConfig,
   pilots,
-  master,
-  pharmacyCatalog,
 }: TarifasWorkspaceProps) {
   const [config, setConfig] = React.useState<CommercialTariffConfig>(() =>
     canViewInternalCosts ? initialConfig : withoutInternalCosts(initialConfig)
   );
 
   function onConfigChange(next: CommercialTariffConfig) {
-    setConfig(
-      canViewInternalCosts ? next : withoutInternalCosts(next)
-    );
+    setConfig(canViewInternalCosts ? next : withoutInternalCosts(next));
   }
 
   return (
@@ -81,9 +62,6 @@ export function TarifasWorkspace({
         </TabsTrigger>
         <TabsTrigger value="pilotos" className="flex-none">
           Gestión de pilotos
-        </TabsTrigger>
-        <TabsTrigger value="maestro" className="flex-none">
-          Catálogo maestro
         </TabsTrigger>
       </TabsList>
 
@@ -118,17 +96,6 @@ export function TarifasWorkspace({
           initialKpis={pilots.kpis}
           loadError={pilots.error}
           canManage={canManageTrials}
-        />
-      </TabsContent>
-      <TabsContent value="maestro" className="mt-0 focus-visible:outline-none">
-        <MasterCatalogPanel
-          products={master.products}
-          categories={master.categories}
-          activeCount={master.activeCount}
-          pharmacyRows={pharmacyCatalog.rows}
-          loadError={master.error}
-          pharmaciesError={pharmacyCatalog.error}
-          canWrite={canWriteMaster}
         />
       </TabsContent>
     </Tabs>

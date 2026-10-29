@@ -123,7 +123,7 @@ export function SeedDemoCatalogButton({
           </TooltipTrigger>
           <TooltipContent className="max-w-xs text-xs">
             Deprecado: usa el catálogo maestro (100 genéricos) vía preparación
-            comercial o «Catálogo maestro» en Tarifas. No sembrar 30 demo.
+            comercial o SuperAdmin → Catálogo. No sembrar 30 demo.
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>

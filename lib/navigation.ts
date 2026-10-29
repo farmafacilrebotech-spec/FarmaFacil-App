@@ -44,7 +44,7 @@ export const navItems: NavItem[] = [
     label: 'Catálogo',
     href: '/catalogo',
     icon: Pill,
-    description: 'Productos y stock',
+    description: 'Catálogo maestro FarmaFácil',
   },
   {
     label: 'Pedidos',

@@ -17,6 +17,7 @@ export type ActionResult<T = Record<string, unknown>> =
 
 function revalidateCommercialPaths(pharmacyId?: string) {
   revalidatePath('/tarifas');
+  revalidatePath('/catalogo');
   if (pharmacyId) {
     revalidatePath(`/farmacias/${pharmacyId}`);
   }
@@ -405,5 +406,6 @@ export async function updateMasterCatalogProductAction(input: {
   }
 
   revalidatePath('/tarifas');
+  revalidatePath('/catalogo');
   return { ok: true };
 }
