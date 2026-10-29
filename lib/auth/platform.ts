@@ -14,7 +14,12 @@ export type CurrentProfile = {
 
 export type PlatformAccessResult =
   | { status: 'unauthenticated' }
-  | { status: 'authorized'; profile: CurrentProfile }
+  | {
+      status: 'authorized';
+      profile: CurrentProfile;
+      /** SuperAdmin total vs soporte con acceso acotado al shell. */
+      platformScope: 'superadmin' | 'support';
+    }
   | { status: 'forbidden'; profile: CurrentProfile }
   | { status: 'error'; message: string; email?: string };
 
@@ -46,6 +51,36 @@ export const hasPlatformSuperAdminRole = cache(
 
     if (error) {
       console.error('platform role check failed:', error.code, error.message);
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: data != null };
+  }
+);
+
+/** PLATFORM_SUPPORT (soporte técnico / kioskos). */
+export const hasPlatformSupportRole = cache(
+  async (
+    profileId: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from('platform_user_roles')
+      .select(
+        `
+      id,
+      platform_roles!inner (
+        key
+      )
+    `
+      )
+      .eq('profile_id', profileId)
+      .eq('platform_roles.key', 'PLATFORM_SUPPORT')
+      .maybeSingle();
+
+    if (error) {
+      console.error('platform support role check failed:', error.code, error.message);
       return { ok: false, error: error.message };
     }
 
@@ -211,10 +246,27 @@ export const resolvePlatformAccess = cache(
       };
     }
 
-    if (!role.ok) {
-      return { status: 'forbidden', profile };
+    if (role.ok) {
+      return { status: 'authorized', profile, platformScope: 'superadmin' };
     }
 
-    return { status: 'authorized', profile };
+    // Soporte: entra al shell solo si tiene inventario (o rol SUPPORT).
+    const support = await hasPlatformSupportRole(profile.id);
+    if (support.error) {
+      return {
+        status: 'error',
+        message: support.error,
+        email: profile.email,
+      };
+    }
+
+    const inventoryRead = await hasPlatformPermission(
+      'platform.kiosk_inventory.read'
+    );
+    if (support.ok || inventoryRead.ok) {
+      return { status: 'authorized', profile, platformScope: 'support' };
+    }
+
+    return { status: 'forbidden', profile };
   }
 );

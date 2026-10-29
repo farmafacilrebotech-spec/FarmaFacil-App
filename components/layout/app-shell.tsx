@@ -4,6 +4,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Sidebar } from './sidebar';
 import { Header } from './header';
+import type { NavItem } from '@/lib/navigation';
 import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 
 export type ShellUser = {
@@ -15,10 +16,12 @@ export function AppShell({
   children,
   user,
   pharmacies,
+  navItems,
 }: {
   children: React.ReactNode;
   user: ShellUser;
   pharmacies: ShellPharmacyOption[];
+  navItems: NavItem[];
 }) {
   const [collapsed, setCollapsed] = React.useState(false);
   const [mobileOpen, setMobileOpen] = React.useState(false);
@@ -31,6 +34,7 @@ export function AppShell({
         mobileOpen={mobileOpen}
         onMobileClose={() => setMobileOpen(false)}
         user={user}
+        items={navItems}
       />
       <div
         className={cn(

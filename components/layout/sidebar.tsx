@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { ChevronsLeft, LifeBuoy, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { navItems, helpItems } from '@/lib/navigation';
+import { helpItems, type NavItem } from '@/lib/navigation';
 import { BrandLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -20,6 +20,7 @@ interface SidebarProps {
   mobileOpen: boolean;
   onMobileClose: () => void;
   user: ShellUser;
+  items: NavItem[];
 }
 
 export function Sidebar({
@@ -28,6 +29,7 @@ export function Sidebar({
   mobileOpen,
   onMobileClose,
   user,
+  items,
 }: SidebarProps) {
   const pathname = usePathname();
   const userInitials = initials(user.name || user.email);
@@ -71,9 +73,7 @@ export function Sidebar({
         {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-2">
           <ul className="space-y-1">
-            {navItems
-              .filter((item) => !item.superAdminOnly)
-              .map((item) => {
+            {items.map((item) => {
                 const active =
                   pathname === item.href || pathname.startsWith(item.href + '/');
                 const Icon = item.icon;

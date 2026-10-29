@@ -3,6 +3,7 @@ import {
   getCurrentProfile,
   hasPlatformPermission,
   hasPlatformSuperAdminRole,
+  hasPlatformSupportRole,
   type CurrentProfile,
 } from '@/lib/auth/platform';
 import {
@@ -36,6 +37,11 @@ export type PharmacyMembershipSummary = {
 export type AppAccessResult =
   | { status: 'unauthenticated' }
   | { status: 'platform'; profile: CurrentProfile }
+  | {
+      /** Soporte plataforma (inventario kioskos); sin SuperAdmin. */
+      status: 'platform_support';
+      profile: CurrentProfile;
+    }
   | {
       status: 'pharmacy';
       profile: CurrentProfile;
@@ -216,6 +222,14 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
     };
   }
 
+  const support = await hasPlatformSupportRole(profile.id);
+  const inventoryRead = await hasPlatformPermission(
+    'platform.kiosk_inventory.read'
+  );
+  if (support.ok || inventoryRead.ok) {
+    return { status: 'platform_support', profile };
+  }
+
   return { status: 'forbidden', profile };
 }
 
@@ -230,6 +244,8 @@ export function destinationForAppAccess(access: AppAccessResult): string {
       return '/login';
     case 'platform':
       return '/dashboard';
+    case 'platform_support':
+      return '/inventario-kioskos';
     case 'pharmacy':
       return `/f/${access.membership.pharmacyId}/dashboard`;
     case 'multiple_pharmacies': {
