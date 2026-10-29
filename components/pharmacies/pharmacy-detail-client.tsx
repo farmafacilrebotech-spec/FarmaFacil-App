@@ -61,6 +61,7 @@ import { CatalogoTab } from '@/components/pharmacies/tabs/catalogo-tab';
 import { QrTab } from '@/components/pharmacies/tabs/qr-tab';
 import { KioskDevicesPanel } from '@/components/kiosk/kiosk-devices-panel';
 import { AssistantEntitlementAdminPanel } from '@/components/kiosk/assistant-entitlement-admin-panel';
+import { PharmacyOrdersPanel } from '@/components/pharmacy-tenant/pharmacy-orders-panel';
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
 import type { KioskDeviceRow } from '@/lib/kiosk/devices';
 import type {
@@ -73,6 +74,7 @@ import type {
 } from '@/lib/kiosk/assistant/entitlement-status';
 import type { PharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 import type { PharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
+import type { PharmacyOrderSummary } from '@/lib/orders/types';
 
 const tabs = [
   { id: 'general', label: 'General', icon: LayoutDashboard, ready: true },
@@ -84,7 +86,7 @@ const tabs = [
   { id: 'catalogo', label: 'Catálogo', icon: Pill, ready: true },
   { id: 'kiosko', label: 'Kiosko', icon: MonitorSmartphone, ready: true },
   { id: 'asistente', label: 'Asistente IA', icon: Bot, ready: true },
-  { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, ready: false },
+  { id: 'pedidos', label: 'Pedidos', icon: ShoppingCart, ready: true },
   { id: 'actividad', label: 'Actividad', icon: Activity, ready: false },
 ] as const;
 
@@ -211,6 +213,8 @@ export function PharmacyDetailClient({
   assistantUsagePeriodYm = '',
   homeEntrypoint = null,
   homeEntrypointError = null,
+  orders = [],
+  ordersError = null,
 }: {
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
@@ -233,6 +237,9 @@ export function PharmacyDetailClient({
   assistantUsagePeriodYm?: string;
   homeEntrypoint?: PharmacyHomeEntrypoint | null;
   homeEntrypointError?: string | null;
+  /** Pedidos reales de la farmacia (solo lectura en SuperAdmin). */
+  orders?: PharmacyOrderSummary[];
+  ordersError?: string | null;
 }) {
   const router = useRouter();
   const [pharmacy, setPharmacy] = React.useState(initialPharmacy);
@@ -1178,13 +1185,28 @@ export function PharmacyDetailClient({
           />
         )}
 
+        {activeTab === 'pedidos' &&
+          (ordersError ? (
+            <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-6 text-sm text-destructive">
+              {ordersError}
+            </p>
+          ) : (
+            <PharmacyOrdersPanel
+              pharmacyId={pharmacy.id}
+              pharmacyName={pharmacy.name}
+              initialOrders={orders}
+              canManage={false}
+            />
+          ))}
+
         {activeTab !== 'general' &&
           activeTab !== 'personalizacion' &&
           activeTab !== 'usuarios' &&
           activeTab !== 'catalogo' &&
           activeTab !== 'kiosko' &&
           activeTab !== 'asistente' &&
-          activeTab !== 'qr' && (
+          activeTab !== 'qr' &&
+          activeTab !== 'pedidos' && (
           <PendingPanel
             title={tabs.find((t) => t.id === activeTab)?.label ?? 'Sección'}
           />
