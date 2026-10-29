@@ -56,6 +56,11 @@ export type AppAccessResult =
       /** true = alta incompleta (first-access); false = usuario FarmaFácil establecido */
       needsFirstAccess: boolean;
     }
+  | {
+      /** Cuenta cliente FarmaFácil: no entra al panel staff/farmacia. */
+      status: 'customer';
+      profile: CurrentProfile;
+    }
   | { status: 'forbidden'; profile: CurrentProfile }
   | { status: 'error'; message: string; email?: string };
 
@@ -148,6 +153,11 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
     };
   }
 
+  // Clientes no deben entrar en el enrutado de panel plataforma/farmacia.
+  if (profile.accountKind === 'customer') {
+    return { status: 'customer', profile };
+  }
+
   const platformRole = await hasPlatformSuperAdminRole(profile.id);
 
   if (platformRole.error) {
@@ -237,6 +247,9 @@ export function destinationForAppAccess(access: AppAccessResult): string {
     }
     case 'invited':
       return access.needsFirstAccess ? '/first-access' : '/auth/invitations';
+    case 'customer':
+      // El login cliente vive bajo /e/{publicId}/cuenta; sin contexto QR → denegado panel.
+      return '/access-denied?reason=customer';
     case 'forbidden':
       return '/access-denied';
     case 'error':

@@ -7,8 +7,8 @@ export const dynamic = 'force-dynamic';
 
 /**
  * Destino público del QR de farmacia.
- * NO autentica al visitante. NO crea sesión de cliente.
- * Página informativa hasta que exista el portal de cuenta.
+ * NO autentica al visitante. NO crea relación farmacia↔cliente por sí solo.
+ * El catálogo es usable sin cuenta; «Mi cuenta» es opcional y global FarmaFácil.
  */
 export default async function PublicPharmacyEntrypointPage({
   params,
@@ -67,6 +67,12 @@ export default async function PublicPharmacyEntrypointPage({
           className="mt-8 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 px-6 py-4 text-base font-semibold text-slate-800"
         >
           Ver catálogo y solicitar
+        </Link>
+        <Link
+          href={`/e/${params.publicId}/cuenta`}
+          className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-800"
+        >
+          Mi cuenta
         </Link>
         <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           Si eres profesional de la farmacia, usa el acceso de empleados para

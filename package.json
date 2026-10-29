@@ -16,6 +16,7 @@
     "test:pharmacy-onboarding": "node --experimental-strip-types --test lib/commercial/pharmacy-onboarding.test.ts",
     "test:master-catalog": "node --experimental-strip-types --test lib/catalog/master-catalog.test.ts lib/catalog/catalog-mode.test.ts lib/catalog/category-icons.test.ts lib/catalog/product-illustration.test.ts lib/kiosk/public-catalog-policy.test.ts",
     "test:public-catalog-request": "node --experimental-strip-types --test lib/kiosk/public-catalog-request-validation.test.ts lib/kiosk/public-catalog-request-gate.test.ts lib/kiosk/public-catalog-cart-state.test.ts",
+    "test:customer-account": "node --experimental-strip-types --test lib/customer/validation.test.ts",
     "validate:057-draft": "node supabase/drafts/057_static_validate.mjs",
     "validate:060-draft": "node supabase/drafts/060_static_validate.mjs",
     "validate:062-draft": "node supabase/drafts/062_static_validate.mjs",

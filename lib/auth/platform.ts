@@ -8,6 +8,8 @@ export type CurrentProfile = {
   fullName: string | null;
   /** Preferencia de farmacia; nunca autoriza por sí sola. */
   lastPharmacyId: string | null;
+  /** staff = panel/farmacia · customer = cuenta cliente FarmaFácil. */
+  accountKind: 'staff' | 'customer';
 };
 
 export type PlatformAccessResult =
@@ -102,12 +104,43 @@ export const getCurrentProfile = cache(async (): Promise<{
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name, last_pharmacy_id')
+    .select('id, email, full_name, last_pharmacy_id, account_kind')
     .eq('id', user.id)
     .maybeSingle();
 
   if (error) {
     console.error('profile load failed:', error.code, error.message);
+    // Si falta la columna account_kind (migración 064 no aplicada), reintentar sin ella.
+    if (
+      error.message.toLowerCase().includes('account_kind') ||
+      error.code === '42703'
+    ) {
+      const fallback = await supabase
+        .from('profiles')
+        .select('id, email, full_name, last_pharmacy_id')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (fallback.error || !fallback.data) {
+        return {
+          profile: null,
+          authenticated: true,
+          error: fallback.error?.message ?? error.message,
+        };
+      }
+      return {
+        authenticated: true,
+        profile: {
+          id: fallback.data.id,
+          email: fallback.data.email,
+          fullName: fallback.data.full_name,
+          lastPharmacyId:
+            typeof fallback.data.last_pharmacy_id === 'string'
+              ? fallback.data.last_pharmacy_id
+              : null,
+          accountKind: 'staff',
+        },
+      };
+    }
     return {
       profile: null,
       authenticated: true,
@@ -123,9 +156,15 @@ export const getCurrentProfile = cache(async (): Promise<{
         email: user.email ?? '',
         fullName: null,
         lastPharmacyId: null,
+        accountKind: 'staff',
       },
     };
   }
+
+  const kind =
+    (profile as { account_kind?: string }).account_kind === 'customer'
+      ? 'customer'
+      : 'staff';
 
   return {
     authenticated: true,
@@ -137,6 +176,7 @@ export const getCurrentProfile = cache(async (): Promise<{
         typeof profile.last_pharmacy_id === 'string'
           ? profile.last_pharmacy_id
           : null,
+      accountKind: kind,
     },
   };
 });

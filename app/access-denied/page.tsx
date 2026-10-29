@@ -35,11 +35,14 @@ export default async function AccessDeniedPage() {
     redirect('/auth/select-pharmacy');
   }
 
+  const isCustomer = access.status === 'customer';
   const email =
-    access.status === 'forbidden' || access.status === 'error'
-      ? access.status === 'forbidden'
-        ? access.profile.email
-        : access.email
+    access.status === 'forbidden' ||
+    access.status === 'customer' ||
+    access.status === 'error'
+      ? access.status === 'error'
+        ? access.email
+        : access.profile.email
       : undefined;
 
   return (
@@ -50,11 +53,12 @@ export default async function AccessDeniedPage() {
           <ShieldAlert className="h-7 w-7" />
         </div>
         <h1 className="mt-5 text-xl font-semibold text-foreground">
-          Acceso no autorizado
+          {isCustomer ? 'Cuenta de cliente' : 'Acceso no autorizado'}
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          La cuenta{email ? ` (${email})` : ''} no tiene un acceso activo
-          válido a FarmaFácil en este momento.
+          {isCustomer
+            ? `Esta cuenta${email ? ` (${email})` : ''} es de cliente FarmaFácil. Accede a «Mi cuenta» desde el catálogo del QR de una farmacia; no tiene acceso al panel interno.`
+            : `La cuenta${email ? ` (${email})` : ''} no tiene un acceso activo válido a FarmaFácil en este momento.`}
         </p>
         <form action={signOutAction} className="mt-6">
           <Button type="submit" className="w-full">
