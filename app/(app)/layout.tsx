@@ -5,7 +5,6 @@ import { AuthError } from '@/components/auth/auth-error';
 import { Toaster } from '@/components/ui/sonner';
 import { resolvePlatformAccess } from '@/lib/auth/platform';
 import { displayNameFromIdentity } from '@/lib/format';
-import { navItemsForPlatformScope } from '@/lib/navigation';
 import { listPharmacies } from '@/lib/pharmacies/queries';
 import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
 
@@ -54,8 +53,6 @@ export default async function AuthenticatedLayout({
     console.error('[app-layout] listPharmacies', err);
   }
 
-  const shellNav = navItemsForPlatformScope(platformScope);
-
   return (
     <>
       <AppShell
@@ -64,7 +61,7 @@ export default async function AuthenticatedLayout({
           email: profile.email,
         }}
         pharmacies={pharmacies}
-        navItems={shellNav}
+        platformScope={platformScope}
       >
         {children}
       </AppShell>
