@@ -210,8 +210,8 @@ export function PublicCatalogRequestClient({
       ) : null}
 
       <p className="mb-4 text-xs text-slate-500">
-        Precio y disponibilidad los confirmará la farmacia. Sin cuenta de
-        cliente y sin cobros online.
+        Precio y disponibilidad los confirmará la farmacia. Puedes solicitar sin
+        registrarte. Sin cobros online.
       </p>
 
       {visibleItems.length === 0 ? (

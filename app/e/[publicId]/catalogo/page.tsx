@@ -49,12 +49,20 @@ export default async function PublicPharmacyCatalogPage({
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex items-center justify-between gap-4">
           <BrandLogo size={56} />
-          <Link
-            href={`/e/${params.publicId}`}
-            className="text-sm font-medium text-slate-600 hover:underline"
-          >
-            Inicio farmacia
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/e/${params.publicId}/cuenta`}
+              className="text-sm font-semibold text-[#0F2A2E] hover:underline"
+            >
+              Mi cuenta
+            </Link>
+            <Link
+              href={`/e/${params.publicId}`}
+              className="text-sm font-medium text-slate-600 hover:underline"
+            >
+              Inicio farmacia
+            </Link>
+          </div>
         </div>
 
         <header className="mb-6">

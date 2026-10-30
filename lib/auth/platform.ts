@@ -8,11 +8,18 @@ export type CurrentProfile = {
   fullName: string | null;
   /** Preferencia de farmacia; nunca autoriza por sí sola. */
   lastPharmacyId: string | null;
+  /** staff = panel/farmacia · customer = cuenta cliente FarmaFácil. */
+  accountKind: 'staff' | 'customer';
 };
 
 export type PlatformAccessResult =
   | { status: 'unauthenticated' }
-  | { status: 'authorized'; profile: CurrentProfile }
+  | {
+      status: 'authorized';
+      profile: CurrentProfile;
+      /** SuperAdmin total vs soporte con acceso acotado al shell. */
+      platformScope: 'superadmin' | 'support';
+    }
   | { status: 'forbidden'; profile: CurrentProfile }
   | { status: 'error'; message: string; email?: string };
 
@@ -44,6 +51,36 @@ export const hasPlatformSuperAdminRole = cache(
 
     if (error) {
       console.error('platform role check failed:', error.code, error.message);
+      return { ok: false, error: error.message };
+    }
+
+    return { ok: data != null };
+  }
+);
+
+/** PLATFORM_SUPPORT (soporte técnico / kioskos). */
+export const hasPlatformSupportRole = cache(
+  async (
+    profileId: string
+  ): Promise<{ ok: boolean; error?: string }> => {
+    const supabase = createClient();
+
+    const { data, error } = await supabase
+      .from('platform_user_roles')
+      .select(
+        `
+      id,
+      platform_roles!inner (
+        key
+      )
+    `
+      )
+      .eq('profile_id', profileId)
+      .eq('platform_roles.key', 'PLATFORM_SUPPORT')
+      .maybeSingle();
+
+    if (error) {
+      console.error('platform support role check failed:', error.code, error.message);
       return { ok: false, error: error.message };
     }
 
@@ -102,12 +139,43 @@ export const getCurrentProfile = cache(async (): Promise<{
 
   const { data: profile, error } = await supabase
     .from('profiles')
-    .select('id, email, full_name, last_pharmacy_id')
+    .select('id, email, full_name, last_pharmacy_id, account_kind')
     .eq('id', user.id)
     .maybeSingle();
 
   if (error) {
     console.error('profile load failed:', error.code, error.message);
+    // Si falta la columna account_kind (migración 064 no aplicada), reintentar sin ella.
+    if (
+      error.message.toLowerCase().includes('account_kind') ||
+      error.code === '42703'
+    ) {
+      const fallback = await supabase
+        .from('profiles')
+        .select('id, email, full_name, last_pharmacy_id')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (fallback.error || !fallback.data) {
+        return {
+          profile: null,
+          authenticated: true,
+          error: fallback.error?.message ?? error.message,
+        };
+      }
+      return {
+        authenticated: true,
+        profile: {
+          id: fallback.data.id,
+          email: fallback.data.email,
+          fullName: fallback.data.full_name,
+          lastPharmacyId:
+            typeof fallback.data.last_pharmacy_id === 'string'
+              ? fallback.data.last_pharmacy_id
+              : null,
+          accountKind: 'staff',
+        },
+      };
+    }
     return {
       profile: null,
       authenticated: true,
@@ -123,9 +191,15 @@ export const getCurrentProfile = cache(async (): Promise<{
         email: user.email ?? '',
         fullName: null,
         lastPharmacyId: null,
+        accountKind: 'staff',
       },
     };
   }
+
+  const kind =
+    (profile as { account_kind?: string }).account_kind === 'customer'
+      ? 'customer'
+      : 'staff';
 
   return {
     authenticated: true,
@@ -137,6 +211,7 @@ export const getCurrentProfile = cache(async (): Promise<{
         typeof profile.last_pharmacy_id === 'string'
           ? profile.last_pharmacy_id
           : null,
+      accountKind: kind,
     },
   };
 });
@@ -171,10 +246,27 @@ export const resolvePlatformAccess = cache(
       };
     }
 
-    if (!role.ok) {
-      return { status: 'forbidden', profile };
+    if (role.ok) {
+      return { status: 'authorized', profile, platformScope: 'superadmin' };
     }
 
-    return { status: 'authorized', profile };
+    // Soporte: entra al shell solo si tiene inventario (o rol SUPPORT).
+    const support = await hasPlatformSupportRole(profile.id);
+    if (support.error) {
+      return {
+        status: 'error',
+        message: support.error,
+        email: profile.email,
+      };
+    }
+
+    const inventoryRead = await hasPlatformPermission(
+      'platform.kiosk_inventory.read'
+    );
+    if (support.ok || inventoryRead.ok) {
+      return { status: 'authorized', profile, platformScope: 'support' };
+    }
+
+    return { status: 'forbidden', profile };
   }
 );

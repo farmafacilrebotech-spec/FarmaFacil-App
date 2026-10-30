@@ -3,6 +3,7 @@ import {
   getCurrentProfile,
   hasPlatformPermission,
   hasPlatformSuperAdminRole,
+  hasPlatformSupportRole,
   type CurrentProfile,
 } from '@/lib/auth/platform';
 import {
@@ -37,6 +38,11 @@ export type AppAccessResult =
   | { status: 'unauthenticated' }
   | { status: 'platform'; profile: CurrentProfile }
   | {
+      /** Soporte plataforma (inventario kioskos); sin SuperAdmin. */
+      status: 'platform_support';
+      profile: CurrentProfile;
+    }
+  | {
       status: 'pharmacy';
       profile: CurrentProfile;
       membership: PharmacyMembershipSummary;
@@ -55,6 +61,11 @@ export type AppAccessResult =
       pendingInvitations: PendingPharmacyInvitation[];
       /** true = alta incompleta (first-access); false = usuario FarmaFácil establecido */
       needsFirstAccess: boolean;
+    }
+  | {
+      /** Cuenta cliente FarmaFácil: no entra al panel staff/farmacia. */
+      status: 'customer';
+      profile: CurrentProfile;
     }
   | { status: 'forbidden'; profile: CurrentProfile }
   | { status: 'error'; message: string; email?: string };
@@ -148,6 +159,11 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
     };
   }
 
+  // Clientes no deben entrar en el enrutado de panel plataforma/farmacia.
+  if (profile.accountKind === 'customer') {
+    return { status: 'customer', profile };
+  }
+
   const platformRole = await hasPlatformSuperAdminRole(profile.id);
 
   if (platformRole.error) {
@@ -206,6 +222,14 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
     };
   }
 
+  const support = await hasPlatformSupportRole(profile.id);
+  const inventoryRead = await hasPlatformPermission(
+    'platform.kiosk_inventory.read'
+  );
+  if (support.ok || inventoryRead.ok) {
+    return { status: 'platform_support', profile };
+  }
+
   return { status: 'forbidden', profile };
 }
 
@@ -220,6 +244,8 @@ export function destinationForAppAccess(access: AppAccessResult): string {
       return '/login';
     case 'platform':
       return '/dashboard';
+    case 'platform_support':
+      return '/inventario-kioskos';
     case 'pharmacy':
       return `/f/${access.membership.pharmacyId}/dashboard`;
     case 'multiple_pharmacies': {
@@ -237,6 +263,9 @@ export function destinationForAppAccess(access: AppAccessResult): string {
     }
     case 'invited':
       return access.needsFirstAccess ? '/first-access' : '/auth/invitations';
+    case 'customer':
+      // El login cliente vive bajo /e/{publicId}/cuenta; sin contexto QR → denegado panel.
+      return '/access-denied?reason=customer';
     case 'forbidden':
       return '/access-denied';
     case 'error':

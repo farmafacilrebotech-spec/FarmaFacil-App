@@ -11,10 +11,6 @@ import type {
   PilotKpis,
 } from '@/lib/commercial/pilots-queries';
 import type {
-  MasterCatalogProduct,
-  PharmacyCatalogSummary,
-} from '@/lib/commercial/master-catalog-queries';
-import type {
   CommercialQuoteListItem,
   QuotePharmacyOption,
 } from '@/lib/commercial/quote-types';
@@ -23,7 +19,6 @@ import { PlansTariffsPanel } from './plans-tariffs-panel';
 import { SimulatorPanel } from './simulator-panel';
 import { QuotesPanel } from './quotes-panel';
 import { PilotsPanel } from './pilots-panel';
-import { MasterCatalogPanel } from './master-catalog-panel';
 import { PlanAssignmentPanel } from './plan-assignment-panel';
 
 export type TarifasWorkspaceProps = {
@@ -36,16 +31,6 @@ export type TarifasWorkspaceProps = {
   pilots: {
     rows: CommercialPilotRow[];
     kpis: PilotKpis;
-    error: string | null;
-  };
-  master: {
-    products: MasterCatalogProduct[];
-    categories: string[];
-    activeCount: number;
-    error: string | null;
-  };
-  pharmacyCatalog: {
-    rows: PharmacyCatalogSummary[];
     error: string | null;
   };
   quotes: {
@@ -64,8 +49,6 @@ export function TarifasWorkspace({
   canViewInternalCosts,
   initialConfig,
   pilots,
-  master,
-  pharmacyCatalog,
   quotes,
   quotePharmacies,
   emailReady,
@@ -100,9 +83,6 @@ export function TarifasWorkspace({
         </TabsTrigger>
         <TabsTrigger value="pilotos" className="flex-none">
           Gestión de pilotos
-        </TabsTrigger>
-        <TabsTrigger value="maestro" className="flex-none">
-          Catálogo maestro
         </TabsTrigger>
       </TabsList>
 
@@ -155,17 +135,6 @@ export function TarifasWorkspace({
           initialKpis={pilots.kpis}
           loadError={pilots.error}
           canManage={canManageTrials}
-        />
-      </TabsContent>
-      <TabsContent value="maestro" className="mt-0 focus-visible:outline-none">
-        <MasterCatalogPanel
-          products={master.products}
-          categories={master.categories}
-          activeCount={master.activeCount}
-          pharmacyRows={pharmacyCatalog.rows}
-          loadError={master.error}
-          pharmaciesError={pharmacyCatalog.error}
-          canWrite={canWriteMaster}
         />
       </TabsContent>
     </Tabs>

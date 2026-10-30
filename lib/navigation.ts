@@ -10,6 +10,7 @@ import {
   UserCog,
   LifeBuoy,
   Calculator,
+  MonitorSmartphone,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -19,6 +20,8 @@ export interface NavItem {
   icon: LucideIcon;
   description?: string;
   superAdminOnly?: boolean;
+  /** Visible para rol soporte (inventario técnico). */
+  supportVisible?: boolean;
 }
 
 export const navItems: NavItem[] = [
@@ -33,6 +36,14 @@ export const navItems: NavItem[] = [
     href: '/farmacias',
     icon: Store,
     description: 'Gestión de farmacias',
+    supportVisible: true,
+  },
+  {
+    label: 'Inventario kioskos',
+    href: '/inventario-kioskos',
+    icon: MonitorSmartphone,
+    description: 'Activos físicos KSK-…',
+    supportVisible: true,
   },
   {
     label: 'Clientes',
@@ -44,7 +55,7 @@ export const navItems: NavItem[] = [
     label: 'Catálogo',
     href: '/catalogo',
     icon: Pill,
-    description: 'Productos y stock',
+    description: 'Catálogo maestro FarmaFácil',
   },
   {
     label: 'Pedidos',
@@ -84,6 +95,17 @@ export const navItems: NavItem[] = [
     description: 'Ajustes de la cuenta',
   },
 ];
+
+/** Nav del shell según alcance de plataforma. */
+export function navItemsForPlatformScope(
+  scope: 'superadmin' | 'support'
+): NavItem[] {
+  if (scope === 'support') {
+    return navItems.filter((item) => item.supportVisible);
+  }
+  // SuperAdmin: menú completo (incl. entradas superAdminOnly).
+  return navItems;
+}
 
 export const helpItems: NavItem[] = [
   {

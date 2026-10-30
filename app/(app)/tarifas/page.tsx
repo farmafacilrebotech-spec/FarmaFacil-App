@@ -5,11 +5,7 @@ import { TarifasWorkspace } from '@/components/tarifas/tarifas-workspace';
 import { Badge } from '@/components/ui/badge';
 import { hasPlatformPermission } from '@/lib/auth/platform';
 import { listCommercialPilots } from '@/lib/commercial/pilots-queries';
-import {
-  canWriteMasterCatalog,
-  listMasterCatalogProducts,
-  listPharmacyCatalogSummaries,
-} from '@/lib/commercial/master-catalog-queries';
+import { canWriteMasterCatalog } from '@/lib/commercial/master-catalog-queries';
 import { loadTariffConfigForSession } from '@/lib/commercial/tariff-queries';
 import {
   canManageCommercialQuotes,
@@ -25,8 +21,6 @@ export default async function TarifasPage() {
     canManageQuotes,
     tariffLoad,
     pilotsResult,
-    masterResult,
-    pharmacyCatalogResult,
     quotesResult,
     quotePharmacies,
     emailReadiness,
@@ -36,8 +30,6 @@ export default async function TarifasPage() {
     canManageCommercialQuotes(),
     loadTariffConfigForSession(),
     listCommercialPilots(),
-    listMasterCatalogProducts(),
-    listPharmacyCatalogSummaries(),
     listCommercialQuotes(),
     listQuotePharmacyOptions(),
     getCommercialEmailSendReadiness(),
@@ -53,30 +45,6 @@ export default async function TarifasPage() {
         rows: [],
         kpis: { active: 0, expiringSoon: 0, ended: 0, extended: 0 },
         error: pilotsResult.error,
-      };
-
-  const master = masterResult.ok
-    ? {
-        products: masterResult.products,
-        categories: masterResult.categories,
-        activeCount: masterResult.activeCount,
-        error: null as string | null,
-      }
-    : {
-        products: [],
-        categories: [],
-        activeCount: 0,
-        error: masterResult.error,
-      };
-
-  const pharmacyCatalog = pharmacyCatalogResult.ok
-    ? {
-        rows: pharmacyCatalogResult.rows,
-        error: null as string | null,
-      }
-    : {
-        rows: [],
-        error: pharmacyCatalogResult.error,
       };
 
   const quotes = quotesResult.ok
@@ -108,8 +76,6 @@ export default async function TarifasPage() {
         canViewInternalCosts={tariffLoad.canViewInternalCosts}
         initialConfig={tariffLoad.config}
         pilots={pilots}
-        master={master}
-        pharmacyCatalog={pharmacyCatalog}
         quotes={quotes}
         quotePharmacies={quotePharmacies}
         emailReady={emailReadiness.canSend}

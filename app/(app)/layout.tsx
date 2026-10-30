@@ -25,12 +25,13 @@ export default async function AuthenticatedLayout({
     return <AuthError message={access.message} email={access.email} />;
   }
 
-  // Sesión válida sin PLATFORM_SUPERADMIN → denegado (no /login).
+  // Sesión válida sin SuperAdmin ni soporte inventario → denegado (no /login).
   if (access.status === 'forbidden') {
     return <AccessDenied email={access.profile.email} />;
   }
 
   const profile = access.profile;
+  const platformScope = access.platformScope;
   // Fallback visual: no escribe en Supabase. Si no hay full_name, usa local-part del email.
   const displayName = displayNameFromIdentity(
     profile.fullName,
@@ -60,6 +61,7 @@ export default async function AuthenticatedLayout({
           email: profile.email,
         }}
         pharmacies={pharmacies}
+        platformScope={platformScope}
       >
         {children}
       </AppShell>
