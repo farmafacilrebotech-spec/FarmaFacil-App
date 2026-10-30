@@ -10,6 +10,10 @@ import type {
   CommercialPilotRow,
   PilotKpis,
 } from '@/lib/commercial/pilots-queries';
+import type {
+  CommercialQuoteListItem,
+  QuotePharmacyOption,
+} from '@/lib/commercial/quote-types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PlansTariffsPanel } from './plans-tariffs-panel';
 import { SimulatorPanel } from './simulator-panel';
@@ -20,6 +24,7 @@ import { PlanAssignmentPanel } from './plan-assignment-panel';
 export type TarifasWorkspaceProps = {
   canManageTrials: boolean;
   canWriteMaster: boolean;
+  canManageQuotes: boolean;
   canViewInternalCosts: boolean;
   /** Configuración ya filtrada en servidor (sin costes si no hay write). */
   initialConfig: CommercialTariffConfig;
@@ -28,25 +33,41 @@ export type TarifasWorkspaceProps = {
     kpis: PilotKpis;
     error: string | null;
   };
+  quotes: {
+    rows: CommercialQuoteListItem[];
+    error: string | null;
+  };
+  quotePharmacies: QuotePharmacyOption[];
+  emailReady: boolean;
+  emailMissing: string[];
 };
 
 export function TarifasWorkspace({
   canManageTrials,
   canWriteMaster,
+  canManageQuotes,
   canViewInternalCosts,
   initialConfig,
   pilots,
+  quotes,
+  quotePharmacies,
+  emailReady,
+  emailMissing,
 }: TarifasWorkspaceProps) {
   const [config, setConfig] = React.useState<CommercialTariffConfig>(() =>
     canViewInternalCosts ? initialConfig : withoutInternalCosts(initialConfig)
   );
+  const [tab, setTab] = React.useState('planes');
+  const [contractPharmacyId, setContractPharmacyId] = React.useState<
+    string | null
+  >(null);
 
   function onConfigChange(next: CommercialTariffConfig) {
     setConfig(canViewInternalCosts ? next : withoutInternalCosts(next));
   }
 
   return (
-    <Tabs defaultValue="planes" className="space-y-6">
+    <Tabs value={tab} onValueChange={setTab} className="space-y-6">
       <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-muted/60 p-1">
         <TabsTrigger value="planes" className="flex-none">
           Planes y tarifas
@@ -76,19 +97,37 @@ export function TarifasWorkspace({
         value="contratacion"
         className="mt-0 focus-visible:outline-none"
       >
-        <PlanAssignmentPanel canManage={canManageTrials || canWriteMaster} />
+        <PlanAssignmentPanel
+          canManage={canManageTrials || canWriteMaster}
+          initialPharmacyId={contractPharmacyId}
+        />
       </TabsContent>
       <TabsContent
         value="simulador"
         className="mt-0 focus-visible:outline-none"
       >
-        <SimulatorPanel config={config} />
+        <SimulatorPanel
+          config={config}
+          pharmacies={quotePharmacies}
+          canSaveQuotes={canManageQuotes}
+          onQuoteSaved={() => setTab('presupuestos')}
+        />
       </TabsContent>
       <TabsContent
         value="presupuestos"
         className="mt-0 focus-visible:outline-none"
       >
-        <QuotesPanel />
+        <QuotesPanel
+          quotes={quotes.rows}
+          loadError={quotes.error}
+          canManage={canManageQuotes}
+          emailReady={emailReady}
+          emailMissing={emailMissing}
+          onPrepareContract={(pharmacyId) => {
+            setContractPharmacyId(pharmacyId);
+            setTab('contratacion');
+          }}
+        />
       </TabsContent>
       <TabsContent value="pilotos" className="mt-0 focus-visible:outline-none">
         <PilotsPanel

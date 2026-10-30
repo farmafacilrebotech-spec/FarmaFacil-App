@@ -13,6 +13,7 @@
     "test:membership-ui": "node --experimental-strip-types --test lib/pharmacies/membership-ui-feedback.test.ts",
     "test:tarifas": "node --experimental-strip-types --test lib/tarifas/simulator.test.ts",
     "test:commercial-ui": "node --experimental-strip-types --test lib/commercial/plan-catalog-mode.test.ts lib/commercial/rpc-errors.test.ts lib/commercial/tariff-security.test.ts lib/commercial/pharmacy-onboarding.test.ts",
+    "test:commercial-quotes": "node --experimental-strip-types --test lib/commercial/quote-document.test.ts",
     "test:pharmacy-onboarding": "node --experimental-strip-types --test lib/commercial/pharmacy-onboarding.test.ts",
     "test:master-catalog": "node --experimental-strip-types --test lib/catalog/master-catalog.test.ts lib/catalog/catalog-mode.test.ts lib/catalog/category-icons.test.ts lib/catalog/product-illustration.test.ts lib/kiosk/public-catalog-policy.test.ts",
     "test:public-catalog-request": "node --experimental-strip-types --test lib/kiosk/public-catalog-request-validation.test.ts lib/kiosk/public-catalog-request-gate.test.ts lib/kiosk/public-catalog-cart-state.test.ts",
