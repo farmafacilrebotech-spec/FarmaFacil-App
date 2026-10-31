@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 
+import { getAppBaseUrl } from '@/lib/auth/app-url';
 import { createClient } from '@/lib/supabase/server';
 import {
   getCustomerProfile,
@@ -15,6 +16,7 @@ export type CustomerActionResult<T = Record<string, unknown>> =
 
 function revalidateCuenta(publicId?: string) {
   revalidatePath('/cuenta');
+  revalidatePath('/cuenta/mis-farmacias');
   if (publicId) {
     revalidatePath(`/e/${publicId}/cuenta`);
     revalidatePath(`/e/${publicId}/cuenta/perfil`);
@@ -45,10 +47,19 @@ export async function registerCustomerAction(input: {
   }
 
   const supabase = createClient();
+  const appBase = getAppBaseUrl();
+  const afterConfirm = input.publicId
+    ? `/e/${input.publicId}/cuenta`
+    : '/cuenta/mis-farmacias';
+  const emailRedirectTo = appBase
+    ? `${appBase}/auth/callback?next=${encodeURIComponent(afterConfirm)}`
+    : undefined;
+
   const { data, error } = await supabase.auth.signUp({
     email: parsed.email,
     password: parsed.password,
     options: {
+      ...(emailRedirectTo ? { emailRedirectTo } : {}),
       data: {
         account_kind: 'customer',
         first_name: parsed.firstName,

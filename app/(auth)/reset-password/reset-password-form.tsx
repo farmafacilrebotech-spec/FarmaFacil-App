@@ -17,6 +17,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/utils';
 import { resetPasswordAction } from '@/app/(auth)/reset-password/actions';
+import {
+  clearCustomerAuthAudience,
+  isRememberedCustomerAuthAudience,
+} from '@/lib/customer/auth-return';
 
 function getStrength(pw: string): {
   score: number;
@@ -46,10 +50,16 @@ export function ResetPasswordForm() {
   const [error, setError] = React.useState('');
   const [loading, setLoading] = React.useState(false);
   const [doneMessage, setDoneMessage] = React.useState<string | null>(null);
+  const [isCustomer, setIsCustomer] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsCustomer(isRememberedCustomerAuthAudience());
+  }, []);
 
   const strength = getStrength(password);
   const match = confirm.length > 0 && password === confirm;
   const canSubmit = password.length >= 8 && match && !loading;
+  const loginHref = isCustomer ? '/cuenta/entrar' : '/login';
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -71,16 +81,21 @@ export function ResetPasswordForm() {
     }
 
     setDoneMessage(result.message);
+    clearCustomerAuthAudience();
     // Hard navigation: evita reutilizar estado/cookies en el cliente.
     window.setTimeout(() => {
-      window.location.replace('/login');
+      window.location.replace(loginHref);
     }, 1200);
   }
 
   return (
     <div className="animate-slide-up">
       <div className="mb-8 flex justify-center">
-        <BrandLogo size={96} showTagline />
+        {isCustomer ? (
+          <BrandLogo size={112} clip="circle" />
+        ) : (
+          <BrandLogo size={96} showTagline />
+        )}
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
@@ -96,7 +111,7 @@ export function ResetPasswordForm() {
               {doneMessage}
             </p>
             <Button asChild className="mt-6 gap-1.5">
-              <Link href="/login">Ir a iniciar sesión</Link>
+              <Link href={loginHref}>Ir a iniciar sesión</Link>
             </Button>
           </div>
         ) : (
@@ -229,7 +244,7 @@ export function ResetPasswordForm() {
       {!doneMessage && (
         <div className="mt-6 text-center">
           <Link
-            href="/login"
+            href={loginHref}
             className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="h-3.5 w-3.5" /> Volver a iniciar sesión

@@ -1,8 +1,11 @@
 import Link from 'next/link';
 
 import { CustomerShell } from '@/components/customer/customer-shell';
+import { PendingPharmacyBanner } from '@/components/customer/pending-pharmacy-banner';
+import { SavePharmacyButton } from '@/components/customer/save-pharmacy-button';
 import { Button } from '@/components/ui/button';
 import { getCustomerProfile } from '@/lib/customer/queries';
+import { isPharmacySaved } from '@/lib/customer/saved-pharmacies';
 import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
 
 export const dynamic = 'force-dynamic';
@@ -17,6 +20,8 @@ export default async function CustomerAccountHubPage({
   const pharmacyLabel = entry.ok ? entry.pharmacyName : null;
 
   const customer = await getCustomerProfile();
+  const saved =
+    customer.ok && entry.ok ? await isPharmacySaved(publicId) : false;
 
   return (
     <CustomerShell
@@ -28,7 +33,8 @@ export default async function CustomerAccountHubPage({
         <div className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-soft">
           <p className="text-sm text-muted-foreground">
             Puedes consultar el catálogo sin registrarte. Crea una cuenta FarmaFácil
-            para guardar tus datos y consultar pedidos vinculados a tu perfil.
+            para guardar tus datos, Mis farmacias y consultar pedidos vinculados a
+            tu perfil.
           </p>
           {customer.code === 'not_customer' ? (
             <p className="text-sm text-amber-800">
@@ -47,6 +53,7 @@ export default async function CustomerAccountHubPage({
         </div>
       ) : (
         <div className="space-y-3">
+          <PendingPharmacyBanner />
           <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
             <p className="text-sm text-muted-foreground">Sesión iniciada como</p>
             <p className="mt-1 font-medium text-foreground">
@@ -54,7 +61,21 @@ export default async function CustomerAccountHubPage({
             </p>
             <p className="text-sm text-muted-foreground">{customer.profile.email}</p>
           </div>
+          {entry.ok ? (
+            <div className="rounded-2xl border border-border bg-card p-4 shadow-soft">
+              <SavePharmacyButton
+                publicId={publicId}
+                pharmacyName={entry.pharmacyName}
+                initiallySaved={saved}
+                isAuthenticated
+                variant="compact"
+              />
+            </div>
+          ) : null}
           <nav className="grid gap-2">
+            <Button asChild variant="outline" className="justify-start">
+              <Link href="/cuenta/mis-farmacias">Mis farmacias</Link>
+            </Button>
             <Button asChild variant="outline" className="justify-start">
               <Link href={`/e/${publicId}/cuenta/perfil`}>Perfil</Link>
             </Button>
