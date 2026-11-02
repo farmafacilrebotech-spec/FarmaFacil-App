@@ -1,7 +1,11 @@
 import Link from 'next/link';
 
 import { BrandLogo } from '@/components/brand';
+import { CustomerPwaRegister } from '@/components/customer/customer-pwa-register';
+import { SavePharmacyButton } from '@/components/customer/save-pharmacy-button';
 import { PublicCatalogRequestClient } from '@/components/kiosk/public-catalog-request-client';
+import { getCustomerProfile } from '@/lib/customer/queries';
+import { isPharmacySaved } from '@/lib/customer/saved-pharmacies';
 import { listPublicCatalog } from '@/lib/kiosk/public-catalog';
 
 export const dynamic = 'force-dynamic';
@@ -23,6 +27,10 @@ export default async function PublicPharmacyCatalogPage({
     // Catálogo genérico estándar: hasta 100 productos (RPC acota).
     limit: 100,
   });
+  const customer = await getCustomerProfile();
+  const saved = customer.ok
+    ? await isPharmacySaved(params.publicId)
+    : false;
 
   if (!catalog.ok) {
     return (
@@ -46,10 +54,17 @@ export default async function PublicPharmacyCatalogPage({
 
   return (
     <div className="min-h-screen bg-[#F7FAFA] px-4 py-8">
+      <CustomerPwaRegister />
       <div className="mx-auto max-w-2xl">
         <div className="mb-6 flex items-center justify-between gap-4">
           <BrandLogo size={56} />
           <div className="flex items-center gap-3">
+            <Link
+              href="/cuenta/mis-farmacias"
+              className="text-sm font-medium text-[#2EC4C7] hover:underline"
+            >
+              Mis farmacias
+            </Link>
             <Link
               href={`/e/${params.publicId}/cuenta`}
               className="text-sm font-semibold text-[#0F2A2E] hover:underline"
@@ -78,6 +93,15 @@ export default async function PublicPharmacyCatalogPage({
               ? 'Catálogo propio'
               : 'Catálogo genérico'}
           </p>
+          <div className="mt-3 max-w-sm">
+            <SavePharmacyButton
+              publicId={params.publicId}
+              pharmacyName={catalog.pharmacyName}
+              initiallySaved={saved}
+              isAuthenticated={customer.ok}
+              variant="compact"
+            />
+          </div>
         </header>
 
         <PublicCatalogRequestClient

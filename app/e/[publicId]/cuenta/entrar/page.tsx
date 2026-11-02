@@ -1,10 +1,9 @@
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import { CustomerLoginForm } from '@/components/customer/customer-login-form';
 import { CustomerShell } from '@/components/customer/customer-shell';
 import { getCustomerProfile } from '@/lib/customer/queries';
 import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
-import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,16 +23,17 @@ export default async function CustomerLoginPage({
 
   return (
     <CustomerShell
+      variant="auth"
       publicId={publicId}
       pharmacyLabel={pharmacyLabel}
       title="Iniciar sesión"
     >
-      <CustomerLoginForm publicId={publicId} />
-      <p className="mt-4 text-center text-sm text-muted-foreground">
-        <Link href={`/e/${publicId}/cuenta`} className="hover:underline">
-          Volver a Mi cuenta
-        </Link>
-      </p>
+      <CustomerLoginForm
+        publicId={publicId}
+        redirectTo={`/e/${publicId}/cuenta`}
+        title="Iniciar sesión"
+        subtitle="Accede a tu cuenta de cliente FarmaFácil."
+      />
     </CustomerShell>
   );
 }

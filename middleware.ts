@@ -24,6 +24,15 @@ function isPublicEntrypointRoute(pathname: string): boolean {
   return pathname === '/e' || pathname.startsWith('/e/');
 }
 
+/**
+ * Área cliente FarmaFácil (PWA /cuenta).
+ * Nunca redirigir al login del panel de farmacia (/login).
+ * Cada página aplica su propio gate de cliente (entrar / Mis farmacias).
+ */
+function isPublicCustomerAccountRoute(pathname: string): boolean {
+  return pathname === '/cuenta' || pathname.startsWith('/cuenta/');
+}
+
 /** Presupuesto público R4: /q/[token] — sin sesión. */
 function isPublicQuoteRoute(pathname: string): boolean {
   return pathname === '/q' || pathname.startsWith('/q/');
@@ -39,16 +48,23 @@ export async function middleware(request: NextRequest) {
     isPublicLegalRoute(pathname) ||
     isPublicKioskRoute(pathname) ||
     isPublicEntrypointRoute(pathname) ||
+    isPublicCustomerAccountRoute(pathname) ||
     isPublicQuoteRoute(pathname);
 
-  // Sin sesión en ruta protegida → login.
+  // Sin sesión en ruta protegida → login del panel (farmacia/plataforma).
+  // /cuenta y /e/* son públicos: no usar /login ahí.
   // Nota: Next Edge puede normalizar 127.0.0.1→localhost en Location absoluta.
   // El flujo invite (callback→first-access) usa Location relativa y no pasa por aquí.
   // La redirección login→continue se hace en login/page.tsx con redirect() relativo.
   if (!user && !isPublicRoute) {
     const params = new URLSearchParams();
     // Nunca poner tokens (/q/...) ni secretos en ?next=
-    const safeNext = pathname.startsWith('/q/') ? '/q' : pathname;
+    // Tampoco devolver al área cliente vía ?next= del login de farmacia.
+    const safeNext = pathname.startsWith('/q/')
+      ? '/q'
+      : pathname.startsWith('/cuenta')
+        ? '/'
+        : pathname;
     params.set('next', safeNext);
     const response = middlewareRedirect(
       request,
@@ -75,6 +91,9 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!_next/static|_next/image|favicon.ico|images/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    /*
+     * Excluir estáticos PWA/cliente: no deben pasar por auth ni acabar en /login.
+     */
+    '/((?!_next/static|_next/image|favicon.ico|images/|icons/|manifest\\.webmanifest|sw-customer\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

@@ -25,6 +25,13 @@ function redirectToPath(pathWithOptionalQuery: string): NextResponse {
  */
 const ALLOWED_NEXT = new Set(['/first-access', '/auth/invitations']);
 
+/** Rutas de cuenta cliente tras confirmar email (allowlist cerrada). */
+const ALLOWED_CUSTOMER_NEXT = new Set([
+  '/cuenta',
+  '/cuenta/mis-farmacias',
+  '/cuenta/entrar',
+]);
+
 /**
  * Devuelve path allowlisted. Para /auth/invitations permite ?for=email
  * solo como ayuda UX (no autoriza).
@@ -38,6 +45,15 @@ function safeNextPath(raw: string | null): string {
   }
 
   const pathOnly = raw.split('?')[0]?.split('#')[0] ?? fallback;
+
+  if (ALLOWED_CUSTOMER_NEXT.has(pathOnly)) {
+    return pathOnly;
+  }
+  // /e/{publicId}/cuenta — contexto farmacia tras confirmar registro
+  if (/^\/e\/[a-z0-9][a-z0-9\-]{2,63}\/cuenta$/.test(pathOnly)) {
+    return pathOnly;
+  }
+
   if (!ALLOWED_NEXT.has(pathOnly)) {
     return fallback;
   }
@@ -56,8 +72,25 @@ function safeNextPath(raw: string | null): string {
   return pathOnly;
 }
 
-function redirectToLogin(_request: NextRequest, errorCode: string) {
-  return redirectToPath(`/login?error=${encodeURIComponent(errorCode)}`);
+function loginPathForNext(nextPath: string): string {
+  if (
+    nextPath === '/cuenta' ||
+    nextPath.startsWith('/cuenta/') ||
+    /^\/e\/[^/]+\/cuenta$/.test(nextPath)
+  ) {
+    const m = nextPath.match(/^(\/e\/[^/]+)\/cuenta$/);
+    return m ? `${m[1]}/cuenta/entrar` : '/cuenta/entrar';
+  }
+  return '/login';
+}
+
+function redirectToLogin(
+  _request: NextRequest,
+  errorCode: string,
+  nextPath = '/first-access'
+) {
+  const base = loginPathForNext(nextPath);
+  return redirectToPath(`${base}?error=${encodeURIComponent(errorCode)}`);
 }
 
 function createCallbackClient(request: NextRequest, nextPath: string) {
@@ -87,7 +120,12 @@ function createCallbackClient(request: NextRequest, nextPath: string) {
   return { supabase, getResponse: () => response };
 }
 
-const ALLOWED_OTP: EmailOtpType[] = ['invite', 'magiclink', 'email'];
+const ALLOWED_OTP: EmailOtpType[] = [
+  'signup',
+  'invite',
+  'magiclink',
+  'email',
+];
 
 /**
  * Callback Auth SSR.
@@ -127,7 +165,7 @@ export async function GET(request: NextRequest) {
         redirect_to: '/login',
         error_code: 'auth_callback',
       });
-      return redirectToLogin(request, 'auth_callback');
+      return redirectToLogin(request, 'auth_callback', nextPath);
     }
 
     const { supabase, getResponse } = createCallbackClient(request, nextPath);
@@ -141,16 +179,17 @@ export async function GET(request: NextRequest) {
     if (error) {
       console.error('[auth/callback] verifyOtp', error.message);
       const { code: errorCode } = classifyAuthCallbackError(error.message);
+      const failLogin = loginPathForNext(nextPath);
       authFlowDiag('callback_redirect', {
         reason: 'verify_otp_failed',
         otp_type: otpType,
         verify_ok: false,
         error_code: errorCode,
-        redirect_to: '/login',
+        redirect_to: failLogin,
         has_session: false,
-        redirect_host: appUrl(request, '/login').host,
+        redirect_host: appUrl(request, failLogin).host,
       });
-      return redirectToLogin(request, errorCode);
+      return redirectToLogin(request, errorCode, nextPath);
     }
 
     authFlowDiag('callback_redirect', {
@@ -177,10 +216,10 @@ export async function GET(request: NextRequest) {
         reason: 'exchange_code_failed',
         verify_ok: false,
         error_code: errorCode,
-        redirect_to: '/login',
+        redirect_to: loginPathForNext(nextPath),
         has_session: false,
       });
-      return redirectToLogin(request, errorCode);
+      return redirectToLogin(request, errorCode, nextPath);
     }
 
     authFlowDiag('callback_redirect', {
@@ -195,9 +234,9 @@ export async function GET(request: NextRequest) {
 
   authFlowDiag('callback_redirect', {
     reason: 'missing_token_and_code',
-    redirect_to: '/login',
+    redirect_to: loginPathForNext(nextPath),
     error_code: 'missing_code',
     has_session: false,
   });
-  return redirectToLogin(request, 'missing_code');
+  return redirectToLogin(request, 'missing_code', nextPath);
 }

@@ -1,10 +1,9 @@
-import Link from 'next/link';
+import { redirect } from 'next/navigation';
 
 import { CustomerRegisterForm } from '@/components/customer/customer-register-form';
 import { CustomerShell } from '@/components/customer/customer-shell';
 import { getCustomerProfile } from '@/lib/customer/queries';
 import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
-import { redirect } from 'next/navigation';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,16 +23,17 @@ export default async function CustomerRegisterPage({
 
   return (
     <CustomerShell
+      variant="auth"
       publicId={publicId}
       pharmacyLabel={pharmacyLabel}
       title="Crear cuenta"
     >
-      <CustomerRegisterForm publicId={publicId} />
-      <p className="mt-4 text-center text-sm text-muted-foreground">
-        <Link href={`/e/${publicId}/cuenta`} className="hover:underline">
-          Volver a Mi cuenta
-        </Link>
-      </p>
+      <CustomerRegisterForm
+        publicId={publicId}
+        redirectTo={`/e/${publicId}/cuenta`}
+        title="Crear cuenta"
+        subtitle="Crea tu cuenta de cliente FarmaFácil."
+      />
     </CustomerShell>
   );
 }

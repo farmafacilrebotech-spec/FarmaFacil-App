@@ -34,7 +34,9 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next-perf-prod/types/**/*.ts",
-    ".next-build/types/**/*.ts"
+    ".next-build/types/**/*.ts",
+    ".next-customer-pwa/types/**/*.ts",
+    ".next-customer-pwa-build/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

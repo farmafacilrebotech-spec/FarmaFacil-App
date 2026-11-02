@@ -16,6 +16,11 @@ import {
   isValidRecoveryEmail,
   mapPasswordRecoveryAuthError,
 } from '@/lib/auth/password-recovery-shared';
+import {
+  customerLoginPathFromReturn,
+  isCustomerAccountReturnPath,
+  rememberCustomerAuthAudience,
+} from '@/lib/customer/auth-return';
 
 /**
  * Pantalla de SOLICITUD de recuperación.
@@ -30,6 +35,12 @@ function ForgotPasswordForm() {
   const [error, setError] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
 
+  const nextParam = searchParams.get('next');
+  const isCustomer = isCustomerAccountReturnPath(nextParam);
+  const backHref = isCustomer
+    ? customerLoginPathFromReturn(nextParam)
+    : '/login';
+
   const linkError = searchParams.get('error');
   const linkErrorMessage =
     linkError === 'recovery_invalid'
@@ -39,9 +50,16 @@ function ForgotPasswordForm() {
         : null;
 
   React.useEffect(() => {
-    // Limpia ?error= de la barra al montar para no confundir una nueva solicitud.
+    if (isCustomer) rememberCustomerAuthAudience();
+  }, [isCustomer]);
+
+  React.useEffect(() => {
+    // Limpia ?error= de la barra al montar; conserva ?next= (retorno cliente).
     if (linkError) {
-      router.replace('/forgot-password', { scroll: false });
+      const q = nextParam
+        ? `?next=${encodeURIComponent(nextParam)}`
+        : '';
+      router.replace(`/forgot-password${q}`, { scroll: false });
     }
     // Solo al montar / cuando cambia el error entrante.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -91,7 +109,11 @@ function ForgotPasswordForm() {
   return (
     <div className="animate-slide-up">
       <div className="mb-8 flex justify-center">
-        <BrandLogo size={96} showTagline />
+        {isCustomer ? (
+          <BrandLogo size={112} />
+        ) : (
+          <BrandLogo size={96} showTagline />
+        )}
       </div>
 
       <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
@@ -171,7 +193,7 @@ function ForgotPasswordForm() {
 
       <div className="mt-6 text-center">
         <Link
-          href="/login"
+          href={backHref}
           className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Volver a iniciar sesión
@@ -181,22 +203,22 @@ function ForgotPasswordForm() {
   );
 }
 
+function ForgotPasswordFallback() {
+  return (
+    <div className="animate-slide-up">
+      <div className="mb-8 flex justify-center">
+        <BrandLogo size={112} />
+      </div>
+      <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
+        <p className="text-center text-sm text-muted-foreground">Cargando…</p>
+      </div>
+    </div>
+  );
+}
+
 export default function ForgotPasswordPage() {
   return (
-    <React.Suspense
-      fallback={
-        <div className="animate-slide-up">
-          <div className="mb-8 flex justify-center">
-            <BrandLogo size={96} showTagline />
-          </div>
-          <div className="rounded-2xl border border-border bg-card p-8 shadow-soft-lg">
-            <p className="text-center text-sm text-muted-foreground">
-              Cargando…
-            </p>
-          </div>
-        </div>
-      }
-    >
+    <React.Suspense fallback={<ForgotPasswordFallback />}>
       <ForgotPasswordForm />
     </React.Suspense>
   );

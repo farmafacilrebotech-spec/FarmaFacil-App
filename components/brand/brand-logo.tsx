@@ -14,6 +14,9 @@ import { cn } from '@/lib/utils';
  *
  * Asset fuente UI: farmafacil-logo-512.png (448KB).
  * El PNG original (~952KB) se reserva fuera del render web habitual.
+ *
+ * No aplicar máscaras/recortes que corten el aro plateado, el nombre o la cruz.
+ * El prop `clip` se ignora (compat); el asset se muestra completo con object-contain.
  */
 
 type Variant = 'full' | 'mark' | 'wordmark';
@@ -23,8 +26,15 @@ interface BrandLogoProps {
   className?: string;
   /** Ancho del emblema; la altura respeta la proporción 709×711. */
   size?: number;
-  /** Etiqueta auxiliar bajo el emblema (p. ej. «Panel de gestión»). */
+  /**
+   * Etiqueta auxiliar bajo el emblema.
+   * Por defecto «Panel de gestión» (acceso farmacia). No usar en cliente.
+   */
   showTagline?: boolean;
+  /**
+   * @deprecated No recortar el logo. Se acepta por compatibilidad y se ignora.
+   */
+  clip?: 'none' | 'circle';
 }
 
 const LOGO_FULL = '/images/logos/farmafacil-logo-512.png';
@@ -35,7 +45,10 @@ export function BrandLogo({
   className,
   size = 36,
   showTagline = false,
+  clip: _clip = 'none',
 }: BrandLogoProps) {
+  void _clip;
+
   if (variant === 'wordmark') {
     return (
       <span
@@ -47,7 +60,7 @@ export function BrandLogo({
     );
   }
 
-  // En UI típica (≤96px) el mark de 60KB evita descargar el logo grande.
+  // Emblema grande (≥112): PNG 512 completo. Mark solo en UI pequeña.
   const src = variant === 'mark' || size <= 96 ? LOGO_MARK : LOGO_FULL;
   const width = size;
   const height = Math.round(size * (711 / 709));

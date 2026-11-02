@@ -1,6 +1,10 @@
 import Link from 'next/link';
 
 import { BrandLogo } from '@/components/brand';
+import { CustomerPwaRegister } from '@/components/customer/customer-pwa-register';
+import { SavePharmacyButton } from '@/components/customer/save-pharmacy-button';
+import { getCustomerProfile } from '@/lib/customer/queries';
+import { isPharmacySaved } from '@/lib/customer/saved-pharmacies';
 import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
 
 export const dynamic = 'force-dynamic';
@@ -9,6 +13,7 @@ export const dynamic = 'force-dynamic';
  * Destino público del QR de farmacia.
  * NO autentica al visitante. NO crea relación farmacia↔cliente por sí solo.
  * El catálogo es usable sin cuenta; «Mi cuenta» es opcional y global FarmaFácil.
+ * Guardar en Mis farmacias requiere acción explícita del cliente.
  */
 export default async function PublicPharmacyEntrypointPage({
   params,
@@ -16,6 +21,10 @@ export default async function PublicPharmacyEntrypointPage({
   params: { publicId: string };
 }) {
   const resolved = await resolvePublicEntrypoint(params.publicId);
+  const customer = await getCustomerProfile();
+  const saved = customer.ok
+    ? await isPharmacySaved(params.publicId)
+    : false;
 
   if (!resolved.ok) {
     return (
@@ -45,6 +54,7 @@ export default async function PublicPharmacyEntrypointPage({
 
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#2EC4C7] px-4">
+      <CustomerPwaRegister />
       <BrandLogo size={96} />
       <div className="mt-8 w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
         <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
@@ -68,11 +78,25 @@ export default async function PublicPharmacyEntrypointPage({
         >
           Ver catálogo y solicitar
         </Link>
+        <div className="mt-3 text-left">
+          <SavePharmacyButton
+            publicId={params.publicId}
+            pharmacyName={resolved.pharmacyName}
+            initiallySaved={saved}
+            isAuthenticated={customer.ok}
+          />
+        </div>
         <Link
           href={`/e/${params.publicId}/cuenta`}
           className="mt-3 inline-flex w-full items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-3 text-sm font-semibold text-slate-800"
         >
           Mi cuenta
+        </Link>
+        <Link
+          href="/cuenta/mis-farmacias"
+          className="mt-2 inline-flex w-full items-center justify-center text-sm font-medium text-slate-600 hover:underline"
+        >
+          Mis farmacias
         </Link>
         <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
           Si eres profesional de la farmacia, usa el acceso de empleados para
