@@ -11,11 +11,13 @@ export type SubmitPublicCatalogRequestInput = {
   customerPhone: string;
   privacyAccepted: boolean;
   customerNote?: string;
+  /** Opt-in vínculo cuenta (RPC). false = invitado aunque haya sesión. */
+  linkToCustomer?: boolean;
 };
 
 /**
  * Server action: solicitud pública QR.
- * No acepta pharmacy_id del cliente.
+ * No acepta pharmacy_id ni customer_profile_id del cliente.
  */
 export async function submitPublicCatalogRequestAction(
   input: SubmitPublicCatalogRequestInput
@@ -30,5 +32,6 @@ export async function submitPublicCatalogRequestAction(
       privacyAccepted: input.privacyAccepted,
       customerNote: input.customerNote ?? null,
     },
+    linkToCustomer: input.linkToCustomer === true,
   });
 }
