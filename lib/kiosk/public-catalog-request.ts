@@ -21,6 +21,8 @@ export type CreatePublicCatalogRequestOk = {
   paymentStatus: string;
   /** true = no presentar total como precio final ni venta gratuita. */
   pricingPending: boolean;
+  /** Pedido asociado a auth.uid() customer|both (RPC 072). */
+  linkedToCustomer: boolean;
 };
 
 export type CreatePublicCatalogRequestResult =
@@ -37,6 +39,11 @@ export async function createPublicCatalogRequest(input: {
   clientRequestId: string;
   lines: PublicRequestLineInput[];
   contact: PublicRequestContactInput;
+  /**
+   * Opt-in de vínculo a auth.uid() (RPC 072). Nunca envía profile_id.
+   * false = pedido invitado aunque haya sesión (dispositivos compartidos).
+   */
+  linkToCustomer?: boolean;
 }): Promise<CreatePublicCatalogRequestResult> {
   const validated = validatePublicCatalogRequestInput(input);
   if (!validated.ok) {
@@ -47,6 +54,8 @@ export async function createPublicCatalogRequest(input: {
     product_id: line.productId,
     quantity: line.quantity,
   }));
+
+  const linkToCustomer = input.linkToCustomer === true;
 
   const supabase = createClient();
   const { data, error } = await supabase.rpc(
@@ -59,6 +68,7 @@ export async function createPublicCatalogRequest(input: {
       p_customer_phone: validated.customerPhone,
       p_privacy_accepted: true,
       p_customer_note: validated.customerNote,
+      p_link_to_customer: linkToCustomer,
     }
   );
 
@@ -79,7 +89,7 @@ export async function createPublicCatalogRequest(input: {
         ok: false,
         code: 'unavailable',
         message:
-          'Las solicitudes del catálogo aún no están disponibles (falta migración 057).',
+          'Las solicitudes del catálogo aún no están disponibles (falta migración 057/072 o firma RPC).',
       };
     }
     // Contador de pedidos desincronizado / carrera de número (23505 unique_violation).
@@ -137,5 +147,6 @@ export async function createPublicCatalogRequest(input: {
     orderStatus: String(payload.order_status ?? 'request_pending'),
     paymentStatus,
     pricingPending,
+    linkedToCustomer: payload.linked_to_customer === true,
   };
 }

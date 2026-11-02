@@ -1,0 +1,16 @@
+-- RECOVERY / DOWN for 072_customer_linked_qr_orders_v1
+-- Solo tras autorización.
+--
+-- Efecto: elimina la firma 8-arg y restaura el cuerpo 057 (7-arg) sin vínculo.
+-- NO borra filas ni anula customer_profile_id ya escritos.
+--
+-- Procedimiento:
+-- 1) DROP FUNCTION IF EXISTS public.ff_public_catalog_create_request_v1(
+--      text, jsonb, text, text, text, boolean, text, boolean);
+-- 2) Re-ejecutar el CREATE OR REPLACE de
+--    supabase/migrations/057_public_catalog_requests_v1.sql
+--    (función ff_public_catalog_create_request_v1 completa, 7 args).
+-- 3) GRANT EXECUTE … TO anon, authenticated, service_role;
+--
+-- Pedidos ya vinculados siguen visibles en Mis pedidos (columna intacta).
+-- Nuevos pedidos tras DOWN no se vincularán.

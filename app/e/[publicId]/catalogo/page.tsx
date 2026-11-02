@@ -7,6 +7,7 @@ import { PublicCatalogRequestClient } from '@/components/kiosk/public-catalog-re
 import { getCustomerProfile } from '@/lib/customer/queries';
 import { isPharmacySaved } from '@/lib/customer/saved-pharmacies';
 import { listPublicCatalog } from '@/lib/kiosk/public-catalog';
+import { buildPublicQrCheckoutPrefill } from '@/lib/kiosk/public-qr-customer-link';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,16 @@ export default async function PublicPharmacyCatalogPage({
   const saved = customer.ok
     ? await isPharmacySaved(params.publicId)
     : false;
+  const checkoutPrefill = customer.ok
+    ? buildPublicQrCheckoutPrefill({
+        firstName: customer.profile.firstName,
+        lastName: customer.profile.lastName,
+        fullName: customer.profile.fullName,
+        phone: customer.profile.phone,
+        email: customer.profile.email,
+        privacyAcceptedAt: customer.profile.privacyAcceptedAt,
+      })
+    : null;
 
   if (!catalog.ok) {
     return (
@@ -110,6 +121,7 @@ export default async function PublicPharmacyCatalogPage({
           catalogMode={catalog.catalogMode}
           note={catalog.note}
           items={catalog.items}
+          authenticatedPrefill={checkoutPrefill}
         />
       </div>
     </div>
