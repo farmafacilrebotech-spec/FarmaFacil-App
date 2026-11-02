@@ -7,7 +7,7 @@ import {
 
 /**
  * Gate de páginas protegidas bajo /e/{publicId}/cuenta/*.
- * Redirige a entrar/registro según el caso; no usa /login del panel staff.
+ * Redirige a entrar / activar cliente según el caso; no usa /login del panel staff.
  */
 export async function requireCustomerForPublicId(
   publicId: string
@@ -17,6 +17,7 @@ export async function requireCustomerForPublicId(
     if (result.code === 'unauthenticated') {
       redirect(`/e/${publicId}/cuenta/entrar`);
     }
+    // staff_needs_enable y not_customer → hub con flujo de activación
     redirect(`/e/${publicId}/cuenta`);
   }
   return result.profile;

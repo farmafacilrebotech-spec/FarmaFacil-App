@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { getAppBaseUrl } from '@/lib/auth/app-url';
 import { createClient } from '@/lib/supabase/server';
+import { looksLikeObfuscatedExistingSignup } from '@/lib/customer/account-kind';
 import {
   getCustomerProfile,
   listCustomerAddresses,
@@ -77,7 +78,8 @@ export async function registerCustomerAction(input: {
     if (m.includes('already registered') || m.includes('already been registered')) {
       return {
         ok: false,
-        error: 'Ya existe una cuenta con este email. Inicia sesión o recupera la contraseña.',
+        error:
+          'Si ya tienes cuenta FarmaFácil, inicia sesión. El personal puede activar Cliente desde Mi cuenta.',
         code: 'email_taken',
       };
     }
@@ -87,15 +89,26 @@ export async function registerCustomerAction(input: {
 
   const user = data.user;
   const session = data.session;
+
+  // Confirmaciones ON: Auth ofusca emails existentes (user sin identities / sin sesión).
+  if (looksLikeObfuscatedExistingSignup({ session, user })) {
+    return {
+      ok: false,
+      error:
+        'Si ya tienes cuenta FarmaFácil, inicia sesión. El personal puede activar Cliente desde Mi cuenta.',
+      code: 'email_taken',
+    };
+  }
+
   // Si no hay sesión, Auth exige confirmación de email (no fingir login).
   const needsEmailConfirmation = !session;
 
   if (user && session) {
-    // Asegurar campos en profiles por si el trigger no rellenó consent
+    // Consent / datos: el trigger ya fijó account_kind=customer.
+    // No forzar account_kind aquí (el protect trigger lo bloquearía en staff→customer).
     await supabase
       .from('profiles')
       .update({
-        account_kind: 'customer',
         first_name: parsed.firstName,
         last_name: parsed.lastName,
         full_name: parsed.fullName,
@@ -113,6 +126,88 @@ export async function registerCustomerAction(input: {
     ok: true,
     needsEmailConfirmation,
     email: parsed.email,
+  };
+}
+
+/**
+ * Activación voluntaria del área cliente (staff → both) vía RPC 071.
+ * Registra consentimiento en servidor; no eleva permisos de panel.
+ */
+export async function enableCustomerSelfAction(input: {
+  privacyAccepted: boolean;
+  marketingConsent: boolean;
+  firstName?: string;
+  lastName?: string;
+  phone?: string;
+  publicId?: string;
+}): Promise<
+  CustomerActionResult<{ accountKind: string; previousKind: string }>
+> {
+  if (!input.privacyAccepted) {
+    return {
+      ok: false,
+      error: 'Debes aceptar las condiciones y la política de privacidad.',
+      code: 'privacy_required',
+    };
+  }
+
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: 'Debes iniciar sesión.', code: 'unauthenticated' };
+  }
+
+  const { data, error } = await supabase.rpc('ff_customer_enable_self_v1', {
+    p_privacy_accepted: true,
+    p_marketing_consent: Boolean(input.marketingConsent),
+    p_first_name: input.firstName?.trim() || null,
+    p_last_name: input.lastName?.trim() || null,
+    p_phone: input.phone?.trim() || null,
+  });
+
+  if (error) {
+    console.error('[customer] enable_self', error.code, error.message);
+    if (
+      error.code === '42883' ||
+      error.message.toLowerCase().includes('does not exist')
+    ) {
+      return {
+        ok: false,
+        error: 'Falta aplicar la migración 071 (doble rol).',
+        code: 'migration_missing',
+      };
+    }
+    return { ok: false, error: 'No se ha podido activar el área cliente.' };
+  }
+
+  const body = data as {
+    status?: string;
+    account_kind?: string;
+    previous_kind?: string;
+  };
+
+  if (body?.status === 'privacy_required') {
+    return {
+      ok: false,
+      error: 'Debes aceptar las condiciones y la política de privacidad.',
+      code: 'privacy_required',
+    };
+  }
+  if (body?.status !== 'ok') {
+    return {
+      ok: false,
+      error: 'No se ha podido activar el área cliente.',
+      code: body?.status,
+    };
+  }
+
+  revalidateCuenta(input.publicId);
+  return {
+    ok: true,
+    accountKind: String(body.account_kind ?? 'both'),
+    previousKind: String(body.previous_kind ?? 'staff'),
   };
 }
 
@@ -173,8 +268,7 @@ export async function updateCustomerProfileAction(input: {
         ? profile.profile.marketingConsentAt ?? new Date().toISOString()
         : null,
     })
-    .eq('id', profile.profile.id)
-    .eq('account_kind', 'customer');
+    .eq('id', profile.profile.id);
 
   if (error) {
     console.error('[customer] update profile', error.code, error.message);

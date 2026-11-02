@@ -1,4 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
+import {
+  isCustomerCapable,
+  normalizeAccountKind,
+  type AccountKind,
+} from '@/lib/customer/account-kind';
 
 export type CustomerProfile = {
   id: string;
@@ -9,6 +14,7 @@ export type CustomerProfile = {
   phone: string | null;
   privacyAcceptedAt: string | null;
   marketingConsentAt: string | null;
+  accountKind: AccountKind;
 };
 
 export type CustomerAddress = {
@@ -37,7 +43,11 @@ export type CustomerOrderSummary = {
 
 export async function getCustomerProfile(): Promise<
   | { ok: true; profile: CustomerProfile }
-  | { ok: false; error: string; code?: 'unauthenticated' | 'not_customer' }
+  | {
+      ok: false;
+      error: string;
+      code?: 'unauthenticated' | 'not_customer' | 'staff_needs_enable';
+    }
 > {
   const supabase = createClient();
   const {
@@ -60,21 +70,27 @@ export async function getCustomerProfile(): Promise<
     return {
       ok: false,
       error:
-        'No se ha podido cargar el perfil. Si acaba de aplicarse la migración 064, reinicia la sesión.',
+        'No se ha podido cargar el perfil. Si acaba de aplicarse la migración 064/071, reinicia la sesión.',
     };
   }
   if (!data) {
     return { ok: false, error: 'Perfil no encontrado.', code: 'not_customer' };
   }
-  if ((data as { account_kind?: string }).account_kind !== 'customer') {
+
+  const row = data as Record<string, unknown>;
+  const accountKind = normalizeAccountKind(
+    (row.account_kind as string | null) ?? null
+  );
+
+  if (!isCustomerCapable(accountKind)) {
     return {
       ok: false,
-      error: 'Esta cuenta no es una cuenta de cliente FarmaFácil.',
-      code: 'not_customer',
+      error:
+        'Tu cuenta de personal aún no tiene el área cliente activada. Puedes activarla aquí.',
+      code: 'staff_needs_enable',
     };
   }
 
-  const row = data as Record<string, unknown>;
   return {
     ok: true,
     profile: {
@@ -86,6 +102,7 @@ export async function getCustomerProfile(): Promise<
       phone: (row.phone as string | null) ?? null,
       privacyAcceptedAt: (row.privacy_accepted_at as string | null) ?? null,
       marketingConsentAt: (row.marketing_consent_at as string | null) ?? null,
+      accountKind,
     },
   };
 }
