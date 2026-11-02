@@ -159,10 +159,9 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
     };
   }
 
-  // Clientes no deben entrar en el enrutado de panel plataforma/farmacia.
-  if (profile.accountKind === 'customer') {
-    return { status: 'customer', profile };
-  }
+  // No cortar por account_kind=customer antes de memberships/invites:
+  // un cliente con invitación pendiente debe poder aceptar; tras accept
+  // (customer→both en RPC) las memberships active abren el panel.
 
   const platformRole = await hasPlatformSuperAdminRole(profile.id);
 
@@ -213,6 +212,7 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
 
   if (pendingInvitations.length > 0) {
     // Usuario establecido (legal vigente) → aceptar invitaciones sin first-access.
+    // Invited/pending NO concede panel operativo (solo status invited).
     const hasLegal = await hasCurrentLegalAcceptance(profile.id);
     return {
       status: 'invited',
@@ -220,6 +220,11 @@ export async function resolveAppAccess(): Promise<AppAccessResult> {
       pendingInvitations,
       needsFirstAccess: !hasLegal,
     };
+  }
+
+  // Sin memberships active ni invitaciones: cliente puro → área cliente.
+  if (profile.accountKind === 'customer') {
+    return { status: 'customer', profile };
   }
 
   const support = await hasPlatformSupportRole(profile.id);

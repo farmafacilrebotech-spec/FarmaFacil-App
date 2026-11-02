@@ -8,8 +8,8 @@ export type CurrentProfile = {
   fullName: string | null;
   /** Preferencia de farmacia; nunca autoriza por sí sola. */
   lastPharmacyId: string | null;
-  /** staff = panel/farmacia · customer = cuenta cliente FarmaFácil. */
-  accountKind: 'staff' | 'customer';
+  /** staff | customer | both (071). Panel nunca se autoriza solo por both. */
+  accountKind: 'staff' | 'customer' | 'both';
 };
 
 export type PlatformAccessResult =
@@ -196,10 +196,17 @@ export const getCurrentProfile = cache(async (): Promise<{
     };
   }
 
+  const rawKind = String(
+    (profile as { account_kind?: string }).account_kind ?? 'staff'
+  )
+    .trim()
+    .toLowerCase();
   const kind =
-    (profile as { account_kind?: string }).account_kind === 'customer'
-      ? 'customer'
-      : 'staff';
+    rawKind === 'both'
+      ? 'both'
+      : rawKind === 'customer'
+        ? 'customer'
+        : 'staff';
 
   return {
     authenticated: true,

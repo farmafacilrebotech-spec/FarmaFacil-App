@@ -62,11 +62,14 @@ export function CustomerRegisterForm({
       });
       if (!result.ok) {
         setError(result.error);
+        if (result.code === 'email_taken') {
+          setSuccess(null);
+        }
         return;
       }
       if (result.needsEmailConfirmation) {
         setSuccess(
-          `Cuenta creada. Te hemos enviado un email a ${result.email} para confirmarla. Hasta entonces no has iniciado sesión.`
+          `Cuenta creada. Te hemos enviado un email a ${result.email} para confirmarla. Hasta entonces no has iniciado sesión. Si ya tenías cuenta, inicia sesión y activa Cliente desde Mi cuenta.`
         );
         return;
       }
