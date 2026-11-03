@@ -1,20 +1,10 @@
 import { CustomerShell } from '@/components/customer/customer-shell';
+import { customerOrderListPresentation } from '@/lib/customer/order-display';
 import { listCustomerOrders } from '@/lib/customer/queries';
 import { requireCustomerForPublicId } from '@/lib/customer/require-customer';
 import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
 
 export const dynamic = 'force-dynamic';
-
-function formatMoney(amount: number, currency: string) {
-  try {
-    return new Intl.NumberFormat('es-ES', {
-      style: 'currency',
-      currency: currency || 'EUR',
-    }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
-}
 
 function formatDate(iso: string) {
   try {
@@ -60,29 +50,30 @@ export default async function CustomerOrdersPage({
         </p>
       ) : (
         <ul className="space-y-3">
-          {orders.orders.map((o) => (
-            <li
-              key={o.id}
-              className="rounded-2xl border border-border bg-card p-4 shadow-soft"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="font-medium text-foreground">
-                    #{o.displayNumber}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {formatDate(o.createdAt)}
-                  </p>
+          {orders.orders.map((o) => {
+            const { statusLabel, amountLabel } = customerOrderListPresentation(o);
+            return (
+              <li
+                key={o.id}
+                className="rounded-2xl border border-border bg-card p-4 shadow-soft"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">
+                      #{o.displayNumber}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {formatDate(o.createdAt)}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-foreground">
+                    {statusLabel}
+                  </span>
                 </div>
-                <span className="rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium capitalize text-foreground">
-                  {o.status}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {formatMoney(o.totalAmount, o.currency)}
-              </p>
-            </li>
-          ))}
+                <p className="mt-2 text-sm text-muted-foreground">{amountLabel}</p>
+              </li>
+            );
+          })}
         </ul>
       )}
     </CustomerShell>

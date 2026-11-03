@@ -35,8 +35,16 @@ export type CustomerOrderSummary = {
   pharmacyId: string;
   displayNumber: string;
   status: string;
+  /** Origen (public_qr, kiosk, …). Necesario para presentar el importe. */
+  source: string;
+  paymentStatus: string;
   totalAmount: number;
   currency: string;
+  /**
+   * NULL = importe no confirmado por la farmacia (total_amount puede ser > 0).
+   * ISO = confirmado (puede ser 0 €).
+   */
+  amountConfirmedAt: string | null;
   createdAt: string;
   customerName: string | null;
 };
@@ -157,7 +165,7 @@ export async function listCustomerOrders(): Promise<
   const { data, error } = await supabase
     .from('pharmacy_orders')
     .select(
-      'id, pharmacy_id, display_number, status, total_amount, currency, created_at, customer_name'
+      'id, pharmacy_id, display_number, status, source, payment_status, total_amount, currency, amount_confirmed_at, created_at, customer_name'
     )
     .eq('customer_profile_id', profile.profile.id)
     .order('created_at', { ascending: false })
@@ -179,8 +187,11 @@ export async function listCustomerOrders(): Promise<
       pharmacyId: r.pharmacy_id as string,
       displayNumber: r.display_number as string,
       status: r.status as string,
+      source: (r.source as string) ?? 'other',
+      paymentStatus: (r.payment_status as string) ?? 'unpaid',
       totalAmount: Number(r.total_amount ?? 0),
       currency: (r.currency as string) ?? 'EUR',
+      amountConfirmedAt: (r.amount_confirmed_at as string | null) ?? null,
       createdAt: r.created_at as string,
       customerName: (r.customer_name as string | null) ?? null,
     })),
