@@ -100,19 +100,19 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
       >
         <header className="flex shrink-0 flex-col items-center text-center">
           {/*
-            PNG oficial 709×711. Visual ~88–120 px móvil; hasta ~160 px kiosko.
-            object-contain vía BrandLogo; sin scale ni recorte.
+            PNG oficial 709×711 (esquinas negras opacas). Visual ~88–120 px
+            móvil; hasta ~160 px kiosko. BrandLogo aplica recorte circular CSS.
           */}
           <div
             className={cn(
-              'w-[clamp(5.5rem,22vw,7.5rem)]',
+              'aspect-square w-[clamp(5.5rem,22vw,7.5rem)]',
               '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:900px)]:w-[clamp(6.5rem,14vw,9rem)]',
               '[@media(orientation:portrait)_and_(min-width:700px)_and_(min-height:1400px)]:w-[clamp(7.5rem,12vw,10rem)]'
             )}
           >
             <BrandLogo
               size={200}
-              className="block w-full [&_img]:!h-auto [&_img]:!w-full [&_img]:object-contain"
+              className="flex h-full w-full [&>span]:!h-full [&>span]:!w-full"
             />
           </div>
 

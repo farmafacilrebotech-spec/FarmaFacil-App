@@ -12,11 +12,14 @@ import { cn } from '@/lib/utils';
  * - mark: mismo emblema a tamaño reducido (sidebar colapsado, header).
  * - wordmark: solo texto tipográfico (casos excepcionales).
  *
- * Asset fuente UI: farmafacil-logo-512.png (448KB).
- * El PNG original (~952KB) se reserva fuera del render web habitual.
+ * Assets UI: farmafacil-logo-512.png / farmafacil-mark.png.
+ * Esos PNG oficiales son cuadrados con fondo negro opaco fuera del aro;
+ * no hay variante con transparencia real en las esquinas. Se aplica
+ * recorte circular CSS (`rounded-full` + `overflow-hidden`) para ocultar
+ * las esquinas sin alterar cruz, tipografía, texto ni aro plateado.
  *
- * No aplicar máscaras/recortes que corten el aro plateado, el nombre o la cruz.
- * El prop `clip` se ignora (compat); el asset se muestra completo con object-contain.
+ * El prop `clip` se acepta por compatibilidad con callers existentes;
+ * el emblema siempre se muestra con recorte circular.
  */
 
 type Variant = 'full' | 'mark' | 'wordmark';
@@ -24,7 +27,7 @@ type Variant = 'full' | 'mark' | 'wordmark';
 interface BrandLogoProps {
   variant?: Variant;
   className?: string;
-  /** Ancho del emblema; la altura respeta la proporción 709×711. */
+  /** Diámetro del emblema circular (px). */
   size?: number;
   /**
    * Etiqueta auxiliar bajo el emblema.
@@ -32,7 +35,8 @@ interface BrandLogoProps {
    */
   showTagline?: boolean;
   /**
-   * @deprecated No recortar el logo. Se acepta por compatibilidad y se ignora.
+   * @deprecated El emblema siempre se recorta en círculo.
+   * Se acepta por compatibilidad con callers existentes.
    */
   clip?: 'none' | 'circle';
 }
@@ -60,21 +64,24 @@ export function BrandLogo({
     );
   }
 
-  // Emblema grande (≥112): PNG 512 completo. Mark solo en UI pequeña.
+  // Emblema grande (>96): PNG 512 completo. Mark en UI típica ≤96px.
   const src = variant === 'mark' || size <= 96 ? LOGO_MARK : LOGO_FULL;
-  const width = size;
-  const height = Math.round(size * (711 / 709));
 
   const emblem = (
-    <Image
-      src={src}
-      alt="FarmaFácil"
-      width={width}
-      height={height}
-      className="shrink-0 object-contain"
-      priority
-      sizes={`${size}px`}
-    />
+    <span
+      className="inline-flex shrink-0 overflow-hidden rounded-full"
+      style={{ width: size, height: size }}
+    >
+      <Image
+        src={src}
+        alt="FarmaFácil"
+        width={size}
+        height={size}
+        className="h-full w-full object-cover"
+        priority
+        sizes={`${size}px`}
+      />
+    </span>
   );
 
   if (variant === 'mark' || !showTagline) {
