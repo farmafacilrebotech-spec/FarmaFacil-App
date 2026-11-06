@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   clearPublicQrCart,
   emptyPublicQrCart,
+  filterPublicCatalogItems,
   filterPublicCatalogItemsByQuery,
   parsePublicQrCart,
   publicQrCartUnitCount,
@@ -47,6 +48,27 @@ describe('public QR cart persistence', () => {
       'bebé'
     );
     assert.equal(visible.length, 1);
+    assert.equal(cart.lines.length, 2);
+
+    const byCat = filterPublicCatalogItems(
+      [
+        {
+          name: 'Producto A',
+          category: 'Higiene bucodental',
+          subcategory: null,
+          sku: null,
+        },
+        {
+          name: 'Producto B',
+          category: 'Cuidado facial',
+          subcategory: null,
+          sku: null,
+        },
+      ],
+      { category: 'Cuidado facial' }
+    );
+    assert.equal(byCat.length, 1);
+    assert.equal(byCat[0]?.name, 'Producto B');
     assert.equal(cart.lines.length, 2);
   });
 
