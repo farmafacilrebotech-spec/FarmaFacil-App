@@ -18,6 +18,10 @@ import { parseSpreadsheetFile } from '@/lib/import/parse-file';
 import type { ColumnMapping } from '@/lib/import/spreadsheet';
 import { createClient } from '@/lib/supabase/server';
 import { requirePharmacyCatalogAccess } from '@/lib/auth/access';
+import {
+  canManageCatalogProducts,
+  filterProductPatchForCapability,
+} from '@/lib/pharmacies/catalog-permissions';
 import { revalidatePath } from 'next/cache';
 
 export type ActionResult =
@@ -48,8 +52,11 @@ export async function createPharmacyProductAction(
   pharmacyId: string,
   raw: PharmacyProductInput
 ): Promise<CreateProductResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
+  if (!canManageCatalogProducts(access.capability)) {
+    return { ok: false, error: 'No autorizado.' };
+  }
 
   // Altas manuales = catálogo propio (mismo gate que import).
   if (access.via !== 'platform') {
@@ -94,7 +101,11 @@ export async function updatePharmacyProductAction(
   productId: string,
   raw: PharmacyProductInput
 ): Promise<ActionResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  // Intentamos manage; si solo hay stock, reintentamos en modo stock.
+  let access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
+  if (!access.ok) {
+    access = await requirePharmacyCatalogAccess(pharmacyId, 'stock');
+  }
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const parsed = pharmacyProductInputSchema.safeParse(raw);
@@ -105,11 +116,21 @@ export async function updatePharmacyProductAction(
     };
   }
 
+  const fullPatch = toProductUpdate(access.profile.id, parsed.data) as Record<
+    string,
+    unknown
+  >;
+  const filtered = filterProductPatchForCapability(
+    fullPatch,
+    access.capability
+  );
+  if (!filtered.ok) return { ok: false, error: filtered.error };
+
   const supabase = createClient();
   // No permitir editar proyecciones del maestro desde la farmacia (también enforced en SQL).
   let updateQuery = supabase
     .from('pharmacy_products')
-    .update(toProductUpdate(access.profile.id, parsed.data))
+    .update(filtered.patch)
     .eq('id', productId)
     .eq('pharmacy_id', pharmacyId);
   if (access.via !== 'platform') {
@@ -132,16 +153,22 @@ export async function setPharmacyProductActiveAction(
   productId: string,
   isActive: boolean
 ): Promise<ActionResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  let access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
+  if (!access.ok) {
+    access = await requirePharmacyCatalogAccess(pharmacyId, 'stock');
+  }
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
+
+  const filtered = filterProductPatchForCapability(
+    { is_active: isActive, updated_by: access.profile.id },
+    access.capability
+  );
+  if (!filtered.ok) return { ok: false, error: filtered.error };
 
   const supabase = createClient();
   const { error } = await supabase
     .from('pharmacy_products')
-    .update({
-      is_active: isActive,
-      updated_by: access.profile.id,
-    })
+    .update(filtered.patch)
     .eq('id', productId)
     .eq('pharmacy_id', pharmacyId);
 
@@ -208,8 +235,10 @@ export async function previewProductImportAction(
   pharmacyId: string,
   formData: FormData
 ): Promise<PreviewImportResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
-  if (!access.ok) return { ok: false, error: 'No autorizado.' };
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
+  if (!access.ok || !canManageCatalogProducts(access.capability)) {
+    return { ok: false, error: 'No autorizado.' };
+  }
 
   const modeGate = await requireOwnCatalogMode(pharmacyId);
   if (!modeGate.ok) return modeGate;
@@ -280,8 +309,10 @@ export async function confirmProductImportAction(
     }>;
   }
 ): Promise<ConfirmImportResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
-  if (!access.ok) return { ok: false, error: 'No autorizado.' };
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
+  if (!access.ok || !canManageCatalogProducts(access.capability)) {
+    return { ok: false, error: 'No autorizado.' };
+  }
 
   const modeGate = await requireOwnCatalogMode(pharmacyId);
   if (!modeGate.ok) return modeGate;
