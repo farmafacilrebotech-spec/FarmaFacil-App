@@ -66,7 +66,7 @@ export default async function PublicPharmacyCatalogPage({
   return (
     <div className="min-h-screen bg-[#F7FAFA] px-4 py-8">
       <CustomerPwaRegister />
-      <div className="mx-auto max-w-2xl">
+      <div className="mx-auto w-full max-w-6xl">
         <div className="mb-6 flex items-center justify-between gap-4">
           <BrandLogo size={56} />
           <div className="flex items-center gap-3">
@@ -95,7 +95,7 @@ export default async function PublicPharmacyCatalogPage({
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
             FarmaFácil · Catálogo
           </p>
-          <h1 className="mt-1 text-2xl font-semibold text-slate-900">
+          <h1 className="mt-1 text-2xl font-semibold text-[#0F2A2E] sm:text-3xl">
             {catalog.pharmacyName}
           </h1>
           <p className="mt-1 text-xs text-slate-400">
