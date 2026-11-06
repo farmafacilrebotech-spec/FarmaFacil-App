@@ -11,6 +11,7 @@ import {
   LifeBuoy,
   Calculator,
   MonitorSmartphone,
+  Mail,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -86,6 +87,13 @@ export const navItems: NavItem[] = [
     href: '/usuarios',
     icon: UserCog,
     description: 'Gestión de usuarios',
+    superAdminOnly: true,
+  },
+  {
+    label: 'Emails',
+    href: '/emails',
+    icon: Mail,
+    description: 'Plantillas corporativas (solo vista previa)',
     superAdminOnly: true,
   },
   {
