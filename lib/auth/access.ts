@@ -401,22 +401,38 @@ export async function redirectPathAfterLostPharmacyAccess(
 }
 
 /**
- * Acceso a catálogo de una farmacia:
- * - permiso platform (prioridad; SuperAdmin no queda bloqueado por operatividad), o
- * - membership active + farmacia comercialmente operable.
- * No debilita RLS: la BD sigue filtrando por ff_can_read_pharmacy / membership|platform write.
+ * Acceso a catálogo de una farmacia (matriz 074):
+ * - platform.pharmacies.write → manage completo
+ * - platform.pharmacies.read → solo read
+ * - tenant: membership active + operable + permiso:
+ *   - read → catalog.view
+ *   - manage | write → catalog.manage (altas, precios, ficha comercial)
+ *   - stock → catalog.stock.update u catalog.manage
+ *
+ * RLS/trigger 074 son la última línea; este helper evita operaciones no autorizadas en app.
  */
+export type PharmacyCatalogAccessMode = 'read' | 'write' | 'manage' | 'stock';
+
 export async function requirePharmacyCatalogAccess(
   pharmacyId: string,
-  mode: 'read' | 'write' = 'read'
+  mode: PharmacyCatalogAccessMode = 'read'
 ): Promise<
   | {
       ok: true;
       profile: CurrentProfile;
       via: 'membership' | 'platform';
+      /** Capacidad efectiva tras permisos. */
+      capability: 'read' | 'manage' | 'stock';
     }
   | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'error'; message?: string }
 > {
+  const normalized: 'read' | 'manage' | 'stock' =
+    mode === 'write' || mode === 'manage'
+      ? 'manage'
+      : mode === 'stock'
+        ? 'stock'
+        : 'read';
+
   const { profile, authenticated, error } = await getCurrentProfile();
   if (!authenticated) {
     return { ok: false, reason: 'unauthenticated' };
@@ -428,12 +444,12 @@ export async function requirePharmacyCatalogAccess(
   // Plataforma primero: gestión SuperAdmin aunque también sea member.
   const write = await hasPlatformPermission('platform.pharmacies.write');
   if (write.ok) {
-    return { ok: true, profile, via: 'platform' };
+    return { ok: true, profile, via: 'platform', capability: 'manage' };
   }
-  if (mode === 'read') {
+  if (normalized === 'read') {
     const read = await hasPlatformPermission('platform.pharmacies.read');
     if (read.ok) {
-      return { ok: true, profile, via: 'platform' };
+      return { ok: true, profile, via: 'platform', capability: 'read' };
     }
   }
 
@@ -448,10 +464,89 @@ export async function requirePharmacyCatalogAccess(
     return { ok: false, reason: 'forbidden' };
   }
 
-  return {
-    ok: true,
-    profile: membership.profile,
-    via: 'membership',
-  };
+  const supabase = createClient();
+  const permissionKey =
+    normalized === 'manage'
+      ? 'catalog.manage'
+      : normalized === 'stock'
+        ? 'catalog.stock.update'
+        : 'catalog.view';
+
+  const { data: hasPerm, error: permError } = await supabase.rpc(
+    'ff_has_pharmacy_permission',
+    {
+      p_pharmacy_id: pharmacyId,
+      p_permission_key: permissionKey,
+    }
+  );
+
+  if (permError) {
+    return {
+      ok: false,
+      reason: 'error',
+      message: 'No se ha podido verificar el permiso de catálogo.',
+    };
+  }
+
+  if (hasPerm === true) {
+    return {
+      ok: true,
+      profile: membership.profile,
+      via: 'membership',
+      capability: normalized,
+    };
+  }
+
+  // stock: aceptar también catalog.manage (OWNER/ADMIN)
+  if (normalized === 'stock') {
+    const { data: hasManage, error: manageError } = await supabase.rpc(
+      'ff_has_pharmacy_permission',
+      {
+        p_pharmacy_id: pharmacyId,
+        p_permission_key: 'catalog.manage',
+      }
+    );
+    if (manageError) {
+      return {
+        ok: false,
+        reason: 'error',
+        message: 'No se ha podido verificar el permiso de catálogo.',
+      };
+    }
+    if (hasManage === true) {
+      return {
+        ok: true,
+        profile: membership.profile,
+        via: 'membership',
+        capability: 'manage',
+      };
+    }
+  }
+
+  return { ok: false, reason: 'forbidden' };
+}
+
+/**
+ * Capacidad máxima de catálogo para UI (manage > stock > read).
+ * Requiere migración 074 (permisos catalog.*). Sin ella devolverá forbidden.
+ */
+export async function resolvePharmacyCatalogCapability(
+  pharmacyId: string
+): Promise<
+  | {
+      ok: true;
+      profile: CurrentProfile;
+      via: 'membership' | 'platform';
+      capability: 'read' | 'manage' | 'stock';
+    }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'error'; message?: string }
+> {
+  const manage = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
+  if (manage.ok) return manage;
+
+  const stock = await requirePharmacyCatalogAccess(pharmacyId, 'stock');
+  if (stock.ok) return stock;
+
+  return requirePharmacyCatalogAccess(pharmacyId, 'read');
 }
 

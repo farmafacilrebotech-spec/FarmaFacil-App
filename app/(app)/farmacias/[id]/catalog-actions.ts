@@ -40,7 +40,7 @@ function revalidateCatalog(pharmacyId: string) {
 export async function previewDemoCatalogSeedAction(
   pharmacyId: string
 ): Promise<DemoSeedPreviewResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
   if (!access.ok || access.via !== 'platform') {
     return {
       ok: false,
@@ -109,7 +109,7 @@ export async function previewDemoCatalogSeedAction(
 export async function seedDemoCatalogAction(
   pharmacyId: string
 ): Promise<DemoSeedResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
   if (!access.ok || access.via !== 'platform') {
     return {
       ok: false,
