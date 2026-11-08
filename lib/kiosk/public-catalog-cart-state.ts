@@ -123,9 +123,28 @@ export function filterPublicCatalogItemsByQuery<
     sku: string | null;
   },
 >(items: readonly T[], query: string): T[] {
-  const q = query.trim().toLowerCase();
-  if (!q) return [...items];
+  return filterPublicCatalogItems(items, { query });
+}
+
+/**
+ * Búsqueda + categoría exacta (chips). No remount del carrito.
+ */
+export function filterPublicCatalogItems<
+  T extends {
+    name: string;
+    category: string | null;
+    subcategory: string | null;
+    sku: string | null;
+  },
+>(
+  items: readonly T[],
+  input: { query?: string; category?: string | null }
+): T[] {
+  const q = (input.query ?? '').trim().toLowerCase();
+  const category = (input.category ?? '').trim();
   return items.filter((item) => {
+    if (category && (item.category ?? '').trim() !== category) return false;
+    if (!q) return true;
     const haystack = [
       item.name,
       item.category ?? '',

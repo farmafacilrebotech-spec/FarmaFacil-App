@@ -35,18 +35,26 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
-        url: '/images/logos/farmafacil-favicon-16.png',
-        sizes: '16x16',
-        type: 'image/png',
-      },
-      {
         url: '/images/logos/farmafacil-favicon-32.png',
         sizes: '32x32',
         type: 'image/png',
       },
+      {
+        url: '/images/logos/farmafacil-favicon-16.png',
+        sizes: '16x16',
+        type: 'image/png',
+      },
+      { url: '/favicon.ico', sizes: '32x32' },
       { url: '/favicon.png', type: 'image/png' },
     ],
-    apple: '/images/logos/farmafacil-apple-touch.png',
+    shortcut: '/images/logos/farmafacil-favicon-32.png',
+    apple: [
+      {
+        url: '/images/logos/farmafacil-apple-touch.png',
+        sizes: '180x180',
+        type: 'image/png',
+      },
+    ],
   },
   openGraph: {
     title: 'FarmaFácil · Panel de gestión',
