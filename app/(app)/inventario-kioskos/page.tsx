@@ -70,6 +70,16 @@ export default async function KioskInventoryPage({
           El simulador en Tarifas usa hipótesis de inventario inicial / lote /
           plazo: no crea ni modifica estos activos.
         </p>
+        <p className="mt-2 text-sm">
+          Compras y presupuestos de proveedor:{' '}
+          <Link
+            href="/proveedores"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            Proveedores
+          </Link>
+          .
+        </p>
       </header>
 
       {counts ? <InventoryCounts counts={counts} /> : null}

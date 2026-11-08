@@ -12,6 +12,7 @@ import {
   Calculator,
   MonitorSmartphone,
   Mail,
+  Truck,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -45,6 +46,13 @@ export const navItems: NavItem[] = [
     icon: MonitorSmartphone,
     description: 'Activos físicos KSK-…',
     supportVisible: true,
+  },
+  {
+    label: 'Proveedores',
+    href: '/proveedores',
+    icon: Truck,
+    description: 'Directorio, presupuestos y compras',
+    superAdminOnly: true,
   },
   {
     label: 'Clientes',
