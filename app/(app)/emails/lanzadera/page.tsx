@@ -14,6 +14,7 @@ import {
 } from '@/lib/email/lanzadera-outreach';
 import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
 import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
+import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,6 +23,7 @@ export const dynamic = 'force-dynamic';
  * No envía correo. sendEnabled permanece false.
  */
 export default async function LanzaderaEmailPreviewPage() {
+  await assertEmailsPageAccess();
   const h = headers();
   // Normaliza https://localhost → http://localhost (evita imágenes rotas en iframe).
   const origin = normalizeLanzaderaPreviewOrigin(

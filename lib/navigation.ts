@@ -93,7 +93,7 @@ export const navItems: NavItem[] = [
     label: 'Emails',
     href: '/emails',
     icon: Mail,
-    description: 'Plantillas corporativas (solo vista previa)',
+    description: 'Plantillas, borradores y redacción (envío bloqueado)',
     superAdminOnly: true,
   },
   {
