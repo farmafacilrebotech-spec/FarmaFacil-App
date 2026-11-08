@@ -61,18 +61,12 @@ export function filterProductPatchForCapability(
     return { ok: true, patch };
   }
 
-  // stock
-  const commercial = Object.keys(patch).filter((k) =>
-    (CATALOG_COMMERCIAL_FIELDS as readonly string[]).includes(k)
+  // stock: se ignoran (no aplican) campos comerciales; nunca se escriben.
+  const commercialAttempt = Object.keys(patch).filter(
+    (k) =>
+      (CATALOG_COMMERCIAL_FIELDS as readonly string[]).includes(k) &&
+      k !== 'updated_by'
   );
-  if (commercial.length > 0) {
-    return {
-      ok: false,
-      error:
-        'No tienes permiso para modificar precios ni datos comerciales del producto.',
-    };
-  }
-
   const allowed: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(patch)) {
     if (
@@ -87,7 +81,10 @@ export function filterProductPatchForCapability(
   ) {
     return {
       ok: false,
-      error: 'No hay cambios de stock o disponibilidad para guardar.',
+      error:
+        commercialAttempt.length > 0
+          ? 'No tienes permiso para modificar precios ni datos comerciales del producto.'
+          : 'No hay cambios de stock o disponibilidad para guardar.',
     };
   }
   return { ok: true, patch: allowed };
@@ -99,3 +96,19 @@ export function canManageCatalogProducts(
 ): boolean {
   return capability === 'manage';
 }
+
+/** Controles de UI derivados de la capacidad efectiva. */
+export function catalogUiPermissions(capability: CatalogWriteCapability): {
+  canCreateOrImport: boolean;
+  canEditCommercial: boolean;
+  canEditStock: boolean;
+  canToggleActive: boolean;
+} {
+  return {
+    canCreateOrImport: capability === 'manage',
+    canEditCommercial: capability === 'manage',
+    canEditStock: capability === 'manage' || capability === 'stock',
+    canToggleActive: capability === 'manage' || capability === 'stock',
+  };
+}
+

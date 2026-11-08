@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 
 import {
   canManageCatalogProducts,
+  catalogUiPermissions,
   filterProductPatchForCapability,
   isStockOnlyProductPatch,
 } from './catalog-permissions.ts';
@@ -28,21 +29,25 @@ describe('catalog-permissions matrix helpers', () => {
     assert.equal(r.ok, false);
   });
 
-  it('PHARMACIST/stock can update stock and availability, not price', () => {
+  it('PHARMACIST/stock updates stock and strips price (no write comercial)', () => {
     const ok = filterProductPatchForCapability(
-      { stock: 4, availability_status: 'available', updated_by: 'u' },
+      {
+        stock: 4,
+        availability_status: 'available',
+        price: 99,
+        name: 'Hack',
+        updated_by: 'u',
+      },
       'stock'
     );
     assert.equal(ok.ok, true);
     if (ok.ok) {
       assert.equal(ok.patch.stock, 4);
       assert.equal(ok.patch.price, undefined);
+      assert.equal(ok.patch.name, undefined);
     }
 
-    const denied = filterProductPatchForCapability(
-      { price: 12.5, stock: 4 },
-      'stock'
-    );
+    const denied = filterProductPatchForCapability({ price: 12.5 }, 'stock');
     assert.equal(denied.ok, false);
   });
 
@@ -56,9 +61,28 @@ describe('catalog-permissions matrix helpers', () => {
     assert.equal(canManageCatalogProducts('stock'), false);
   });
 
+  it('UI permissions follow matrix', () => {
+    assert.deepEqual(catalogUiPermissions('manage'), {
+      canCreateOrImport: true,
+      canEditCommercial: true,
+      canEditStock: true,
+      canToggleActive: true,
+    });
+    assert.deepEqual(catalogUiPermissions('stock'), {
+      canCreateOrImport: false,
+      canEditCommercial: false,
+      canEditStock: true,
+      canToggleActive: true,
+    });
+    assert.deepEqual(catalogUiPermissions('read'), {
+      canCreateOrImport: false,
+      canEditCommercial: false,
+      canEditStock: false,
+      canToggleActive: false,
+    });
+  });
+
   it('multifarmacia: helper is pharmacy-agnostic (isolation is authz+RLS)', () => {
-    // Documenta contrato: el filtro de campos no conoce pharmacy_id;
-    // el aislamiento lo imponen requirePharmacyCatalogAccess + RLS.
     const a = filterProductPatchForCapability({ stock: 1 }, 'stock');
     const b = filterProductPatchForCapability({ price: 1 }, 'stock');
     assert.equal(a.ok, true);

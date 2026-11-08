@@ -526,3 +526,27 @@ export async function requirePharmacyCatalogAccess(
   return { ok: false, reason: 'forbidden' };
 }
 
+/**
+ * Capacidad máxima de catálogo para UI (manage > stock > read).
+ * Requiere migración 074 (permisos catalog.*). Sin ella devolverá forbidden.
+ */
+export async function resolvePharmacyCatalogCapability(
+  pharmacyId: string
+): Promise<
+  | {
+      ok: true;
+      profile: CurrentProfile;
+      via: 'membership' | 'platform';
+      capability: 'read' | 'manage' | 'stock';
+    }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'error'; message?: string }
+> {
+  const manage = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
+  if (manage.ok) return manage;
+
+  const stock = await requirePharmacyCatalogAccess(pharmacyId, 'stock');
+  if (stock.ok) return stock;
+
+  return requirePharmacyCatalogAccess(pharmacyId, 'read');
+}
+

@@ -39,6 +39,10 @@ import { setPharmacyProductActiveAction } from '@/app/f/[pharmacyId]/catalogo/ac
 import { ProductFormDialog } from '@/components/pharmacy-catalog/product-form-dialog';
 import { ProductImportDialog } from '@/components/pharmacy-catalog/product-import-dialog';
 import { buildProductTemplateCsv } from '@/lib/pharmacies/product-import';
+import {
+  catalogUiPermissions,
+  type CatalogWriteCapability,
+} from '@/lib/pharmacies/catalog-permissions';
 
 export function PharmacyCatalogView({
   pharmacyId,
@@ -47,6 +51,7 @@ export function PharmacyCatalogView({
   categories,
   loadError,
   catalogMode = 'own',
+  writeCapability = 'manage',
   variant = 'page',
   toolbarExtra,
 }: {
@@ -57,11 +62,15 @@ export function PharmacyCatalogView({
   loadError?: string | null;
   /** generic: sin PVP/stock ficticios ni import propio */
   catalogMode?: 'generic' | 'own';
+  /** Matriz 074: manage | stock | read */
+  writeCapability?: CatalogWriteCapability;
   /** page = cabecera completa tenant; embedded = pestaña SuperAdmin */
   variant?: 'page' | 'embedded';
   toolbarExtra?: React.ReactNode;
 }) {
   const isGeneric = catalogMode === 'generic';
+  const ui = catalogUiPermissions(writeCapability);
+  const showWriteActions = !isGeneric && (ui.canEditStock || ui.canEditCommercial);
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('all');
   const [status, setStatus] = React.useState<'all' | 'active' | 'inactive'>(
@@ -119,7 +128,7 @@ export function PharmacyCatalogView({
   const actions = (
     <>
       {toolbarExtra}
-      {!isGeneric ? (
+      {!isGeneric && ui.canCreateOrImport ? (
         <>
           <Button
             type="button"
@@ -151,11 +160,22 @@ export function PharmacyCatalogView({
             <Plus className="h-4 w-4" /> Añadir producto
           </Button>
         </>
-      ) : (
+      ) : null}
+      {!isGeneric && writeCapability === 'stock' ? (
+        <Badge variant="outline" className="font-normal">
+          Solo stock y disponibilidad
+        </Badge>
+      ) : null}
+      {!isGeneric && writeCapability === 'read' ? (
+        <Badge variant="outline" className="font-normal">
+          Solo consulta
+        </Badge>
+      ) : null}
+      {isGeneric ? (
         <Badge variant="outline" className="font-normal">
           Modalidad genérica · sin import propio
         </Badge>
-      )}
+      ) : null}
     </>
   );
 
@@ -204,7 +224,7 @@ export function PharmacyCatalogView({
               : 'Importa tu catálogo desde Excel/CSV o crea el primer producto manualmente.'
           }
           action={
-            isGeneric ? undefined : (
+            isGeneric || !ui.canCreateOrImport ? undefined : (
               <div className="flex flex-wrap items-center justify-center gap-2">
                 <Button
                   type="button"
@@ -291,7 +311,7 @@ export function PharmacyCatalogView({
                       </TableHead>
                     )}
                     <TableHead>Estado</TableHead>
-                    {!isGeneric ? (
+                    {showWriteActions ? (
                       <TableHead className="text-right">Acciones</TableHead>
                     ) : null}
                   </TableRow>
@@ -365,39 +385,48 @@ export function PharmacyCatalogView({
                             {p.isActive ? 'Activo' : 'Archivado'}
                           </Badge>
                         </TableCell>
-                        {!isGeneric ? (
+                        {showWriteActions ? (
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                onClick={() => {
-                                  setEditing(p);
-                                  setFormOpen(true);
-                                }}
-                                aria-label="Editar"
-                              >
-                                <Pencil className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-8 w-8"
-                                disabled={busyId === p.id}
-                                onClick={() => void toggleActive(p)}
-                                aria-label={
-                                  p.isActive ? 'Archivar' : 'Reactivar'
-                                }
-                              >
-                                {p.isActive ? (
-                                  <Archive className="h-4 w-4" />
-                                ) : (
-                                  <ArchiveRestore className="h-4 w-4" />
-                                )}
-                              </Button>
+                              {(ui.canEditCommercial || ui.canEditStock) &&
+                              (ui.canEditCommercial || !isGeneric) ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  onClick={() => {
+                                    setEditing(p);
+                                    setFormOpen(true);
+                                  }}
+                                  aria-label={
+                                    ui.canEditCommercial
+                                      ? 'Editar'
+                                      : 'Actualizar stock'
+                                  }
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                              ) : null}
+                              {ui.canToggleActive ? (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8"
+                                  disabled={busyId === p.id}
+                                  onClick={() => void toggleActive(p)}
+                                  aria-label={
+                                    p.isActive ? 'Archivar' : 'Reactivar'
+                                  }
+                                >
+                                  {p.isActive ? (
+                                    <Archive className="h-4 w-4" />
+                                  ) : (
+                                    <ArchiveRestore className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              ) : null}
                             </div>
                           </TableCell>
                         ) : null}
@@ -411,20 +440,21 @@ export function PharmacyCatalogView({
         </>
       )}
 
-      {!isGeneric ? (
-        <>
-          <ProductFormDialog
-            open={formOpen}
-            onOpenChange={setFormOpen}
-            pharmacyId={pharmacyId}
-            product={editing}
-          />
-          <ProductImportDialog
-            open={importOpen}
-            onOpenChange={setImportOpen}
-            pharmacyId={pharmacyId}
-          />
-        </>
+      {!isGeneric && showWriteActions ? (
+        <ProductFormDialog
+          open={formOpen}
+          onOpenChange={setFormOpen}
+          pharmacyId={pharmacyId}
+          product={editing}
+          writeCapability={writeCapability}
+        />
+      ) : null}
+      {!isGeneric && ui.canCreateOrImport ? (
+        <ProductImportDialog
+          open={importOpen}
+          onOpenChange={setImportOpen}
+          pharmacyId={pharmacyId}
+        />
       ) : null}
     </div>
   );

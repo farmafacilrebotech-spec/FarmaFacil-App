@@ -1,3 +1,4 @@
+import { resolvePharmacyCatalogCapability } from '@/lib/auth/access';
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 import { listPharmacyProducts } from '@/lib/pharmacies/products';
 import { getPharmacyCatalogMode } from '@/lib/pharmacies/catalog-mode';
@@ -23,14 +24,19 @@ export default async function PharmacyCatalogPage({
       ? statusParam
       : 'all';
 
-  const [list, catalogMode] = await Promise.all([
+  const [list, catalogMode, capabilityGate] = await Promise.all([
     listPharmacyProducts(params.pharmacyId, {
       q: searchParams?.q,
       category: searchParams?.category,
       status,
     }),
     getPharmacyCatalogMode(params.pharmacyId),
+    resolvePharmacyCatalogCapability(params.pharmacyId),
   ]);
+
+  const writeCapability = capabilityGate.ok
+    ? capabilityGate.capability
+    : 'read';
 
   return (
     <PharmacyCatalogView
@@ -40,6 +46,7 @@ export default async function PharmacyCatalogPage({
       categories={list.ok ? list.categories : []}
       loadError={list.ok ? null : list.error}
       catalogMode={catalogMode}
+      writeCapability={writeCapability}
     />
   );
 }

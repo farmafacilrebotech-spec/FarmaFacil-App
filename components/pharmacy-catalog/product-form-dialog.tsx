@@ -4,6 +4,7 @@ import * as React from 'react';
 import { toast } from 'sonner';
 
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
+import type { CatalogWriteCapability } from '@/lib/pharmacies/catalog-permissions';
 import {
   createPharmacyProductAction,
   updatePharmacyProductAction,
@@ -71,12 +72,15 @@ export function ProductFormDialog({
   onOpenChange,
   pharmacyId,
   product,
+  writeCapability = 'manage',
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pharmacyId: string;
   product: PharmacyProduct | null;
+  writeCapability?: CatalogWriteCapability;
 }) {
+  const stockOnly = writeCapability === 'stock';
   const [form, setForm] = React.useState<FormState>(() => fromProduct(product));
   const [saving, setSaving] = React.useState(false);
 
@@ -123,78 +127,93 @@ export function ProductFormDialog({
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-            {product ? 'Editar producto' : 'Añadir producto'}
+            {stockOnly
+              ? 'Actualizar stock'
+              : product
+                ? 'Editar producto'
+                : 'Añadir producto'}
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={onSubmit} className="space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="name">Nombre *</Label>
-            <Input
-              id="name"
-              value={form.name}
-              onChange={(e) => setField('name', e.target.value)}
-              required
-              maxLength={200}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="sku">SKU</Label>
-              <Input
-                id="sku"
-                value={form.sku}
-                onChange={(e) => setField('sku', e.target.value)}
-                maxLength={200}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ean">EAN</Label>
-              <Input
-                id="ean"
-                value={form.ean}
-                onChange={(e) => setField('ean', e.target.value)}
-                maxLength={200}
-              />
-            </div>
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="brand">Marca</Label>
-              <Input
-                id="brand"
-                value={form.brand}
-                onChange={(e) => setField('brand', e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="category">Categoría</Label>
-              <Input
-                id="category"
-                value={form.category}
-                onChange={(e) => setField('category', e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="description">Descripción</Label>
-            <Textarea
-              id="description"
-              value={form.description}
-              onChange={(e) => setField('description', e.target.value)}
-              rows={3}
-            />
-          </div>
+          {!stockOnly ? (
+            <>
+              <div className="space-y-1.5">
+                <Label htmlFor="name">Nombre *</Label>
+                <Input
+                  id="name"
+                  value={form.name}
+                  onChange={(e) => setField('name', e.target.value)}
+                  required
+                  maxLength={200}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="sku">SKU</Label>
+                  <Input
+                    id="sku"
+                    value={form.sku}
+                    onChange={(e) => setField('sku', e.target.value)}
+                    maxLength={200}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ean">EAN</Label>
+                  <Input
+                    id="ean"
+                    value={form.ean}
+                    onChange={(e) => setField('ean', e.target.value)}
+                    maxLength={200}
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="brand">Marca</Label>
+                  <Input
+                    id="brand"
+                    value={form.brand}
+                    onChange={(e) => setField('brand', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="category">Categoría</Label>
+                  <Input
+                    id="category"
+                    value={form.category}
+                    onChange={(e) => setField('category', e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="description">Descripción</Label>
+                <Textarea
+                  id="description"
+                  value={form.description}
+                  onChange={(e) => setField('description', e.target.value)}
+                  rows={3}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {form.name || 'Producto'} · solo stock y disponibilidad. El precio
+              no se puede modificar con tu rol.
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="price">PVP (€)</Label>
-              <Input
-                id="price"
-                inputMode="decimal"
-                value={form.price}
-                onChange={(e) => setField('price', e.target.value)}
-                required
-              />
-            </div>
+            {!stockOnly ? (
+              <div className="space-y-1.5">
+                <Label htmlFor="price">PVP (€)</Label>
+                <Input
+                  id="price"
+                  inputMode="decimal"
+                  value={form.price}
+                  onChange={(e) => setField('price', e.target.value)}
+                  required
+                />
+              </div>
+            ) : null}
             <div className="space-y-1.5">
               <Label htmlFor="stock">Stock</Label>
               <Input
@@ -225,14 +244,16 @@ export function ProductFormDialog({
               />
               <Label htmlFor="isActive">Activo</Label>
             </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={form.isFeatured}
-                onCheckedChange={(v) => setField('isFeatured', v)}
-                id="isFeatured"
-              />
-              <Label htmlFor="isFeatured">Destacado</Label>
-            </div>
+            {!stockOnly ? (
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={form.isFeatured}
+                  onCheckedChange={(v) => setField('isFeatured', v)}
+                  id="isFeatured"
+                />
+                <Label htmlFor="isFeatured">Destacado</Label>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
             <Button
