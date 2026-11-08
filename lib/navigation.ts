@@ -50,7 +50,8 @@ export const navItems: NavItem[] = [
     label: 'Clientes',
     href: '/clientes',
     icon: Users,
-    description: 'Base de clientes',
+    description: 'Cuentas cliente PWA (solo lectura)',
+    superAdminOnly: true,
   },
   {
     label: 'Catálogo',
@@ -62,25 +63,25 @@ export const navItems: NavItem[] = [
     label: 'Pedidos',
     href: '/pedidos',
     icon: ShoppingCart,
-    description: 'Pedidos y estados',
+    description: 'Pedidos de farmacias (solo lectura)',
   },
   {
     label: 'Promociones',
     href: '/promociones',
     icon: Tag,
-    description: 'Campañas y descuentos',
+    description: 'Pendiente de esquema propio',
   },
   {
     label: 'Contratos',
     href: '/contratos',
     icon: FileText,
-    description: 'Contratos y firmas',
+    description: 'Suscripciones; contratos PDF pendientes 069',
   },
   {
     label: 'Tarifas y simulador',
     href: '/tarifas',
     icon: Calculator,
-    description: 'Planes, presupuestos y pilotos',
+    description: 'General / Personalizado / IA + presupuestos',
   },
   {
     label: 'Usuarios',
@@ -100,7 +101,7 @@ export const navItems: NavItem[] = [
     label: 'Configuración',
     href: '/configuracion',
     icon: Settings,
-    description: 'Ajustes de la cuenta',
+    description: 'Mapa global / farmacia / comercial / seguridad',
   },
 ];
 

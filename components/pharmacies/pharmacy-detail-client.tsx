@@ -62,6 +62,7 @@ import { QrTab } from '@/components/pharmacies/tabs/qr-tab';
 import { KioskDevicesPanel } from '@/components/kiosk/kiosk-devices-panel';
 import { AssistantEntitlementAdminPanel } from '@/components/kiosk/assistant-entitlement-admin-panel';
 import { PharmacyOrdersPanel } from '@/components/pharmacy-tenant/pharmacy-orders-panel';
+import { ClientesTab } from '@/components/pharmacies/tabs/clientes-tab';
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
 import type { KioskDeviceRow } from '@/lib/kiosk/devices';
 import type {
@@ -75,6 +76,7 @@ import type {
 import type { PharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 import type { PharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
 import type { PharmacyOrderSummary } from '@/lib/orders/types';
+import type { SaCustomerRow } from '@/lib/platform/sa-customers';
 
 const tabs = [
   { id: 'general', label: 'General', icon: LayoutDashboard, ready: true },
@@ -82,7 +84,7 @@ const tabs = [
   { id: 'contrato', label: 'Contrato', icon: FileText, ready: true },
   { id: 'qr', label: 'QR', icon: QrCode, ready: true },
   { id: 'usuarios', label: 'Usuarios', icon: Users, ready: true },
-  { id: 'clientes', label: 'Clientes', icon: User, ready: false },
+  { id: 'clientes', label: 'Clientes', icon: User, ready: true },
   { id: 'catalogo', label: 'Catálogo', icon: Pill, ready: true },
   { id: 'kiosko', label: 'Kiosko', icon: MonitorSmartphone, ready: true },
   { id: 'asistente', label: 'Asistente IA', icon: Bot, ready: true },
@@ -215,6 +217,8 @@ export function PharmacyDetailClient({
   homeEntrypointError = null,
   orders = [],
   ordersError = null,
+  pharmacyCustomers = [],
+  pharmacyCustomersError = null,
 }: {
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
@@ -240,6 +244,8 @@ export function PharmacyDetailClient({
   /** Pedidos reales de la farmacia (solo lectura en SuperAdmin). */
   orders?: PharmacyOrderSummary[];
   ordersError?: string | null;
+  pharmacyCustomers?: SaCustomerRow[];
+  pharmacyCustomersError?: string | null;
 }) {
   const router = useRouter();
   const [pharmacy, setPharmacy] = React.useState(initialPharmacy);
@@ -1201,6 +1207,13 @@ export function PharmacyDetailClient({
             />
           ))}
 
+        {activeTab === 'clientes' && (
+          <ClientesTab
+            customers={pharmacyCustomers}
+            error={pharmacyCustomersError}
+          />
+        )}
+
         {activeTab !== 'general' &&
           activeTab !== 'personalizacion' &&
           activeTab !== 'usuarios' &&
@@ -1209,7 +1222,8 @@ export function PharmacyDetailClient({
           activeTab !== 'asistente' &&
           activeTab !== 'qr' &&
           activeTab !== 'contrato' &&
-          activeTab !== 'pedidos' && (
+          activeTab !== 'pedidos' &&
+          activeTab !== 'clientes' && (
           <PendingPanel
             title={tabs.find((t) => t.id === activeTab)?.label ?? 'Sección'}
           />
