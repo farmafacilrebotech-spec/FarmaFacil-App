@@ -17,10 +17,12 @@ import {
 } from '@/lib/email/pharmacy-demo';
 import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
 import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
+import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 
 export const dynamic = 'force-dynamic';
 
 export default async function PharmacyDemoEmailPreviewPage() {
+  await assertEmailsPageAccess();
   const h = headers();
   const origin = normalizeFfPreviewOrigin(
     requestPublicOriginFromHeaders(h, CANONICAL_PRODUCTION_APP_URL)
