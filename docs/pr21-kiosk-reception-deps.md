@@ -10,6 +10,8 @@
 
 - Directorio, presupuestos, pedidos de compra (`platform_supplier_purchase_orders`).
 - Extensión operativa `kiosk_purchase_orders` (alta, estados `preparado`/`pedido`, documentos si el bucket existe).
+- Numeración visible del pedido general (`order_number` 080) reflejada en la extensión; no hay contador propio de kiosk.
+- **Bloqueo recepción en staging:** falta migración **065** (`kiosk_assets` / `ff_kiosk_asset_next_code`). No modificar la RPC de recepción sin revisar esa dependencia.
 - Unificación 079: enlace `general_purchase_order_id` / `source_quote_id`.
 
 ## Qué bloquea la prueba real de recepción

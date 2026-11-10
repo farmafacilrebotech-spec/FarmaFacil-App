@@ -111,12 +111,17 @@ describe('validatePurchaseDraft / notas', () => {
     const v = validatePurchaseDraft({
       supplierId: '',
       title: '',
+      orderedAt: '',
       lines: [],
       shippingCents: 0,
       shippingIncludesVat: false,
+      requireShippingInformed: true,
+      shippingInformed: false,
     });
     assert.ok(v.issues.some((i) => i.field === 'supplierId'));
+    assert.ok(v.issues.some((i) => i.field === 'orderedAt'));
     assert.ok(v.issues.some((i) => i.field === 'lines'));
+    assert.ok(v.issues.some((i) => i.field === 'shipping'));
     assert.equal(v.money, null);
   });
 
@@ -124,20 +129,24 @@ describe('validatePurchaseDraft / notas', () => {
     const v = validatePurchaseDraft({
       supplierId: 's1',
       title: 'Pedido',
+      orderedAt: '2026-11-10',
       lines: [
         {
           description: 'Item',
           quantity: 2,
           unitPriceCents: 1000,
-          vatBps: 2100,
+          vatBps: 0,
         },
       ],
       shippingCents: 0,
       shippingIncludesVat: false,
+      requireShippingInformed: true,
+      shippingInformed: true,
     });
     assert.equal(v.issues.length, 0);
     assert.ok(v.money);
     assert.equal(v.money!.subtotalCents, 2000);
+    assert.equal(v.money!.productVatCents, 0);
   });
 
   it('notas por defecto', () => {

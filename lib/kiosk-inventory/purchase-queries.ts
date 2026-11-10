@@ -25,6 +25,7 @@ type PoRow = {
   notes: string | null;
   general_purchase_order_id?: string | null;
   source_quote_id?: string | null;
+  general?: { order_number?: string | null } | { order_number?: string | null }[] | null;
   unit_price_cents: number | null;
   shipping_cents: number | null;
   total_cents: number | null;
@@ -33,13 +34,21 @@ type PoRow = {
   updated_at: string;
 };
 
+function generalOrderNumberFromRow(row: PoRow): string | null {
+  const g = row.general;
+  if (!g) return null;
+  const one = Array.isArray(g) ? g[0] : g;
+  return one?.order_number == null ? null : String(one.order_number);
+}
+
 function mapOperational(row: PoRow): KioskPurchaseOrderOperational {
   const quantity = Number(row.quantity ?? 0);
   const receivedQuantity = Number(row.received_quantity ?? 0);
+  const generalOrderNumber = generalOrderNumberFromRow(row);
   return {
     id: row.id,
     supplierName: row.supplier_name,
-    orderNumber: row.order_number,
+    orderNumber: generalOrderNumber ?? row.order_number,
     model: row.model,
     quantity,
     receivedQuantity,
@@ -53,6 +62,7 @@ function mapOperational(row: PoRow): KioskPurchaseOrderOperational {
       ? String(row.general_purchase_order_id)
       : null,
     sourceQuoteId: row.source_quote_id ? String(row.source_quote_id) : null,
+    generalOrderNumber,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -86,6 +96,9 @@ export async function listKioskPurchaseOrders(): Promise<
       ordered_at, delivery_lead_months, estimated_delivery_at, notes,
       general_purchase_order_id, source_quote_id,
       created_at, updated_at,
+      general:platform_supplier_purchase_orders!general_purchase_order_id (
+        order_number
+      ),
       costs:kiosk_purchase_order_costs (
         unit_price_cents, shipping_cents, total_cents, currency
       )
@@ -94,7 +107,10 @@ export async function listKioskPurchaseOrders(): Promise<
       id, supplier_name, order_number, model, quantity, received_quantity, status,
       ordered_at, delivery_lead_months, estimated_delivery_at, notes,
       general_purchase_order_id, source_quote_id,
-      created_at, updated_at
+      created_at, updated_at,
+      general:platform_supplier_purchase_orders!general_purchase_order_id (
+        order_number
+      )
     `;
 
   let { data, error } = await supabase

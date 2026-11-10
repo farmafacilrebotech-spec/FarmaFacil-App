@@ -64,6 +64,7 @@ export function PurchasesPanel({
   canReceive,
   loadError,
   documentsByOrderId,
+  extensionOnly = false,
 }: {
   orders: Array<KioskPurchaseOrderOperational | KioskPurchaseOrderFinancial>;
   canSeeFinancial: boolean;
@@ -71,6 +72,8 @@ export function PurchasesPanel({
   canReceive: boolean;
   loadError?: string | null;
   documentsByOrderId: Record<string, KioskPurchaseDocumentMeta[]>;
+  /** Vista Proveedores: no crear compra económica independiente. */
+  extensionOnly?: boolean;
 }) {
   const router = useRouter();
   const lock = React.useRef(false);
@@ -229,8 +232,9 @@ export function PurchasesPanel({
           Pedidos y compras de kioskos
         </h2>
         <p className="mt-1 text-xs text-muted-foreground">
-          Pedidos al proveedor (independientes del presupuesto comercial a
-          farmacias). La recepción crea activos KSK-… sin duplicarlos.
+          {extensionOnly
+            ? 'Vista operativa de extensiones kiosk vinculadas a pedidos generales. El número visible es el del pedido económico. No se crea una compra independiente aquí. Recepción de activos KSK requiere migración 065 (ausente en staging).'
+            : 'Pedidos al proveedor (independientes del presupuesto comercial a farmacias). La recepción crea activos KSK-… sin duplicarlos.'}
           {!canSeeFinancial
             ? ' Los importes, presupuestos y facturas no son visibles con tu perfil.'
             : null}
@@ -241,7 +245,15 @@ export function PurchasesPanel({
         <p className="text-sm text-destructive">{loadError}</p>
       ) : null}
 
-      {canWritePurchasing ? (
+      {extensionOnly ? (
+        <div className="rounded-xl border border-border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          Para una nueva compra de kioskos: crea/confirma el pedido en «Pedidos
+          de compra» con categoría Kioskos. Aquí solo se completan modelo,
+          unidades, ETA y recepción.
+        </div>
+      ) : null}
+
+      {canWritePurchasing && !extensionOnly ? (
         <div className="space-y-3 rounded-xl border border-dashed border-border p-4">
           <p className="text-xs font-medium text-foreground">Nuevo pedido</p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -370,6 +382,9 @@ export function PurchasesPanel({
           <thead>
             <tr className="border-b border-border bg-muted/40">
               <th className="px-3 py-2 font-medium text-muted-foreground">
+                Nº pedido
+              </th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">
                 Proveedor
               </th>
               <th className="px-3 py-2 font-medium text-muted-foreground">
@@ -381,7 +396,7 @@ export function PurchasesPanel({
               <th className="px-3 py-2 font-medium text-muted-foreground">
                 ETA
               </th>
-              {canSeeFinancial ? (
+              {canSeeFinancial && !extensionOnly ? (
                 <th className="px-3 py-2 font-medium text-muted-foreground">
                   Total
                 </th>
@@ -392,10 +407,11 @@ export function PurchasesPanel({
             {orders.length === 0 ? (
               <tr>
                 <td
-                  colSpan={canSeeFinancial ? 5 : 4}
+                  colSpan={canSeeFinancial && !extensionOnly ? 6 : 5}
                   className="px-3 py-8 text-center text-muted-foreground"
                 >
-                  Aún no hay pedidos al proveedor.
+                  Aún no hay extensiones kiosk. Crea el pedido en «Pedidos de
+                  compra».
                 </td>
               </tr>
             ) : (
@@ -407,10 +423,13 @@ export function PurchasesPanel({
                   }`}
                   onClick={() => setSelectedId(o.id)}
                 >
+                  <td className="px-3 py-2 font-mono text-xs">
+                    {o.orderNumber || '—'}
+                  </td>
                   <td className="px-3 py-2">
                     <div className="font-medium">{o.supplierName}</div>
                     <div className="text-xs text-muted-foreground">
-                      {o.orderNumber || 'Sin n.º'} · {o.model || 'Sin modelo'}
+                      {o.model || 'Sin modelo'}
                     </div>
                   </td>
                   <td className="px-3 py-2">
@@ -428,7 +447,7 @@ export function PurchasesPanel({
                         ).toLocaleDateString('es-ES')
                       : '—'}
                   </td>
-                  {canSeeFinancial ? (
+                  {canSeeFinancial && !extensionOnly ? (
                     <td className="px-3 py-2 tabular-nums">
                       {isFinancial(o) ? formatCents(o.totalCents) : '—'}
                     </td>

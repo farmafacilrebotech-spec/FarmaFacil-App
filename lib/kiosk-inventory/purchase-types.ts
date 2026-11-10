@@ -56,6 +56,8 @@ export type KioskPurchaseOrderOperational = {
   /** Pedido económico canónico (079). */
   generalPurchaseOrderId: string | null;
   sourceQuoteId: string | null;
+  /** Número visible del pedido general (080); preferido sobre orderNumber local. */
+  generalOrderNumber: string | null;
   createdAt: string;
   updatedAt: string;
 };

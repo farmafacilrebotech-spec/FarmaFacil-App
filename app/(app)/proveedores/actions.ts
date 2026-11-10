@@ -24,6 +24,7 @@ import { getCurrentProfile } from '@/lib/auth/platform';
 import {
   getSupplierPurchaseById,
   getSupplierQuoteById,
+  listPurchaseLines,
   listQuoteLines,
 } from '@/lib/suppliers/queries';
 import {
@@ -421,13 +422,14 @@ export async function upsertSupplierQuoteAction(input: {
   return { ok: true, id: quoteId };
 }
 
-/** Pedido general de materiales/servicios (no kiosko). */
+/** Pedido general de materiales/servicios (circuito económico único). */
 export async function upsertGeneralPurchaseOrderAction(input: {
   id?: string | null;
   supplierId: string;
   quoteId?: string | null;
   category: SupplierCategory;
   title: string;
+  /** Ignorado: el número solo lo asigna ff_supplier_po_confirm_v1. */
   orderNumber?: string | null;
   status?: SupplierPurchaseStatus;
   orderedAt?: string | null;
@@ -449,7 +451,7 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     unitPriceCents: number;
     vatBps?: number;
   }>;
-}): Promise<SupplierActionResult<{ id: string }>> {
+}): Promise<SupplierActionResult<{ id: string; orderNumber?: string | null }>> {
   if (!(await hasSuppliersWrite())) {
     return { ok: false, error: 'Sin permiso de pedidos.' };
   }
@@ -487,16 +489,21 @@ export async function upsertGeneralPurchaseOrderAction(input: {
 
   let previousStatus: string | null = null;
   let preservedQuoteId: string | null = input.quoteId || null;
+  let preservedOrderNumber: string | null = null;
   if (input.id) {
     const { data: prev } = await supabase
       .from('platform_supplier_purchase_orders')
-      .select('id, status, quote_id')
+      .select('id, status, quote_id, order_number')
       .eq('id', input.id)
       .maybeSingle();
     if (!prev) return { ok: false, error: 'Pedido no encontrado.' };
     previousStatus = String((prev as { status: string }).status);
     const prevQuote = (prev as { quote_id?: string | null }).quote_id;
     if (prevQuote) preservedQuoteId = String(prevQuote);
+    preservedOrderNumber =
+      (prev as { order_number?: string | null }).order_number == null
+        ? null
+        : String((prev as { order_number: string }).order_number);
   }
 
   // Relación permanente con presupuesto origen: no se elimina al editar.
@@ -507,12 +514,25 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     };
   }
 
+  // Confirmación Borrador→Pedido solo vía confirmGeneralPurchaseOrderAction (número).
+  if (
+    status === 'pedido' &&
+    (previousStatus == null || previousStatus === 'borrador')
+  ) {
+    return {
+      ok: false,
+      error:
+        'Para confirmar el pedido usa la acción Confirmar Pedido (asigna número correlativo).',
+    };
+  }
+
   const shippingIncludesVat = Boolean(input.shippingIncludesVat);
   const rawLines = input.lines ?? [];
   if (status !== 'borrador' && status !== 'cancelado') {
     const validation = validatePurchaseDraft({
       supplierId: input.supplierId,
       title,
+      orderedAt: input.orderedAt,
       lines: rawLines.map((l) => ({
         description: l.description,
         quantity: l.quantity,
@@ -521,6 +541,8 @@ export async function upsertGeneralPurchaseOrderAction(input: {
       })),
       shippingCents: input.shippingCents ?? 0,
       shippingIncludesVat,
+      requireShippingInformed: true,
+      shippingInformed: input.shippingCents != null,
     });
     const blocking = validation.issues.filter((i) => i.blockingForConfirm);
     if (blocking.length > 0) {
@@ -573,7 +595,7 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     quote_id: preservedQuoteId,
     category: input.category,
     title,
-    order_number: input.orderNumber?.trim() || null,
+    // order_number: solo RPC de confirmación; nunca desde cliente.
     status,
     ordered_at: input.orderedAt || null,
     expected_delivery_at: input.expectedDeliveryAt || null,
@@ -746,7 +768,121 @@ export async function upsertGeneralPurchaseOrderAction(input: {
   }
 
   revalidateSuppliers(input.supplierId);
-  return { ok: true, id: poId };
+  return { ok: true, id: poId, orderNumber: preservedOrderNumber };
+}
+
+/**
+ * Confirma Borrador → Pedido y asigna número anual correlativo (080).
+ * Idempotente: doble clic / reintento no genera un segundo número.
+ */
+export async function confirmGeneralPurchaseOrderAction(input: {
+  id: string;
+  orderedAt: string;
+  expectedDeliveryAt?: string | null;
+}): Promise<
+  SupplierActionResult<{
+    id: string;
+    orderNumber: string;
+    alreadyConfirmed: boolean;
+  }>
+> {
+  if (!(await hasSuppliersWrite())) {
+    return { ok: false, error: 'Sin permiso de pedidos.' };
+  }
+  const orderedAt = input.orderedAt?.trim();
+  if (!orderedAt) {
+    return { ok: false, error: 'Fecha de pedido obligatoria.' };
+  }
+  const supabase = createClient();
+  const uid = await actorId();
+
+  const { data: prev } = await supabase
+    .from('platform_supplier_purchase_orders')
+    .select('id, status, supplier_id, order_number, title')
+    .eq('id', input.id)
+    .maybeSingle();
+  if (!prev) return { ok: false, error: 'Pedido no encontrado.' };
+
+  const linesRes = await listPurchaseLines(input.id);
+  if (!linesRes.ok) return { ok: false, error: linesRes.error };
+  const { data: head } = await supabase
+    .from('platform_supplier_purchase_orders')
+    .select(
+      'supplier_id, title, shipping_cents, shipping_includes_vat, ordered_at'
+    )
+    .eq('id', input.id)
+    .maybeSingle();
+  if (!head) return { ok: false, error: 'Pedido no encontrado.' };
+
+  const validation = validatePurchaseDraft({
+    supplierId: String((head as { supplier_id: string }).supplier_id),
+    title: String((head as { title: string }).title),
+    orderedAt,
+    lines: linesRes.lines.map((l) => ({
+      description: l.description,
+      quantity: l.quantity,
+      unitPriceCents: l.unitPriceCents,
+      vatBps: l.vatBps,
+    })),
+    shippingCents: Number(
+      (head as { shipping_cents?: number | null }).shipping_cents ?? 0
+    ),
+    shippingIncludesVat: Boolean(
+      (head as { shipping_includes_vat?: boolean }).shipping_includes_vat
+    ),
+    requireShippingInformed: true,
+    shippingInformed: true,
+  });
+  const blocking = validation.issues.filter((i) => i.blockingForConfirm);
+  if (blocking.length > 0) {
+    return { ok: false, error: blocking[0]!.message };
+  }
+
+  const { data: rpc, error: rpcErr } = await supabase.rpc(
+    'ff_supplier_po_confirm_v1',
+    {
+      p_id: input.id,
+      p_ordered_at: orderedAt,
+      p_expected_delivery_at: input.expectedDeliveryAt || null,
+      p_actor: uid,
+    }
+  );
+  if (rpcErr) {
+    return {
+      ok: false,
+      error:
+        rpcErr.message?.includes('ff_supplier_po_confirm') ||
+        rpcErr.message?.toLowerCase().includes('function')
+          ? 'Falta aplicar la migración 080 (numeración de pedidos) en staging.'
+          : `No se pudo confirmar el pedido.${rpcErr.message ? ` (${rpcErr.message})` : ''}`,
+    };
+  }
+  const payload = rpc as {
+    status?: string;
+    error?: string;
+    id?: string;
+    order_number?: string;
+    already_confirmed?: boolean;
+  } | null;
+  if (!payload || payload.status !== 'ok' || !payload.order_number) {
+    return {
+      ok: false,
+      error: payload?.error || 'Confirmación de pedido rechazada.',
+    };
+  }
+
+  await logActivity(
+    String((prev as { supplier_id: string }).supplier_id),
+    'supplier.purchase_confirmed',
+    `Pedido «${String((prev as { title: string }).title)}» → ${payload.order_number}`
+  );
+  revalidateSuppliers(String((prev as { supplier_id: string }).supplier_id));
+  return {
+    ok: true,
+    id: String(payload.id ?? input.id),
+    orderNumber: String(payload.order_number),
+    alreadyConfirmed: Boolean(payload.already_confirmed),
+  };
 }
 
 /**
@@ -770,6 +906,15 @@ export async function ensureKioskExtensionForPurchaseAction(input: {
   const supabase = createClient();
   const generalId = input.generalPurchaseOrderId;
 
+  const { data: generalPo } = await supabase
+    .from('platform_supplier_purchase_orders')
+    .select('order_number')
+    .eq('id', generalId)
+    .maybeSingle();
+  const generalOrderNumber =
+    (generalPo as { order_number?: string | null } | null)?.order_number ??
+    null;
+
   const { data: byGeneral } = await supabase
     .from('kiosk_purchase_orders')
     .select('id')
@@ -777,6 +922,15 @@ export async function ensureKioskExtensionForPurchaseAction(input: {
     .neq('status', 'cancelado')
     .maybeSingle();
   if (byGeneral) {
+    if (generalOrderNumber) {
+      await supabase
+        .from('kiosk_purchase_orders')
+        .update({
+          order_number: generalOrderNumber,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', String((byGeneral as { id: string }).id));
+    }
     return {
       ok: true,
       kioskPurchaseOrderId: String((byGeneral as { id: string }).id),
@@ -798,6 +952,7 @@ export async function ensureKioskExtensionForPurchaseAction(input: {
         .update({
           general_purchase_order_id: generalId,
           supplier_id: input.supplierId,
+          order_number: generalOrderNumber,
           updated_at: new Date().toISOString(),
         })
         .eq('id', kid);
@@ -815,7 +970,7 @@ export async function ensureKioskExtensionForPurchaseAction(input: {
     {
       p_id: null,
       p_supplier_name: input.supplierName,
-      p_order_number: null,
+      p_order_number: generalOrderNumber,
       p_model: input.model?.trim() || null,
       p_quantity: qty,
       p_ordered_at: null,

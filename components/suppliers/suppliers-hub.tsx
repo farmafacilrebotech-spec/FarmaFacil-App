@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 
 import {
   archiveSupplierAction,
+  confirmGeneralPurchaseOrderAction,
   createPurchaseFromQuoteAction,
   getSupplierDocSignedUrlAction,
   loadSupplierPurchaseDetailAction,
@@ -292,6 +293,9 @@ export function SuppliersHub({
   const [editingPurchaseId, setEditingPurchaseId] = React.useState<
     string | null
   >(null);
+  const [editingPurchaseNumber, setEditingPurchaseNumber] = React.useState<
+    string | null
+  >(null);
   const [poSourceQuoteId, setPoSourceQuoteId] = React.useState<string>('none');
   const [poQuoteId, setPoQuoteId] = React.useState<string | null>(null);
   const [poClientRequestId, setPoClientRequestId] = React.useState(() =>
@@ -340,10 +344,13 @@ export function SuppliersHub({
   const poValidation = validatePurchaseDraft({
     supplierId: poSupplierId,
     title: poTitle,
+    orderedAt: poOrderedAt,
     lines: poParsedLines,
     shippingCents: poShippingCents,
     shippingIncludesVat: poShippingIncludesVat,
     shippingVatBps: poShippingVatBps,
+    requireShippingInformed: true,
+    shippingInformed: poShipping.trim() !== '',
   });
   const poMoney = poValidation.money;
   const poPending = poValidation.issues.filter((i) => i.blockingForConfirm);
@@ -480,6 +487,7 @@ export function SuppliersHub({
 
   function resetPoForm(opts?: { keepRequestId?: boolean; open?: boolean }) {
     setEditingPurchaseId(null);
+    setEditingPurchaseNumber(null);
     setSelectedPurchaseId(null);
     setPoSourceQuoteId('none');
     setPoQuoteId(null);
@@ -503,6 +511,8 @@ export function SuppliersHub({
   function startNewPurchase() {
     resetPoForm({ open: true });
     setShowPoForm(true);
+    setPoOrderedAt(new Date().toISOString().slice(0, 10));
+    setPoShipping('0');
     setTimeout(
       () =>
         poFormRef.current?.scrollIntoView({
@@ -520,6 +530,7 @@ export function SuppliersHub({
     setShowPoForm(true);
     setSelectedPurchaseId(o.id);
     setEditingPurchaseId(o.id);
+    setEditingPurchaseNumber(o.orderNumber);
     setPoQuoteId(o.quoteId);
     setPoSourceQuoteId(o.quoteId ?? 'none');
     setPoSupplierId(o.supplierId);
@@ -618,6 +629,7 @@ export function SuppliersHub({
   async function savePurchaseOrder(opts: {
     status: SupplierPurchaseStatus;
     requireComplete: boolean;
+    confirm?: boolean;
   }) {
     if (opts.requireComplete && poPending.length > 0) {
       toast.error(poPending[0]!.message);
@@ -639,18 +651,25 @@ export function SuppliersHub({
         unitPriceCents: l.unitPriceCents,
         vatBps: l.vatBps,
       }));
+    // Confirmación: guardar datos en borrador y luego RPC de número.
+    const persistStatus: SupplierPurchaseStatus =
+      opts.confirm || opts.status === 'pedido'
+        ? poStatus === 'borrador' || !editingPurchaseId
+          ? 'borrador'
+          : poStatus
+        : opts.status;
     const res = await upsertGeneralPurchaseOrderAction({
       id: editingPurchaseId,
       supplierId: poSupplierId,
       quoteId: poQuoteId,
       category: poCategory,
       title: poTitle,
-      status: opts.status,
+      status: persistStatus,
       orderedAt: poOrderedAt || null,
       expectedDeliveryAt: poExpected || null,
       subtotalCents: poMoney?.subtotalCents ?? null,
       taxCents: poMoney?.taxCents ?? null,
-      shippingCents: poShippingCents,
+      shippingCents: poShipping.trim() === '' ? null : poShippingCents,
       shippingIncludesVat: poShippingIncludesVat,
       totalCents: poMoney?.totalCents ?? null,
       notes: poNotes || null,
@@ -662,12 +681,38 @@ export function SuppliersHub({
       toast.error(res.error);
       return;
     }
+
+    if (opts.confirm) {
+      const orderedAt =
+        poOrderedAt.trim() || new Date().toISOString().slice(0, 10);
+      const confirmed = await confirmGeneralPurchaseOrderAction({
+        id: res.id,
+        orderedAt,
+        expectedDeliveryAt: poExpected || null,
+      });
+      if (!confirmed.ok) {
+        toast.error(confirmed.error);
+        await openPurchaseById(res.id);
+        router.refresh();
+        return;
+      }
+      toast.success(
+        confirmed.alreadyConfirmed
+          ? `Pedido ya confirmado: ${confirmed.orderNumber}`
+          : `Pedido confirmado: ${confirmed.orderNumber}`
+      );
+      setPoStatus('pedido');
+      setConfirmPedidoOpen(false);
+      setPoClientRequestId(newClientRequestId());
+      await openPurchaseById(confirmed.id);
+      router.refresh();
+      return;
+    }
+
     toast.success(
-      opts.status === 'pedido'
-        ? 'Compra confirmada (estado Pedido)'
-        : editingPurchaseId
-          ? 'Borrador actualizado'
-          : 'Borrador guardado (compra no confirmada)'
+      editingPurchaseId
+        ? 'Borrador actualizado'
+        : 'Borrador guardado (sin número; compra no confirmada)'
     );
     setPoClientRequestId(newClientRequestId());
     setConfirmPedidoOpen(false);
@@ -1597,6 +1642,7 @@ export function SuppliersHub({
               <table className="w-full min-w-[720px] text-left text-sm">
                 <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
                   <tr>
+                    <th className="px-3 py-2">Nº</th>
                     <th className="px-3 py-2">Proveedor</th>
                     <th className="px-3 py-2">Título</th>
                     <th className="px-3 py-2">Origen</th>
@@ -1609,7 +1655,7 @@ export function SuppliersHub({
                   {generalPurchases.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={7}
                         className="px-3 py-6 text-muted-foreground"
                       >
                         Sin pedidos de compra.
@@ -1626,6 +1672,9 @@ export function SuppliersHub({
                             : ''
                         }`}
                       >
+                        <td className="px-3 py-2 font-mono text-xs">
+                          {o.orderNumber ?? '—'}
+                        </td>
                         <td className="px-3 py-2">{o.supplierName ?? '—'}</td>
                         <td className="px-3 py-2">{o.title}</td>
                         <td className="px-3 py-2 text-xs text-muted-foreground">
@@ -1747,16 +1796,25 @@ export function SuppliersHub({
                       ? 'Editar pedido de compra'
                       : 'Nuevo pedido de compra'}
                   </h2>
-                  {editingPurchaseId ? (
-                    <p className="text-xs text-muted-foreground">
-                      ID: {editingPurchaseId}
+                  {editingPurchaseNumber ? (
+                    <p className="text-sm font-medium">
+                      Nº pedido:{' '}
+                      <span className="font-mono">{editingPurchaseNumber}</span>
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        (inmutable)
+                      </span>
                     </p>
                   ) : (
                     <p className="text-xs text-muted-foreground">
-                      Borrador editable. Confirma explícitamente para pasar a
-                      Pedido.
+                      Borrador sin número. El correlativo YYYY/######## se
+                      asigna solo al confirmar Pedido.
                     </p>
                   )}
+                  {editingPurchaseId ? (
+                    <p className="text-[10px] text-muted-foreground">
+                      ID interno: {editingPurchaseId}
+                    </p>
+                  ) : null}
                 </div>
                 <Button
                   type="button"
@@ -2143,7 +2201,13 @@ export function SuppliersHub({
                   <Button
                     type="button"
                     disabled={busy || poPending.length > 0}
-                    onClick={() => setConfirmPedidoOpen(true)}
+                    onClick={() => {
+                      if (!poOrderedAt.trim()) {
+                        setPoOrderedAt(new Date().toISOString().slice(0, 10));
+                      }
+                      if (poShipping.trim() === '') setPoShipping('0');
+                      setConfirmPedidoOpen(true);
+                    }}
                   >
                     Confirmar Pedido
                   </Button>
@@ -2169,8 +2233,9 @@ export function SuppliersHub({
                 <div className="space-y-3 rounded-lg border border-border bg-background p-3">
                   <p className="text-sm">
                     ¿Confirmar este borrador como Pedido? Se validarán proveedor,
-                    líneas, cantidades, precios e impuestos y se guardarán los
-                    importes calculados.
+                    fecha, líneas, precios e impuestos. Se asignará un número
+                    correlativo anual (p. ej. 2026/00000001) en la misma
+                    operación. No se puede deshacer la numeración.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button
@@ -2181,6 +2246,7 @@ export function SuppliersHub({
                           await savePurchaseOrder({
                             status: 'pedido',
                             requireComplete: true,
+                            confirm: true,
                           });
                         })
                       }
@@ -2223,6 +2289,7 @@ export function SuppliersHub({
               canWritePurchasing={canPurchasingWrite}
               canReceive={canReceive}
               documentsByOrderId={documentsByOrderId}
+              extensionOnly
             />
           )}
         </div>

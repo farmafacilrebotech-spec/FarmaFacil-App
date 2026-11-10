@@ -292,6 +292,8 @@ export type PurchaseDraftIssue = {
 export function validatePurchaseDraft(input: {
   supplierId: string;
   title: string;
+  /** Fecha pedido YYYY-MM-DD; obligatoria al confirmar. */
+  orderedAt?: string | null;
   lines: Array<{
     description: string;
     quantity: number;
@@ -301,6 +303,9 @@ export function validatePurchaseDraft(input: {
   shippingCents: number;
   shippingIncludesVat: boolean;
   shippingVatBps?: number;
+  /** Si true, exige transporte informado (0 € válido). */
+  requireShippingInformed?: boolean;
+  shippingInformed?: boolean;
 }): {
   issues: PurchaseDraftIssue[];
   money: PurchaseMoneyResult | null;
@@ -317,6 +322,13 @@ export function validatePurchaseDraft(input: {
     issues.push({
       field: 'title',
       message: 'Indica un título',
+      blockingForConfirm: true,
+    });
+  }
+  if (!input.orderedAt?.trim()) {
+    issues.push({
+      field: 'orderedAt',
+      message: 'Indica la fecha de pedido',
       blockingForConfirm: true,
     });
   }
@@ -353,6 +365,23 @@ export function validatePurchaseDraft(input: {
         blockingForConfirm: true,
       });
     }
+    if (!(l.vatBps >= 0) || !Number.isFinite(l.vatBps)) {
+      issues.push({
+        field: `line.${i}.vat`,
+        message: `Línea ${i + 1}: IVA no válido (0 % permitido)`,
+        blockingForConfirm: true,
+      });
+    }
+  }
+  if (
+    input.requireShippingInformed &&
+    input.shippingInformed === false
+  ) {
+    issues.push({
+      field: 'shipping',
+      message: 'Indica el transporte (0 € si no aplica)',
+      blockingForConfirm: true,
+    });
   }
   if (!(input.shippingCents >= 0) || !Number.isFinite(input.shippingCents)) {
     issues.push({
