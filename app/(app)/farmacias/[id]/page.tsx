@@ -22,6 +22,8 @@ import { buildPharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capa
 import { requireOrdersView } from '@/lib/orders/authz';
 import { listPharmacyOrders } from '@/lib/orders/queries';
 import type { PharmacyOrderSummary } from '@/lib/orders/types';
+import { listSaCustomersForPharmacy } from '@/lib/platform/sa-customers';
+import type { SaCustomerRow } from '@/lib/platform/sa-customers';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +49,7 @@ export default async function PharmacyDetailPage({
     profileResult,
     homeQr,
     ordersView,
+    customersResult,
   ] = await Promise.all([
     getPharmacyById(pharmacyId),
     listActivePlans(),
@@ -62,6 +65,7 @@ export default async function PharmacyDetailPage({
     getCurrentProfile(),
     loadOrEnsurePharmacyHomeEntrypoint(pharmacyId),
     requireOrdersView(pharmacyId),
+    listSaCustomersForPharmacy(pharmacyId, 100),
   ]);
 
   if (!pharmacy) {
@@ -81,6 +85,13 @@ export default async function PharmacyDetailPage({
       orders = listed.orders;
     }
   }
+
+  const pharmacyCustomers: SaCustomerRow[] = customersResult.ok
+    ? customersResult.customers
+    : [];
+  const pharmacyCustomersError = customersResult.ok
+    ? null
+    : customersResult.error;
 
   const actorProfileId = profileResult.profile?.id ?? '';
   const usersCapabilities = buildPharmacyUsersCapabilities({
@@ -113,6 +124,8 @@ export default async function PharmacyDetailPage({
       homeEntrypointError={homeQr.ok ? null : homeQr.error}
       orders={orders}
       ordersError={ordersError}
+      pharmacyCustomers={pharmacyCustomers}
+      pharmacyCustomersError={pharmacyCustomersError}
     />
   );
 }
