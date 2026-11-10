@@ -21,7 +21,9 @@ import {
 import {
   DEFAULT_PO_UNIT_PRICE_NOTE,
   DEFAULT_VAT_BPS,
-  unitCostExVatWithShipping,
+  validatePurchaseDraft,
+  vatBpsToPercent,
+  vatPercentToBps,
   withDefaultPoNoteOnCreate,
 } from '@/lib/suppliers/purchase-math';
 import { PurchasesPanel } from '@/components/kiosk-inventory/purchases-panel';
@@ -47,7 +49,6 @@ import {
   SUPPLIER_PO_DOC_LABELS,
   SUPPLIER_PO_DOC_TYPES,
   SUPPLIER_PO_STATUS_LABELS,
-  SUPPLIER_PO_UI_STATUSES,
   SUPPLIER_QUOTE_STATUS_LABELS,
   SUPPLIER_QUOTE_UI_STATUSES,
   type MaterialOfferCompareRow,
@@ -99,6 +100,24 @@ function emptyQuoteLine(): QuoteLineDraft {
     quantity: '1',
     unitPrice: '',
     leadDays: '',
+  };
+}
+
+type PoLineDraft = {
+  key: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  vatPercent: string;
+};
+
+function emptyPoLine(): PoLineDraft {
+  return {
+    key: newLineKey(),
+    description: '',
+    quantity: '1',
+    unitPrice: '',
+    vatPercent: '21',
   };
 }
 
@@ -250,37 +269,36 @@ export function SuppliersHub({
   );
   const [materialCompare, setMaterialCompare] = React.useState(compareKey || '');
 
+  const [showPoForm, setShowPoForm] = React.useState(Boolean(initialPoId));
   const [editingPurchaseId, setEditingPurchaseId] = React.useState<
     string | null
-  >(initialPoId ?? null);
+  >(null);
   const [poSourceQuoteId, setPoSourceQuoteId] = React.useState<string>('none');
   const [poQuoteId, setPoQuoteId] = React.useState<string | null>(null);
   const [poClientRequestId, setPoClientRequestId] = React.useState(() =>
     newClientRequestId()
   );
-  const [poSupplierId, setPoSupplierId] = React.useState(suppliers[0]?.id ?? '');
+  const [poSupplierId, setPoSupplierId] = React.useState('');
   const [poCategory, setPoCategory] = React.useState<SupplierCategory>('otros');
   const [poTitle, setPoTitle] = React.useState('');
   const [poStatus, setPoStatus] =
     React.useState<SupplierPurchaseStatus>('borrador');
   const [poOrderedAt, setPoOrderedAt] = React.useState('');
   const [poExpected, setPoExpected] = React.useState('');
-  const [poSubtotal, setPoSubtotal] = React.useState('');
-  const [poTax, setPoTax] = React.useState('');
   const [poShipping, setPoShipping] = React.useState('');
   const [poShippingIncludesVat, setPoShippingIncludesVat] =
     React.useState(false);
+  const [poShippingVatPercent, setPoShippingVatPercent] = React.useState('21');
   const [poNotes, setPoNotes] = React.useState('');
-  const [poLineDesc, setPoLineDesc] = React.useState('');
-  const [poLineQty, setPoLineQty] = React.useState('1');
-  const [extraPoLines, setExtraPoLines] = React.useState<
-    SupplierPurchaseLineRow[]
-  >([]);
+  const [poLinesDraft, setPoLinesDraft] = React.useState<PoLineDraft[]>([
+    emptyPoLine(),
+  ]);
   const [selectedPurchaseId, setSelectedPurchaseId] = React.useState<
     string | null
-  >(initialPoId ?? generalPurchases[0]?.id ?? null);
+  >(null);
   const [poDocType, setPoDocType] =
     React.useState<SupplierPurchaseDocType>('invoice');
+  const [confirmPedidoOpen, setConfirmPedidoOpen] = React.useState(false);
 
   const selected = suppliers.find((s) => s.id === selectedId) ?? null;
   const acceptedQuotes = quotes.filter((q) => q.status === 'aprobado');
@@ -290,28 +308,34 @@ export function SuppliersHub({
       .map((o) => o.quoteId as string)
   );
 
-  const poQtyNum = Number(poLineQty.replace(',', '.'));
-  const poSubtotalCents = poSubtotal.trim() ? eurosToCents(poSubtotal) : 0;
-  const poTaxCents = poTax.trim() ? eurosToCents(poTax) : 0;
+  const poParsedLines = poLinesDraft.map((l) => ({
+    description: l.description,
+    quantity: Number(l.quantity.replace(',', '.')),
+    unitPriceCents: l.unitPrice.trim() ? eurosToCents(l.unitPrice) : 0,
+    vatBps: vatPercentToBps(Number(l.vatPercent.replace(',', '.'))),
+  }));
   const poShippingCents = poShipping.trim() ? eurosToCents(poShipping) : 0;
-  const poTotalCents = poSubtotalCents + poTaxCents + poShippingCents;
-  let poUnitCostCents: number | null = null;
-  let poCalcError: string | null = null;
-  if (Number.isFinite(poQtyNum) && poQtyNum > 0) {
-    try {
-      poUnitCostCents = unitCostExVatWithShipping({
-        subtotalCents: poSubtotalCents,
-        shippingCents: poShippingCents,
-        shippingIncludesVat: poShippingIncludesVat,
-        quantity: poQtyNum,
-        shippingVatBps: DEFAULT_VAT_BPS,
-      });
-    } catch (e) {
-      poCalcError = e instanceof Error ? e.message : 'Cálculo no válido';
-    }
-  } else if (poLineQty.trim()) {
-    poCalcError = 'La cantidad debe ser mayor que cero';
-  }
+  const poShippingVatBps = vatPercentToBps(
+    Number(poShippingVatPercent.replace(',', '.') || '21')
+  );
+  const poValidation = validatePurchaseDraft({
+    supplierId: poSupplierId,
+    title: poTitle,
+    lines: poParsedLines,
+    shippingCents: poShippingCents,
+    shippingIncludesVat: poShippingIncludesVat,
+    shippingVatBps: poShippingVatBps,
+  });
+  const poMoney = poValidation.money;
+  const poPending = poValidation.issues.filter((i) => i.blockingForConfirm);
+  const poTotalQty =
+    poMoney?.lines.reduce((a, l) => a + l.quantity, 0) ?? 0;
+  const poUnitCostCents =
+    poMoney && poTotalQty > 0
+      ? Math.round(
+          (poMoney.subtotalCents + poMoney.shippingNetCents) / poTotalQty
+        )
+      : null;
 
   function applyQuoteToForm(
     quote: SupplierQuoteRow,
@@ -376,32 +400,46 @@ export function SuppliersHub({
     void openQuoteById(q.id);
   }
 
-  function resetPoForm(opts?: { keepRequestId?: boolean }) {
+  function resetPoForm(opts?: { keepRequestId?: boolean; open?: boolean }) {
     setEditingPurchaseId(null);
+    setSelectedPurchaseId(null);
     setPoSourceQuoteId('none');
     setPoQuoteId(null);
     if (!opts?.keepRequestId) setPoClientRequestId(newClientRequestId());
-    setPoSupplierId(suppliers[0]?.id ?? '');
+    setPoSupplierId('');
     setPoCategory('otros');
     setPoTitle('');
     setPoStatus('borrador');
     setPoOrderedAt('');
     setPoExpected('');
-    setPoSubtotal('');
-    setPoTax('');
     setPoShipping('');
     setPoShippingIncludesVat(false);
+    setPoShippingVatPercent('21');
     setPoNotes(DEFAULT_PO_UNIT_PRICE_NOTE);
-    setPoLineDesc('');
-    setPoLineQty('1');
-    setExtraPoLines([]);
+    setPoLinesDraft([emptyPoLine()]);
+    setConfirmPedidoOpen(false);
+    setShowPoForm(opts?.open ?? false);
     syncUrl({ tab: 'pedidos', po: null });
+  }
+
+  function startNewPurchase() {
+    resetPoForm({ open: true });
+    setShowPoForm(true);
+    setTimeout(
+      () =>
+        poFormRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'start',
+        }),
+      50
+    );
   }
 
   function applyPurchaseToForm(
     o: SupplierPurchaseOrderRow,
     lines: SupplierPurchaseLineRow[]
   ) {
+    setShowPoForm(true);
     setSelectedPurchaseId(o.id);
     setEditingPurchaseId(o.id);
     setPoQuoteId(o.quoteId);
@@ -412,19 +450,28 @@ export function SuppliersHub({
     setPoStatus(o.status);
     setPoOrderedAt(o.orderedAt ? o.orderedAt.slice(0, 10) : '');
     setPoExpected(o.expectedDeliveryAt ? o.expectedDeliveryAt.slice(0, 10) : '');
-    setPoSubtotal(centsToEurosInput(o.subtotalCents));
-    setPoTax(centsToEurosInput(o.taxCents));
     setPoShipping(centsToEurosInput(o.shippingCents));
     setPoShippingIncludesVat(Boolean(o.shippingIncludesVat));
+    setPoShippingVatPercent('21');
     setPoNotes(o.notes ?? '');
-    const first = lines[0];
-    setPoLineDesc(first?.description ?? '');
-    setPoLineQty(first ? String(first.quantity) : '1');
-    setExtraPoLines(lines.slice(1));
+    if (lines.length === 0) {
+      setPoLinesDraft([emptyPoLine()]);
+    } else {
+      setPoLinesDraft(
+        lines.map((l) => ({
+          key: l.id || newLineKey(),
+          description: l.description,
+          quantity: String(l.quantity),
+          unitPrice: centsToEurosInput(l.unitPriceCents),
+          vatPercent: String(vatBpsToPercent(l.vatBps || DEFAULT_VAT_BPS)),
+        }))
+      );
+    }
   }
 
   async function openPurchaseById(purchaseId: string) {
     setTab('pedidos');
+    setShowPoForm(true);
     syncUrl({ tab: 'pedidos', po: purchaseId });
     const cached = generalPurchases.find((x) => x.id === purchaseId);
     if (cached) {
@@ -475,30 +522,79 @@ export function SuppliersHub({
       )
     );
     const lines = quoteLinesById[q.id] ?? [];
-    let subtotal = 0;
-    let tax = 0;
-    for (const l of lines) {
-      const net = Math.round(l.quantity * l.unitPriceCents);
-      subtotal += net;
-      tax += Math.round(net * (l.vatBps / 10000));
+    if (lines.length === 0) {
+      setPoLinesDraft([emptyPoLine()]);
+    } else {
+      setPoLinesDraft(
+        lines.map((l) => ({
+          key: l.id || newLineKey(),
+          description: l.description || l.materialKey,
+          quantity: String(l.quantity),
+          unitPrice: centsToEurosInput(l.unitPriceCents),
+          vatPercent: String(vatBpsToPercent(l.vatBps || DEFAULT_VAT_BPS)),
+        }))
+      );
     }
-    setPoSubtotal(centsToEurosInput(subtotal || null));
-    setPoTax(centsToEurosInput(tax || null));
-    const first = lines[0];
-    setPoLineDesc(first?.description || first?.materialKey || '');
-    setPoLineQty(first ? String(first.quantity) : '1');
-    setExtraPoLines(
-      lines.slice(1).map((l, i) => ({
-        id: `tmp-${i}`,
-        purchaseOrderId: '',
-        description: l.description || l.materialKey,
+  }
+
+  async function savePurchaseOrder(opts: {
+    status: SupplierPurchaseStatus;
+    requireComplete: boolean;
+  }) {
+    if (opts.requireComplete && poPending.length > 0) {
+      toast.error(poPending[0]!.message);
+      return;
+    }
+    if (!poSupplierId) {
+      toast.error('Selecciona proveedor');
+      return;
+    }
+    if (!poTitle.trim()) {
+      toast.error('Indica un título');
+      return;
+    }
+    const lines = poParsedLines
+      .filter((l) => l.description.trim() && l.quantity > 0)
+      .map((l) => ({
+        description: l.description.trim(),
         quantity: l.quantity,
-        unit: l.unit,
         unitPriceCents: l.unitPriceCents,
         vatBps: l.vatBps,
-        lineTotalCents: null,
-      }))
+      }));
+    const res = await upsertGeneralPurchaseOrderAction({
+      id: editingPurchaseId,
+      supplierId: poSupplierId,
+      quoteId: poQuoteId,
+      category: poCategory,
+      title: poTitle,
+      status: opts.status,
+      orderedAt: poOrderedAt || null,
+      expectedDeliveryAt: poExpected || null,
+      subtotalCents: poMoney?.subtotalCents ?? null,
+      taxCents: poMoney?.taxCents ?? null,
+      shippingCents: poShippingCents,
+      shippingIncludesVat: poShippingIncludesVat,
+      totalCents: poMoney?.totalCents ?? null,
+      notes: poNotes || null,
+      clientRequestId: editingPurchaseId ? null : poClientRequestId,
+      replaceLines: true,
+      lines,
+    });
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success(
+      opts.status === 'pedido'
+        ? 'Compra confirmada (estado Pedido)'
+        : editingPurchaseId
+          ? 'Borrador actualizado'
+          : 'Borrador guardado (compra no confirmada)'
     );
+    setPoClientRequestId(newClientRequestId());
+    setConfirmPedidoOpen(false);
+    await openPurchaseById(res.id);
+    router.refresh();
   }
 
   React.useEffect(() => {
@@ -1394,341 +1490,22 @@ export function SuppliersHub({
           {generalPurchasesError ? (
             <p className="text-sm text-destructive">{generalPurchasesError}</p>
           ) : null}
-          {canWrite ? (
-            <div
-              ref={poFormRef}
-              className="space-y-3 rounded-xl border border-border bg-card p-4"
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-base font-semibold">
-                    {editingPurchaseId
-                      ? 'Editar pedido general'
-                      : 'Pedido de materiales / servicios'}
-                  </h2>
-                  {editingPurchaseId ? (
-                    <p className="text-xs text-muted-foreground">
-                      ID: {editingPurchaseId}
-                    </p>
-                  ) : null}
-                </div>
-                {editingPurchaseId ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => resetPoForm()}
-                  >
-                    Pedido sin presupuesto
-                  </Button>
-                ) : null}
-              </div>
-              {!editingPurchaseId ? (
-                <div className="space-y-1.5">
-                  <Label>Origen</Label>
-                  <Select
-                    value={poSourceQuoteId}
-                    onValueChange={(v) => preloadFromAcceptedQuote(v)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Pedido sin presupuesto" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">
-                        Pedido sin presupuesto
-                      </SelectItem>
-                      {acceptedQuotes.map((q) => (
-                        <SelectItem key={q.id} value={q.id}>
-                          {q.supplierName ?? 'Proveedor'} · {q.title}
-                          {quotesWithActivePo.has(q.id) ? ' (ya vinculado)' : ''}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Crear desde presupuesto aceptado precarga proveedor, líneas e
-                    importes. El borrador no confirma la compra.
-                  </p>
-                </div>
-              ) : poQuoteId ? (
-                <p className="text-xs text-muted-foreground">
-                  Vinculado a presupuesto origen ·{' '}
-                  {generalPurchases.find((o) => o.id === editingPurchaseId)
-                    ?.quoteTitle ?? poQuoteId}
-                </p>
-              ) : null}
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <Label>Proveedor</Label>
-                  <Select
-                    value={poSupplierId}
-                    onValueChange={setPoSupplierId}
-                    disabled={Boolean(poQuoteId)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecciona" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {suppliers.map((s) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.legalName}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Categoría</Label>
-                  <Select
-                    value={poCategory}
-                    onValueChange={(v) => setPoCategory(v as SupplierCategory)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SUPPLIER_CATEGORIES.map((c) => (
-                        <SelectItem key={c} value={c}>
-                          {SUPPLIER_CATEGORY_LABELS[c]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Estado</Label>
-                  <Select
-                    value={poStatus}
-                    onValueChange={(v) =>
-                      setPoStatus(v as SupplierPurchaseStatus)
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SUPPLIER_PO_UI_STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>
-                          {SUPPLIER_PO_STATUS_LABELS[s]}
-                        </SelectItem>
-                      ))}
-                      {(poStatus === 'parcial' || poStatus === 'facturado') &&
-                      !(SUPPLIER_PO_UI_STATUSES as readonly string[]).includes(
-                        poStatus
-                      ) ? (
-                        <SelectItem value={poStatus}>
-                          {SUPPLIER_PO_STATUS_LABELS[poStatus]}
-                        </SelectItem>
-                      ) : null}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label>Título</Label>
-                  <Input
-                    value={poTitle}
-                    onChange={(e) => setPoTitle(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Fecha pedido</Label>
-                  <Input
-                    type="date"
-                    value={poOrderedAt}
-                    onChange={(e) => setPoOrderedAt(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Entrega prevista</Label>
-                  <Input
-                    type="date"
-                    value={poExpected}
-                    onChange={(e) => setPoExpected(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label>Línea (descripción)</Label>
-                  <Input
-                    value={poLineDesc}
-                    onChange={(e) => setPoLineDesc(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Cantidad</Label>
-                  <Input
-                    value={poLineQty}
-                    onChange={(e) => setPoLineQty(e.target.value)}
-                    inputMode="decimal"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Subtotal sin IVA (€)</Label>
-                  <Input
-                    value={poSubtotal}
-                    onChange={(e) => setPoSubtotal(e.target.value)}
-                    inputMode="decimal"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Impuestos (€)</Label>
-                  <Input
-                    value={poTax}
-                    onChange={(e) => setPoTax(e.target.value)}
-                    inputMode="decimal"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Transporte (€)</Label>
-                  <Input
-                    value={poShipping}
-                    onChange={(e) => setPoShipping(e.target.value)}
-                    inputMode="decimal"
-                  />
-                </div>
-                <div className="flex items-end sm:col-span-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={poShippingIncludesVat}
-                      onChange={(e) =>
-                        setPoShippingIncludesVat(e.target.checked)
-                      }
-                    />
-                    El transporte incluye IVA
-                  </label>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Total (€) — calculado</Label>
-                  <Input
-                    value={formatCents(poTotalCents)}
-                    readOnly
-                    className="bg-muted/40"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Precio unitario sin IVA c/ transporte — calculado</Label>
-                  <Input
-                    value={
-                      poUnitCostCents == null
-                        ? ''
-                        : formatCents(poUnitCostCents)
-                    }
-                    readOnly
-                    className="bg-muted/40"
-                  />
-                </div>
-                {poCalcError ? (
-                  <p className="sm:col-span-2 text-sm text-destructive">
-                    {poCalcError}
-                  </p>
-                ) : (
-                  <p className="sm:col-span-2 text-xs text-muted-foreground">
-                    Total = subtotal sin IVA + impuestos + transporte. El precio
-                    unitario usa la base del transporte (sin IVA) y, con varias
-                    líneas, reparte el transporte proporcionalmente al neto de
-                    cada línea.
-                  </p>
-                )}
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label>Notas</Label>
-                  <Textarea
-                    value={poNotes}
-                    onChange={(e) => setPoNotes(e.target.value)}
-                    rows={3}
-                  />
-                </div>
-                {extraPoLines.length > 0 ? (
-                  <p className="sm:col-span-2 text-xs text-muted-foreground">
-                    +{extraPoLines.length} línea(s) adicional(es): el transporte
-                    se reparte proporcionalmente al guardar; se conservan al
-                    editar.
-                  </p>
-                ) : null}
-              </div>
-              <Button
-                type="button"
-                disabled={busy || !poSupplierId || Boolean(poCalcError)}
-                onClick={() =>
-                  run(async () => {
-                    const qty = Number(poLineQty.replace(',', '.'));
-                    if (!(Number.isFinite(qty) && qty > 0)) {
-                      toast.error('La cantidad debe ser mayor que cero');
-                      return;
-                    }
-                    // Persistimos precio de línea sin transporte:
-                    // unit = subtotal / qty. El unitario con transporte es solo UI.
-                    const unitExShipping = Math.round(poSubtotalCents / qty);
-                    const primary = poLineDesc.trim()
-                      ? [
-                          {
-                            description: poLineDesc,
-                            quantity: qty,
-                            unitPriceCents: unitExShipping,
-                          },
-                        ]
-                      : poSubtotalCents > 0
-                        ? [
-                            {
-                              description: poTitle.trim() || 'Línea pedido',
-                              quantity: qty,
-                              unitPriceCents: unitExShipping,
-                            },
-                          ]
-                        : [];
-                    // Extra lines keep their stored unit prices; shipping
-                    // allocation is computed server-side for display totals.
-                    const lines = [
-                      ...primary,
-                      ...extraPoLines.map((l) => ({
-                        description: l.description,
-                        quantity: l.quantity,
-                        unit: l.unit,
-                        unitPriceCents: l.unitPriceCents,
-                        vatBps: l.vatBps,
-                      })),
-                    ];
-                    const res = await upsertGeneralPurchaseOrderAction({
-                      id: editingPurchaseId,
-                      supplierId: poSupplierId,
-                      quoteId: poQuoteId,
-                      category: poCategory,
-                      title: poTitle,
-                      status: poStatus,
-                      orderedAt: poOrderedAt || null,
-                      expectedDeliveryAt: poExpected || null,
-                      subtotalCents: poSubtotalCents,
-                      taxCents: poTaxCents,
-                      shippingCents: poShippingCents,
-                      shippingIncludesVat: poShippingIncludesVat,
-                      totalCents: poTotalCents,
-                      notes: poNotes || null,
-                      clientRequestId: editingPurchaseId
-                        ? null
-                        : poClientRequestId,
-                      replaceLines: true,
-                      lines,
-                    });
-                    if (!res.ok) {
-                      toast.error(res.error);
-                      return;
-                    }
-                    toast.success(
-                      editingPurchaseId
-                        ? 'Pedido actualizado'
-                        : poStatus === 'borrador'
-                          ? 'Borrador guardado (compra no confirmada)'
-                          : 'Pedido general guardado'
-                    );
-                    setPoClientRequestId(newClientRequestId());
-                    await openPurchaseById(res.id);
-                    router.refresh();
-                  })
-                }
-              >
-                {editingPurchaseId ? 'Guardar cambios' : 'Guardar borrador'}
-              </Button>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-base font-semibold">Pedidos de compra</h2>
+              <p className="text-xs text-muted-foreground">
+                Listado de pedidos generales. Abre uno para editarlo o crea un
+                borrador nuevo.
+              </p>
             </div>
-          ) : null}
+            {canWrite ? (
+              <Button type="button" size="sm" onClick={() => startNewPurchase()}>
+                <Plus className="mr-1 h-4 w-4" />
+                Nuevo pedido
+              </Button>
+            ) : null}
+          </div>
 
           <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
             <div className="overflow-x-auto rounded-xl border border-border bg-card">
@@ -1750,20 +1527,19 @@ export function SuppliersHub({
                         colSpan={6}
                         className="px-3 py-6 text-muted-foreground"
                       >
-                        Sin pedidos generales.
+                        Sin pedidos de compra.
                       </td>
                     </tr>
                   ) : (
                     generalPurchases.map((o) => (
                       <tr
                         key={o.id}
-                        className={`border-b border-border/70 cursor-pointer ${
+                        className={`border-b border-border/70 ${
                           selectedPurchaseId === o.id ||
                           editingPurchaseId === o.id
                             ? 'bg-primary/5'
                             : ''
                         }`}
-                        onClick={() => openPurchase(o)}
                       >
                         <td className="px-3 py-2">{o.supplierName ?? '—'}</td>
                         <td className="px-3 py-2">{o.title}</td>
@@ -1778,10 +1554,7 @@ export function SuppliersHub({
                         <td className="px-3 py-2">
                           {formatCents(o.totalCents)}
                         </td>
-                        <td
-                          className="px-3 py-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <td className="px-3 py-2">
                           <Button
                             type="button"
                             size="sm"
@@ -1802,7 +1575,7 @@ export function SuppliersHub({
               <h3 className="text-sm font-semibold">Documentos / facturas</h3>
               {!selectedPurchaseId ? (
                 <p className="text-sm text-muted-foreground">
-                  Selecciona un pedido.
+                  Abre un pedido para ver o subir documentos.
                 </p>
               ) : (
                 <>
@@ -1876,6 +1649,472 @@ export function SuppliersHub({
               )}
             </div>
           </div>
+
+          {canWrite && showPoForm ? (
+            <div
+              ref={poFormRef}
+              className="space-y-4 rounded-xl border border-border bg-card p-4"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-base font-semibold">
+                    {editingPurchaseId
+                      ? 'Editar pedido de compra'
+                      : 'Nuevo pedido de compra'}
+                  </h2>
+                  {editingPurchaseId ? (
+                    <p className="text-xs text-muted-foreground">
+                      ID: {editingPurchaseId}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">
+                      Borrador editable. Confirma explícitamente para pasar a
+                      Pedido.
+                    </p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => resetPoForm()}
+                >
+                  Cerrar formulario
+                </Button>
+              </div>
+
+              {!editingPurchaseId ? (
+                <div className="space-y-1.5">
+                  <Label>Origen</Label>
+                  <Select
+                    value={poSourceQuoteId}
+                    onValueChange={(v) => preloadFromAcceptedQuote(v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pedido sin presupuesto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        Pedido sin presupuesto
+                      </SelectItem>
+                      {acceptedQuotes.map((q) => (
+                        <SelectItem key={q.id} value={q.id}>
+                          {q.supplierName ?? 'Proveedor'} · {q.title}
+                          {quotesWithActivePo.has(q.id) ? ' (ya vinculado)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Desde presupuesto aceptado se precargan proveedor, líneas e
+                    importes. No confirma la compra.
+                  </p>
+                </div>
+              ) : poQuoteId ? (
+                <p className="text-xs text-muted-foreground">
+                  Vinculado a presupuesto origen ·{' '}
+                  {generalPurchases.find((o) => o.id === editingPurchaseId)
+                    ?.quoteTitle ?? poQuoteId}
+                </p>
+              ) : null}
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Proveedor</Label>
+                  <Select
+                    value={poSupplierId}
+                    onValueChange={setPoSupplierId}
+                    disabled={Boolean(poQuoteId)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suppliers.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.legalName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Categoría</Label>
+                  <Select
+                    value={poCategory}
+                    onValueChange={(v) => setPoCategory(v as SupplierCategory)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUPPLIER_CATEGORIES.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {SUPPLIER_CATEGORY_LABELS[c]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Estado</Label>
+                  <Input
+                    value={SUPPLIER_PO_STATUS_LABELS[poStatus] ?? poStatus}
+                    readOnly
+                    className="bg-muted/40"
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>Título</Label>
+                  <Input
+                    value={poTitle}
+                    onChange={(e) => setPoTitle(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Fecha pedido</Label>
+                  <Input
+                    type="date"
+                    value={poOrderedAt}
+                    onChange={(e) => setPoOrderedAt(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Entrega prevista</Label>
+                  <Input
+                    type="date"
+                    value={poExpected}
+                    onChange={(e) => setPoExpected(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold">Líneas</h3>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setPoLinesDraft((prev) => [...prev, emptyPoLine()])
+                    }
+                  >
+                    <Plus className="mr-1 h-4 w-4" />
+                    Añadir línea
+                  </Button>
+                </div>
+                <div className="overflow-x-auto rounded-lg border border-border">
+                  <table className="w-full min-w-[960px] text-left text-sm">
+                    <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-2 py-2">Descripción</th>
+                        <th className="px-2 py-2">Cant.</th>
+                        <th className="px-2 py-2">P. unit. s/IVA</th>
+                        <th className="px-2 py-2">IVA %</th>
+                        <th className="px-2 py-2">Base</th>
+                        <th className="px-2 py-2">Cuota IVA</th>
+                        <th className="px-2 py-2">Total línea</th>
+                        <th className="px-2 py-2" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {poLinesDraft.map((line, idx) => {
+                        const qty = Number(line.quantity.replace(',', '.'));
+                        const unitCents = line.unitPrice.trim()
+                          ? eurosToCents(line.unitPrice)
+                          : 0;
+                        const vatBps = vatPercentToBps(
+                          Number(line.vatPercent.replace(',', '.') || '21')
+                        );
+                        const canCalc = Number.isFinite(qty) && qty > 0;
+                        const netCents = canCalc
+                          ? Math.round(qty * unitCents)
+                          : null;
+                        const vatCents =
+                          netCents != null
+                            ? Math.round((netCents * vatBps) / 10000)
+                            : null;
+                        const lineTotalCents =
+                          netCents != null && vatCents != null
+                            ? netCents + vatCents
+                            : null;
+                        return (
+                          <tr
+                            key={line.key}
+                            className="border-b border-border/70 align-top"
+                          >
+                            <td className="px-2 py-2">
+                              <Input
+                                value={line.description}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setPoLinesDraft((prev) =>
+                                    prev.map((l, i) =>
+                                      i === idx ? { ...l, description: v } : l
+                                    )
+                                  );
+                                }}
+                              />
+                            </td>
+                            <td className="px-2 py-2 w-24">
+                              <Input
+                                value={line.quantity}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setPoLinesDraft((prev) =>
+                                    prev.map((l, i) =>
+                                      i === idx ? { ...l, quantity: v } : l
+                                    )
+                                  );
+                                }}
+                                inputMode="decimal"
+                              />
+                            </td>
+                            <td className="px-2 py-2 w-32">
+                              <Input
+                                value={line.unitPrice}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setPoLinesDraft((prev) =>
+                                    prev.map((l, i) =>
+                                      i === idx ? { ...l, unitPrice: v } : l
+                                    )
+                                  );
+                                }}
+                                inputMode="decimal"
+                              />
+                            </td>
+                            <td className="px-2 py-2 w-24">
+                              <Input
+                                value={line.vatPercent}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  setPoLinesDraft((prev) =>
+                                    prev.map((l, i) =>
+                                      i === idx ? { ...l, vatPercent: v } : l
+                                    )
+                                  );
+                                }}
+                                inputMode="decimal"
+                              />
+                            </td>
+                            <td className="px-2 py-2 text-muted-foreground">
+                              {formatCents(netCents)}
+                            </td>
+                            <td className="px-2 py-2 text-muted-foreground">
+                              {formatCents(vatCents)}
+                            </td>
+                            <td className="px-2 py-2 text-muted-foreground">
+                              {formatCents(lineTotalCents)}
+                            </td>
+                            <td className="px-2 py-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={poLinesDraft.length <= 1}
+                                onClick={() =>
+                                  setPoLinesDraft((prev) =>
+                                    prev.length <= 1
+                                      ? prev
+                                      : prev.filter((_, i) => i !== idx)
+                                  )
+                                }
+                              >
+                                Quitar
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-1.5">
+                  <Label>Transporte (€)</Label>
+                  <Input
+                    value={poShipping}
+                    onChange={(e) => setPoShipping(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>IVA transporte (%)</Label>
+                  <Input
+                    value={poShippingVatPercent}
+                    onChange={(e) => setPoShippingVatPercent(e.target.value)}
+                    inputMode="decimal"
+                    disabled={poShippingIncludesVat}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={poShippingIncludesVat}
+                      onChange={(e) =>
+                        setPoShippingIncludesVat(e.target.checked)
+                      }
+                    />
+                    El transporte incluye IVA
+                  </label>
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-lg border border-border bg-muted/20 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Base imponible productos
+                  </p>
+                  <p className="text-sm font-medium">
+                    {formatCents(poMoney?.subtotalCents)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">IVA productos</p>
+                  <p className="text-sm font-medium">
+                    {formatCents(poMoney?.productVatCents)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Transporte sin IVA
+                  </p>
+                  <p className="text-sm font-medium">
+                    {formatCents(poMoney?.shippingNetCents)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    IVA del transporte
+                  </p>
+                  <p className="text-sm font-medium">
+                    {formatCents(poMoney?.shippingVatCents)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Total pedido con IVA
+                  </p>
+                  <p className="text-sm font-semibold">
+                    {formatCents(poMoney?.totalCents)}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    Coste unit. s/IVA c/ transporte
+                  </p>
+                  <p className="text-sm font-medium">
+                    {formatCents(poUnitCostCents)}
+                  </p>
+                </div>
+              </div>
+
+              {poPending.length > 0 ? (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+                  <p className="font-medium">Campos pendientes</p>
+                  <ul className="mt-1 list-disc pl-5 text-xs">
+                    {poPending.map((i) => (
+                      <li key={i.field}>{i.message}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs">
+                    Puedes guardar como borrador. Para confirmar Pedido debes
+                    completarlos.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="space-y-1.5">
+                <Label>Notas</Label>
+                <Textarea
+                  value={poNotes}
+                  onChange={(e) => setPoNotes(e.target.value)}
+                  rows={3}
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy || !poSupplierId || !poTitle.trim()}
+                  onClick={() =>
+                    run(async () => {
+                      await savePurchaseOrder({
+                        status: 'borrador',
+                        requireComplete: false,
+                      });
+                    })
+                  }
+                >
+                  Guardar borrador
+                </Button>
+                {poStatus === 'borrador' || !editingPurchaseId ? (
+                  <Button
+                    type="button"
+                    disabled={busy || poPending.length > 0}
+                    onClick={() => setConfirmPedidoOpen(true)}
+                  >
+                    Confirmar Pedido
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled={busy || poPending.length > 0}
+                    onClick={() =>
+                      run(async () => {
+                        await savePurchaseOrder({
+                          status: poStatus === 'cancelado' ? 'pedido' : poStatus,
+                          requireComplete: true,
+                        });
+                      })
+                    }
+                  >
+                    Guardar cambios
+                  </Button>
+                )}
+              </div>
+
+              {confirmPedidoOpen ? (
+                <div className="space-y-3 rounded-lg border border-border bg-background p-3">
+                  <p className="text-sm">
+                    ¿Confirmar este borrador como Pedido? Se validarán proveedor,
+                    líneas, cantidades, precios e impuestos y se guardarán los
+                    importes calculados.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          await savePurchaseOrder({
+                            status: 'pedido',
+                            requireComplete: true,
+                          });
+                        })
+                      }
+                    >
+                      Sí, confirmar Pedido
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setConfirmPedidoOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

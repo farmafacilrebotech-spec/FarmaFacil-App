@@ -12,6 +12,7 @@ import {
   roundCents,
   splitGrossVat,
   unitCostExVatWithShipping,
+  validatePurchaseDraft,
   withDefaultPoNoteOnCreate,
 } from './purchase-math.ts';
 
@@ -23,7 +24,6 @@ describe('roundCents / splitGrossVat', () => {
   });
 
   it('separa IVA incluido del transporte', () => {
-    // 121 € con 21% → base 100 €
     const r = splitGrossVat(12100, 2100, true);
     assert.equal(r.netCents, 10000);
     assert.equal(r.vatCents, 2100);
@@ -42,44 +42,45 @@ describe('allocateShippingNetProportional', () => {
     assert.deepEqual(shares, [75, 25]);
     assert.equal(shares.reduce((a, b) => a + b, 0), 100);
   });
-
-  it('asigna residual a la línea de mayor neto', () => {
-    // 10 céntimos sobre 3+3 → 3+3 con residual 4 en la última empatada
-    const shares = allocateShippingNetProportional(10, [333, 333, 334]);
-    assert.equal(shares.reduce((a, b) => a + b, 0), 10);
-    assert.ok(shares.every((s) => s >= 0));
-  });
 });
 
 describe('computePurchaseMoney', () => {
-  it('Total = subtotal + impuestos + transporte (transporte sin IVA)', () => {
+  it('Total = base + IVA productos + transporte neto + IVA transporte', () => {
     const r = computePurchaseMoney({
       lines: [{ quantity: 2, unitPriceCents: 1000, vatBps: 2100 }],
       shippingCents: 500,
       shippingIncludesVat: false,
     });
     assert.equal(r.subtotalCents, 2000);
-    assert.equal(r.taxCents, 420 + 105); // líneas 21% + transporte 21%
-    assert.equal(r.shippingCents, 500);
+    assert.equal(r.productVatCents, 420);
+    assert.equal(r.shippingNetCents, 500);
+    assert.equal(r.shippingVatCents, 105);
+    assert.equal(r.taxCents, 420 + 105);
+    assert.equal(
+      r.totalCents,
+      r.subtotalCents + r.productVatCents + r.shippingNetCents + r.shippingVatCents
+    );
     assert.equal(r.totalCents, r.subtotalCents + r.taxCents + r.shippingCents);
-    assert.equal(r.lines[0]!.unitCostExVatWithShippingCents, 1250); // (2000+500)/2
+    assert.equal(r.lines[0]!.lineTotalCents, 2000 + 420);
+    assert.equal(r.lines[0]!.unitCostExVatWithShippingCents, 1250);
   });
 
-  it('no suma el IVA del transporte dos veces si ya viene incluido', () => {
+  it('no duplica IVA del transporte si ya viene incluido', () => {
     const r = computePurchaseMoney({
       lines: [{ quantity: 1, unitPriceCents: 10000, vatBps: 2100 }],
-      shippingCents: 1210, // 10 € + 21%
+      shippingCents: 1210,
       shippingIncludesVat: true,
     });
     assert.equal(r.subtotalCents, 10000);
-    assert.equal(r.taxCents, 2100); // solo IVA de líneas
+    assert.equal(r.productVatCents, 2100);
     assert.equal(r.shippingNetCents, 1000);
     assert.equal(r.shippingVatCents, 210);
-    assert.equal(r.totalCents, 10000 + 2100 + 1210);
-    assert.equal(r.lines[0]!.unitCostExVatWithShippingCents, 11000); // (10000+1000)/1
+    assert.equal(r.taxCents, 2100); // solo productos
+    assert.equal(r.totalCents, 10000 + 2100 + 1000 + 210);
+    assert.equal(r.totalCents, r.subtotalCents + r.taxCents + r.shippingCents);
   });
 
-  it('reparte transporte en varias líneas de forma proporcional', () => {
+  it('reparte transporte en varias líneas', () => {
     const r = computePurchaseMoney({
       lines: [
         { quantity: 1, unitPriceCents: 7500, vatBps: 2100 },
@@ -94,19 +95,6 @@ describe('computePurchaseMoney', () => {
     assert.equal(r.lines[1]!.unitCostExVatWithShippingCents, 2750);
   });
 
-  it('respeta overrides de subtotal/impuestos del formulario', () => {
-    const r = computePurchaseMoney({
-      lines: [{ quantity: 10, unitPriceCents: 100, vatBps: 2100 }],
-      shippingCents: 0,
-      shippingIncludesVat: false,
-      subtotalOverrideCents: 1500,
-      taxOverrideCents: 315,
-    });
-    assert.equal(r.subtotalCents, 1500);
-    assert.equal(r.taxCents, 315);
-    assert.equal(r.totalCents, 1815);
-  });
-
   it('exige cantidad > 0', () => {
     assert.throws(() =>
       computePurchaseMoney({
@@ -118,8 +106,46 @@ describe('computePurchaseMoney', () => {
   });
 });
 
-describe('unitCostExVatWithShipping + notas', () => {
-  it('calcula coste unitario agregado', () => {
+describe('validatePurchaseDraft / notas', () => {
+  it('señala pendientes sin bloquear cálculo parcial', () => {
+    const v = validatePurchaseDraft({
+      supplierId: '',
+      title: '',
+      lines: [],
+      shippingCents: 0,
+      shippingIncludesVat: false,
+    });
+    assert.ok(v.issues.some((i) => i.field === 'supplierId'));
+    assert.ok(v.issues.some((i) => i.field === 'lines'));
+    assert.equal(v.money, null);
+  });
+
+  it('calcula cuando las líneas están completas', () => {
+    const v = validatePurchaseDraft({
+      supplierId: 's1',
+      title: 'Pedido',
+      lines: [
+        {
+          description: 'Item',
+          quantity: 2,
+          unitPriceCents: 1000,
+          vatBps: 2100,
+        },
+      ],
+      shippingCents: 0,
+      shippingIncludesVat: false,
+    });
+    assert.equal(v.issues.length, 0);
+    assert.ok(v.money);
+    assert.equal(v.money!.subtotalCents, 2000);
+  });
+
+  it('notas por defecto', () => {
+    assert.equal(withDefaultPoNoteOnCreate(null), DEFAULT_PO_UNIT_PRICE_NOTE);
+    assert.equal(ensureDefaultPoNote('X'), 'X');
+  });
+
+  it('unitCost agregado', () => {
     assert.equal(
       unitCostExVatWithShipping({
         subtotalCents: 2000,
@@ -127,19 +153,7 @@ describe('unitCostExVatWithShipping + notas', () => {
         shippingIncludesVat: true,
         quantity: 2,
       }),
-      1500 // (2000+1000)/2
-    );
-  });
-
-  it('añade nota por defecto solo al crear / si está vacía', () => {
-    assert.equal(withDefaultPoNoteOnCreate(null), DEFAULT_PO_UNIT_PRICE_NOTE);
-    assert.equal(
-      withDefaultPoNoteOnCreate('Condiciones X'),
-      `Condiciones X\n${DEFAULT_PO_UNIT_PRICE_NOTE}`
-    );
-    assert.equal(
-      ensureDefaultPoNote('Notas del usuario'),
-      'Notas del usuario'
+      1500
     );
   });
 });

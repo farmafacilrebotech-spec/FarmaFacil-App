@@ -28,6 +28,7 @@ import {
 } from '@/lib/suppliers/queries';
 import {
   computePurchaseMoney,
+  validatePurchaseDraft,
   withDefaultPoNoteOnCreate,
 } from '@/lib/suppliers/purchase-math';
 import type {
@@ -507,27 +508,55 @@ export async function upsertGeneralPurchaseOrderAction(input: {
   }
 
   const shippingIncludesVat = Boolean(input.shippingIncludesVat);
-  const linesForMath = (input.lines ?? []).map((l) => ({
-    quantity: l.quantity > 0 ? l.quantity : 1,
-    unitPriceCents: l.unitPriceCents,
-    vatBps: l.vatBps ?? 2100,
-  }));
+  const rawLines = input.lines ?? [];
+  if (status !== 'borrador' && status !== 'cancelado') {
+    const validation = validatePurchaseDraft({
+      supplierId: input.supplierId,
+      title,
+      lines: rawLines.map((l) => ({
+        description: l.description,
+        quantity: l.quantity,
+        unitPriceCents: l.unitPriceCents,
+        vatBps: l.vatBps ?? 2100,
+      })),
+      shippingCents: input.shippingCents ?? 0,
+      shippingIncludesVat,
+    });
+    const blocking = validation.issues.filter((i) => i.blockingForConfirm);
+    if (blocking.length > 0) {
+      return { ok: false, error: blocking[0]!.message };
+    }
+  }
+  const linesForMath = rawLines
+    .filter((l) => l.description.trim() && l.quantity > 0)
+    .map((l) => ({
+      quantity: l.quantity,
+      unitPriceCents: l.unitPriceCents,
+      vatBps: l.vatBps ?? 2100,
+    }));
   let subtotalCents = input.subtotalCents ?? null;
   let taxCents = input.taxCents ?? null;
   let shippingCents = input.shippingCents ?? null;
   let totalCents = input.totalCents ?? null;
   try {
-    const money = computePurchaseMoney({
-      lines: linesForMath,
-      shippingCents: shippingCents ?? 0,
-      shippingIncludesVat,
-      subtotalOverrideCents: subtotalCents,
-      taxOverrideCents: taxCents,
-    });
-    subtotalCents = money.subtotalCents;
-    taxCents = money.taxCents;
-    shippingCents = money.shippingCents;
-    totalCents = money.totalCents;
+    // Borrador incompleto: no forzar ceros sobre importes históricos si no hay líneas.
+    if (linesForMath.length > 0 || status === 'borrador') {
+      const money = computePurchaseMoney({
+        lines: linesForMath,
+        shippingCents: shippingCents ?? 0,
+        shippingIncludesVat,
+        // Solo respetar override histórico si el cliente no recalcula desde líneas.
+        subtotalOverrideCents:
+          linesForMath.length === 0 ? subtotalCents : null,
+        taxOverrideCents: linesForMath.length === 0 ? taxCents : null,
+      });
+      if (linesForMath.length > 0 || subtotalCents == null) {
+        subtotalCents = money.subtotalCents;
+        taxCents = money.taxCents;
+        shippingCents = money.shippingCents;
+        totalCents = money.totalCents;
+      }
+    }
   } catch (e) {
     return {
       ok: false,
