@@ -1,26 +1,24 @@
-# PR #21 — Dependencias de recepción de kioskos (staging)
+# PR #21 — Dependencias de recepción de kioskos
 
-## Qué falta en staging
+## Staging (`dazfdcjscnpfvhcyjddt`) — actualizado 2026-11-10
 
-- La tabla `public.kiosk_assets` **no existe** en staging (`dazfdcjscnpfvhcyjddt`).
-- La RPC `ff_kiosk_purchase_receive_v1` (076) inserta en `kiosk_assets` y usa `ff_kiosk_asset_next_code()`.
-- Esas piezas pertenecen a la migración **065** (inventario físico de kioskos), no aplicada en staging.
+- **065 aplicada**: existen `kiosk_assets`, `ff_kiosk_asset_next_code`, permisos inventario.
+- Enlace `kiosk_assets.purchase_order_id` → `kiosk_purchase_orders` añadido post-065.
+- Recepción DEMO validada: pedido `2026/00000003` → 10 activos `KSK-0001`…`KSK-0010`, reintento sin duplicar.
 
-## Qué sí funciona sin 065
+## Producción (`gsnohwsvjxpjfcsstnfd`)
 
-- Directorio, presupuestos, pedidos de compra (`platform_supplier_purchase_orders`).
-- Extensión operativa `kiosk_purchase_orders` (alta, estados `preparado`/`pedido`, documentos si el bucket existe).
-- Numeración visible del pedido general (`order_number` 080) reflejada en la extensión; no hay contador propio de kiosk.
-- **Bloqueo recepción en staging:** falta migración **065** (`kiosk_assets` / `ff_kiosk_asset_next_code`). No modificar la RPC de recepción sin revisar esa dependencia.
-- Unificación 079: enlace `general_purchase_order_id` / `source_quote_id`.
+- **065 presente** (inventario físico).
+- **076–080 ausentes** (no hay compras/proveedores/numeración). Publicar PR #21 requiere esas migraciones (ver `pr21-go-nogo-publication.md`).
 
-## Qué bloquea la prueba real de recepción
+## Circuito
 
-1. Aplicar **065** (y sus dependencias previas) en staging tras revisión explícita.
-2. Verificar que 076 ya enlazó `kiosk_assets.purchase_order_id` (bloque condicional en 076).
-3. Solo entonces: recepción → códigos KSK → inventario.
+1. Pedido económico en `platform_supplier_purchase_orders` (número al confirmar, 080).
+2. Extensión 1:1 `kiosk_purchase_orders` (079) con el mismo `order_number`.
+3. `ff_kiosk_purchase_receive_v1` crea activos KSK ligados al pedido kiosk (sin asignar farmacia).
 
 ## Política
 
-- **No aplicar 065 automáticamente** sin verificar dependencias y compatibilidad.
-- Asignar un activo del inventario a una farmacia **no** debe crear una compra a proveedor.
+- No aplicar migraciones en producción sin autorización.
+- Asignar un activo a farmacia **no** crea compra a proveedor.
+- Datos DEMO no van a producción.
