@@ -31,22 +31,34 @@ export function isSupplierCategory(value: string | null | undefined): value is S
   );
 }
 
+/** Estados de presupuesto (076 + archivado en 077). «aprobado» = Aceptado en UI. */
 export const SUPPLIER_QUOTE_STATUSES = [
   'recibido',
   'en_revision',
   'aprobado',
   'rechazado',
   'caducado',
+  'archivado',
 ] as const;
 export type SupplierQuoteStatus = (typeof SUPPLIER_QUOTE_STATUSES)[number];
 
 export const SUPPLIER_QUOTE_STATUS_LABELS: Record<SupplierQuoteStatus, string> = {
   recibido: 'Recibido',
   en_revision: 'En revisión',
-  aprobado: 'Aprobado',
+  aprobado: 'Aceptado',
   rechazado: 'Rechazado',
   caducado: 'Caducado',
+  archivado: 'Archivado',
 };
+
+/** Estados editables en la UI de presupuesto (flujo comercial). */
+export const SUPPLIER_QUOTE_UI_STATUSES = [
+  'recibido',
+  'en_revision',
+  'aprobado',
+  'rechazado',
+  'archivado',
+] as const;
 
 export const SUPPLIER_PO_STATUSES = [
   'borrador',
@@ -124,6 +136,7 @@ export type SupplierQuoteRow = {
   id: string;
   supplierId: string;
   supplierName: string | null;
+  supplierCategory: SupplierCategory | null;
   quoteNumber: string | null;
   title: string;
   status: SupplierQuoteStatus;
@@ -132,7 +145,9 @@ export type SupplierQuoteRow = {
   currency: string;
   shippingCents: number | null;
   notes: string | null;
+  rejectionReason: string | null;
   createdAt: string;
+  updatedAt: string | null;
 };
 
 export type SupplierQuoteLineRow = {
@@ -175,6 +190,7 @@ export type SupplierPurchaseOrderRow = {
   supplierId: string;
   supplierName: string | null;
   quoteId: string | null;
+  quoteTitle: string | null;
   category: SupplierCategory;
   title: string;
   orderNumber: string | null;
@@ -188,7 +204,38 @@ export type SupplierPurchaseOrderRow = {
   shippingCents: number | null;
   totalCents: number | null;
   notes: string | null;
+  clientRequestId: string | null;
   createdAt: string;
+  updatedAt: string | null;
+};
+
+export type SupplierStatusEventRow = {
+  id: string;
+  entityType: 'quote' | 'purchase_order';
+  entityId: string;
+  fromStatus: string | null;
+  toStatus: string;
+  reason: string | null;
+  createdAt: string;
+};
+
+/** Transiciones de pedido permitidas en UI (076 conserva parcial/facturado). */
+export const SUPPLIER_PO_UI_STATUSES = [
+  'borrador',
+  'pedido',
+  'recibido',
+  'cancelado',
+] as const;
+
+export type SupplierPurchaseLineRow = {
+  id: string;
+  purchaseOrderId: string;
+  description: string;
+  quantity: number;
+  unit: string | null;
+  unitPriceCents: number;
+  vatBps: number;
+  lineTotalCents: number | null;
 };
 
 export type SupplierPurchaseDocumentRow = {

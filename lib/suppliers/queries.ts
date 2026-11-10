@@ -10,6 +10,7 @@ import {
   type SupplierContactRow,
   type SupplierPurchaseDocType,
   type SupplierPurchaseDocumentRow,
+  type SupplierPurchaseLineRow,
   type SupplierPurchaseOrderRow,
   type SupplierPurchaseStatus,
   type SupplierQuoteDocumentRow,
@@ -18,6 +19,7 @@ import {
   type SupplierQuoteStatus,
   type SupplierRow,
   type SupplierStatus,
+  type SupplierStatusEventRow,
 } from '@/lib/suppliers/types';
 
 function mapCategory(raw: unknown): SupplierCategory {
@@ -157,8 +159,8 @@ export async function listSupplierQuotes(opts?: {
     .select(
       `
       id, supplier_id, quote_number, title, status, received_at, valid_until,
-      currency, shipping_cents, notes, created_at,
-      platform_suppliers ( legal_name )
+      currency, shipping_cents, notes, rejection_reason, created_at, updated_at,
+      platform_suppliers ( legal_name, category )
     `
     )
     .order('created_at', { ascending: false })
@@ -170,29 +172,70 @@ export async function listSupplierQuotes(opts?: {
   const { data, error } = await query;
   if (error) {
     console.error('[suppliers] quotes', error.code, error.message);
+    // Compatibilidad pre-077: sin rejection_reason / updated_at
+    if (
+      String(error.message).toLowerCase().includes('rejection_reason') ||
+      String(error.message).toLowerCase().includes('updated_at')
+    ) {
+      return listSupplierQuotesLegacy(opts);
+    }
     return { ok: false, error: 'No se han podido cargar los presupuestos.' };
   }
 
   return {
     ok: true,
-    quotes: ((data as Record<string, unknown>[] | null) ?? []).map((r) => {
-      const s = r.platform_suppliers as { legal_name?: string } | null;
-      return {
-        id: String(r.id),
-        supplierId: String(r.supplier_id),
-        supplierName: s?.legal_name ?? null,
-        quoteNumber: r.quote_number == null ? null : String(r.quote_number),
-        title: String(r.title ?? ''),
-        status: String(r.status ?? 'recibido') as SupplierQuoteStatus,
-        receivedAt: r.received_at == null ? null : String(r.received_at),
-        validUntil: r.valid_until == null ? null : String(r.valid_until),
-        currency: String(r.currency ?? 'EUR'),
-        shippingCents:
-          r.shipping_cents == null ? null : Number(r.shipping_cents),
-        notes: r.notes == null ? null : String(r.notes),
-        createdAt: String(r.created_at ?? ''),
-      };
-    }),
+    quotes: ((data as Record<string, unknown>[] | null) ?? []).map(mapQuoteRow),
+  };
+}
+
+function mapQuoteRow(r: Record<string, unknown>): SupplierQuoteRow {
+  const s = r.platform_suppliers as {
+    legal_name?: string;
+    category?: string;
+  } | null;
+  return {
+    id: String(r.id),
+    supplierId: String(r.supplier_id),
+    supplierName: s?.legal_name ?? null,
+    supplierCategory: isSupplierCategory(s?.category) ? s!.category! : null,
+    quoteNumber: r.quote_number == null ? null : String(r.quote_number),
+    title: String(r.title ?? ''),
+    status: String(r.status ?? 'recibido') as SupplierQuoteStatus,
+    receivedAt: r.received_at == null ? null : String(r.received_at),
+    validUntil: r.valid_until == null ? null : String(r.valid_until),
+    currency: String(r.currency ?? 'EUR'),
+    shippingCents: r.shipping_cents == null ? null : Number(r.shipping_cents),
+    notes: r.notes == null ? null : String(r.notes),
+    rejectionReason:
+      r.rejection_reason == null ? null : String(r.rejection_reason),
+    createdAt: String(r.created_at ?? ''),
+    updatedAt: r.updated_at == null ? null : String(r.updated_at),
+  };
+}
+
+async function listSupplierQuotesLegacy(opts?: {
+  supplierId?: string;
+  status?: SupplierQuoteStatus | 'all';
+}): Promise<{ ok: true; quotes: SupplierQuoteRow[] } | { ok: false; error: string }> {
+  const supabase = createClient();
+  let query = supabase
+    .from('platform_supplier_quotes')
+    .select(
+      `
+      id, supplier_id, quote_number, title, status, received_at, valid_until,
+      currency, shipping_cents, notes, created_at,
+      platform_suppliers ( legal_name, category )
+    `
+    )
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (opts?.supplierId) query = query.eq('supplier_id', opts.supplierId);
+  if (opts?.status && opts.status !== 'all') query = query.eq('status', opts.status);
+  const { data, error } = await query;
+  if (error) return { ok: false, error: 'No se han podido cargar los presupuestos.' };
+  return {
+    ok: true,
+    quotes: ((data as Record<string, unknown>[] | null) ?? []).map(mapQuoteRow),
   };
 }
 
@@ -322,8 +365,10 @@ export async function listSupplierPurchaseOrders(opts?: {
       `
       id, supplier_id, quote_id, category, title, order_number, status,
       ordered_at, expected_delivery_at, actual_delivery_at, currency,
-      subtotal_cents, tax_cents, shipping_cents, total_cents, notes, created_at,
-      platform_suppliers ( legal_name )
+      subtotal_cents, tax_cents, shipping_cents, total_cents, notes,
+      client_request_id, created_at, updated_at,
+      platform_suppliers ( legal_name ),
+      platform_supplier_quotes ( title )
     `
     )
     .order('created_at', { ascending: false })
@@ -344,39 +389,141 @@ export async function listSupplierPurchaseOrders(opts?: {
         error: 'Falta aplicar la migración 076 (pedidos generales).',
       };
     }
+    if (
+      String(error.message).toLowerCase().includes('client_request_id') ||
+      String(error.message).toLowerCase().includes('platform_supplier_quotes')
+    ) {
+      return listSupplierPurchaseOrdersLegacy(opts);
+    }
     return { ok: false, error: 'No se han podido cargar los pedidos.' };
   }
   return {
     ok: true,
-    orders: ((data as Record<string, unknown>[] | null) ?? []).map((r) => {
-      const s = r.platform_suppliers as { legal_name?: string } | null;
-      return {
-        id: String(r.id),
-        supplierId: String(r.supplier_id),
-        supplierName: s?.legal_name ?? null,
-        quoteId: r.quote_id == null ? null : String(r.quote_id),
-        category: mapCategory(r.category),
-        title: String(r.title ?? ''),
-        orderNumber: r.order_number == null ? null : String(r.order_number),
-        status: String(r.status ?? 'borrador') as SupplierPurchaseStatus,
-        orderedAt: r.ordered_at == null ? null : String(r.ordered_at),
-        expectedDeliveryAt:
-          r.expected_delivery_at == null
-            ? null
-            : String(r.expected_delivery_at),
-        actualDeliveryAt:
-          r.actual_delivery_at == null ? null : String(r.actual_delivery_at),
-        currency: String(r.currency ?? 'EUR'),
-        subtotalCents:
-          r.subtotal_cents == null ? null : Number(r.subtotal_cents),
-        taxCents: r.tax_cents == null ? null : Number(r.tax_cents),
-        shippingCents:
-          r.shipping_cents == null ? null : Number(r.shipping_cents),
-        totalCents: r.total_cents == null ? null : Number(r.total_cents),
-        notes: r.notes == null ? null : String(r.notes),
-        createdAt: String(r.created_at ?? ''),
-      };
-    }),
+    orders: ((data as Record<string, unknown>[] | null) ?? []).map(mapPurchaseRow),
+  };
+}
+
+function mapPurchaseRow(r: Record<string, unknown>): SupplierPurchaseOrderRow {
+  const s = r.platform_suppliers as { legal_name?: string } | null;
+  const q = r.platform_supplier_quotes as { title?: string } | null;
+  return {
+    id: String(r.id),
+    supplierId: String(r.supplier_id),
+    supplierName: s?.legal_name ?? null,
+    quoteId: r.quote_id == null ? null : String(r.quote_id),
+    quoteTitle: q?.title ?? null,
+    category: mapCategory(r.category),
+    title: String(r.title ?? ''),
+    orderNumber: r.order_number == null ? null : String(r.order_number),
+    status: String(r.status ?? 'borrador') as SupplierPurchaseStatus,
+    orderedAt: r.ordered_at == null ? null : String(r.ordered_at),
+    expectedDeliveryAt:
+      r.expected_delivery_at == null ? null : String(r.expected_delivery_at),
+    actualDeliveryAt:
+      r.actual_delivery_at == null ? null : String(r.actual_delivery_at),
+    currency: String(r.currency ?? 'EUR'),
+    subtotalCents: r.subtotal_cents == null ? null : Number(r.subtotal_cents),
+    taxCents: r.tax_cents == null ? null : Number(r.tax_cents),
+    shippingCents: r.shipping_cents == null ? null : Number(r.shipping_cents),
+    totalCents: r.total_cents == null ? null : Number(r.total_cents),
+    notes: r.notes == null ? null : String(r.notes),
+    clientRequestId:
+      r.client_request_id == null ? null : String(r.client_request_id),
+    createdAt: String(r.created_at ?? ''),
+    updatedAt: r.updated_at == null ? null : String(r.updated_at),
+  };
+}
+
+async function listSupplierPurchaseOrdersLegacy(opts?: {
+  supplierId?: string;
+  category?: SupplierCategory | 'all';
+}): Promise<
+  | { ok: true; orders: SupplierPurchaseOrderRow[] }
+  | { ok: false; error: string }
+> {
+  const supabase = createClient();
+  let query = supabase
+    .from('platform_supplier_purchase_orders')
+    .select(
+      `
+      id, supplier_id, quote_id, category, title, order_number, status,
+      ordered_at, expected_delivery_at, actual_delivery_at, currency,
+      subtotal_cents, tax_cents, shipping_cents, total_cents, notes, created_at,
+      platform_suppliers ( legal_name )
+    `
+    )
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (opts?.supplierId) query = query.eq('supplier_id', opts.supplierId);
+  if (opts?.category && opts.category !== 'all') {
+    query = query.eq('category', opts.category);
+  }
+  const { data, error } = await query;
+  if (error) return { ok: false, error: 'No se han podido cargar los pedidos.' };
+  return {
+    ok: true,
+    orders: ((data as Record<string, unknown>[] | null) ?? []).map(mapPurchaseRow),
+  };
+}
+
+export async function listPurchaseLines(
+  purchaseOrderId: string
+): Promise<{ ok: true; lines: SupplierPurchaseLineRow[] } | { ok: false; error: string }> {
+  if (!(await hasSuppliersRead())) return { ok: false, error: 'Sin permiso.' };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('platform_supplier_purchase_lines')
+    .select(
+      'id, purchase_order_id, description, quantity, unit, unit_price_cents, vat_bps, line_total_cents'
+    )
+    .eq('purchase_order_id', purchaseOrderId)
+    .order('sort_order', { ascending: true });
+  if (error) return { ok: false, error: 'No se han podido cargar líneas del pedido.' };
+  return {
+    ok: true,
+    lines: ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({
+      id: String(r.id),
+      purchaseOrderId: String(r.purchase_order_id),
+      description: String(r.description ?? ''),
+      quantity: Number(r.quantity ?? 1),
+      unit: r.unit == null ? null : String(r.unit),
+      unitPriceCents: Number(r.unit_price_cents ?? 0),
+      vatBps: Number(r.vat_bps ?? 2100),
+      lineTotalCents:
+        r.line_total_cents == null ? null : Number(r.line_total_cents),
+    })),
+  };
+}
+
+export async function listSupplierStatusEvents(
+  entityType: 'quote' | 'purchase_order',
+  entityId: string,
+  limit = 20
+): Promise<{ ok: true; events: SupplierStatusEventRow[] } | { ok: false; error: string }> {
+  if (!(await hasSuppliersRead())) return { ok: false, error: 'Sin permiso.' };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('platform_supplier_status_events')
+    .select('id, entity_type, entity_id, from_status, to_status, reason, created_at')
+    .eq('entity_type', entityType)
+    .eq('entity_id', entityId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) {
+    // Tabla 077 aún no aplicada
+    return { ok: true, events: [] };
+  }
+  return {
+    ok: true,
+    events: ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({
+      id: String(r.id),
+      entityType: String(r.entity_type) as 'quote' | 'purchase_order',
+      entityId: String(r.entity_id),
+      fromStatus: r.from_status == null ? null : String(r.from_status),
+      toStatus: String(r.to_status ?? ''),
+      reason: r.reason == null ? null : String(r.reason),
+      createdAt: String(r.created_at ?? ''),
+    })),
   };
 }
 

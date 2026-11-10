@@ -6,6 +6,7 @@ import {
   hasKioskInventoryWrite,
   hasKioskPurchasingRead,
   hasKioskPurchasingWrite,
+  hasSuppliersApprove,
   hasSuppliersRead,
   hasSuppliersWrite,
 } from '@/lib/kiosk-inventory/authz';
@@ -17,7 +18,9 @@ import type { KioskPurchaseDocumentMeta } from '@/lib/kiosk-inventory/purchase-t
 import {
   compareMaterialOffers,
   listPurchaseDocuments,
+  listPurchaseLines,
   listQuoteDocuments,
+  listQuoteLines,
   listSupplierActivity,
   listSupplierContacts,
   listSupplierPurchaseOrders,
@@ -28,7 +31,9 @@ import type {
   SupplierActivityRow,
   SupplierContactRow,
   SupplierPurchaseDocumentRow,
+  SupplierPurchaseLineRow,
   SupplierQuoteDocumentRow,
+  SupplierQuoteLineRow,
 } from '@/lib/suppliers/types';
 
 export const dynamic = 'force-dynamic';
@@ -49,6 +54,7 @@ export default async function ProveedoresPage({
     purchasesRes,
     generalPurchasesRes,
     canWrite,
+    canApprove,
     canPurchasingWrite,
     canReceive,
     canSeeFinancial,
@@ -67,6 +73,7 @@ export default async function ProveedoresPage({
     listKioskPurchaseOrders(),
     listSupplierPurchaseOrders(),
     hasSuppliersWrite(),
+    hasSuppliersApprove(),
     hasKioskPurchasingWrite(),
     hasKioskInventoryWrite(),
     hasKioskPurchasingRead(),
@@ -84,8 +91,10 @@ export default async function ProveedoresPage({
   const contactsBySupplier: Record<string, SupplierContactRow[]> = {};
   const activityBySupplier: Record<string, SupplierActivityRow[]> = {};
   const quoteDocumentsById: Record<string, SupplierQuoteDocumentRow[]> = {};
+  const quoteLinesById: Record<string, SupplierQuoteLineRow[]> = {};
   const purchaseDocumentsById: Record<string, SupplierPurchaseDocumentRow[]> =
     {};
+  const purchaseLinesById: Record<string, SupplierPurchaseLineRow[]> = {};
 
   await Promise.all([
     ...suppliers.slice(0, 30).map(async (s) => {
@@ -97,12 +106,20 @@ export default async function ProveedoresPage({
       if (a.ok) activityBySupplier[s.id] = a.rows;
     }),
     ...quotes.slice(0, 40).map(async (q) => {
-      const docs = await listQuoteDocuments(q.id);
+      const [docs, lines] = await Promise.all([
+        listQuoteDocuments(q.id),
+        listQuoteLines(q.id),
+      ]);
       if (docs.ok) quoteDocumentsById[q.id] = docs.documents;
+      if (lines.ok) quoteLinesById[q.id] = lines.lines;
     }),
     ...generalPurchases.slice(0, 40).map(async (o) => {
-      const docs = await listPurchaseDocuments(o.id);
+      const [docs, lines] = await Promise.all([
+        listPurchaseDocuments(o.id),
+        listPurchaseLines(o.id),
+      ]);
       if (docs.ok) purchaseDocumentsById[o.id] = docs.documents;
+      if (lines.ok) purchaseLinesById[o.id] = lines.lines;
     }),
   ]);
 
@@ -126,8 +143,10 @@ export default async function ProveedoresPage({
         suppliers={suppliers}
         quotes={quotes}
         quoteDocumentsById={quoteDocumentsById}
+        quoteLinesById={quoteLinesById}
         generalPurchases={generalPurchases}
         purchaseDocumentsById={purchaseDocumentsById}
+        purchaseLinesById={purchaseLinesById}
         contactsBySupplier={contactsBySupplier}
         activityBySupplier={activityBySupplier}
         compareOffers={compareRes.ok ? compareRes.offers : []}
@@ -135,6 +154,7 @@ export default async function ProveedoresPage({
         purchases={purchasesRes.ok ? purchasesRes.orders : []}
         documentsByOrderId={documentsByOrderId}
         canWrite={canWrite}
+        canApprove={canApprove}
         canPurchasingWrite={canPurchasingWrite}
         canReceive={canReceive}
         canSeeFinancial={canSeeFinancial}

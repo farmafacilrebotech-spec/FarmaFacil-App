@@ -9,6 +9,7 @@ import {
   archiveSupplierAction,
   convertApprovedQuoteToPurchaseAction,
   getSupplierDocSignedUrlAction,
+  preparePurchaseFromQuoteAction,
   uploadPurchaseDocumentAction,
   uploadSupplierQuoteDocumentAction,
   upsertGeneralPurchaseOrderAction,
@@ -39,22 +40,36 @@ import {
   SUPPLIER_PO_DOC_LABELS,
   SUPPLIER_PO_DOC_TYPES,
   SUPPLIER_PO_STATUS_LABELS,
-  SUPPLIER_PO_STATUSES,
+  SUPPLIER_PO_UI_STATUSES,
   SUPPLIER_QUOTE_STATUS_LABELS,
-  SUPPLIER_QUOTE_STATUSES,
+  SUPPLIER_QUOTE_UI_STATUSES,
   type MaterialOfferCompareRow,
   type SupplierActivityRow,
   type SupplierCategory,
   type SupplierContactRow,
   type SupplierPurchaseDocType,
   type SupplierPurchaseDocumentRow,
+  type SupplierPurchaseLineRow,
   type SupplierPurchaseOrderRow,
   type SupplierPurchaseStatus,
   type SupplierQuoteDocumentRow,
+  type SupplierQuoteLineRow,
   type SupplierQuoteRow,
   type SupplierQuoteStatus,
   type SupplierRow,
 } from '@/lib/suppliers/types';
+
+function newClientRequestId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+  return `req-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function centsToEurosInput(cents: number | null | undefined): string {
+  if (cents == null) return '';
+  return (cents / 100).toFixed(2);
+}
 
 function eurosToCents(raw: string): number {
   const n = Number(raw.trim().replace(',', '.'));
@@ -81,8 +96,10 @@ export function SuppliersHub({
   suppliers,
   quotes,
   quoteDocumentsById,
+  quoteLinesById,
   generalPurchases,
   purchaseDocumentsById,
+  purchaseLinesById,
   contactsBySupplier,
   activityBySupplier,
   compareOffers,
@@ -90,6 +107,7 @@ export function SuppliersHub({
   purchases,
   documentsByOrderId,
   canWrite,
+  canApprove,
   canPurchasingWrite,
   canReceive,
   canSeeFinancial,
@@ -100,8 +118,10 @@ export function SuppliersHub({
   suppliers: SupplierRow[];
   quotes: SupplierQuoteRow[];
   quoteDocumentsById: Record<string, SupplierQuoteDocumentRow[]>;
+  quoteLinesById: Record<string, SupplierQuoteLineRow[]>;
   generalPurchases: SupplierPurchaseOrderRow[];
   purchaseDocumentsById: Record<string, SupplierPurchaseDocumentRow[]>;
+  purchaseLinesById: Record<string, SupplierPurchaseLineRow[]>;
   contactsBySupplier: Record<string, SupplierContactRow[]>;
   activityBySupplier: Record<string, SupplierActivityRow[]>;
   compareOffers: MaterialOfferCompareRow[];
@@ -109,6 +129,7 @@ export function SuppliersHub({
   purchases: Array<KioskPurchaseOrderOperational | KioskPurchaseOrderFinancial>;
   documentsByOrderId: Record<string, KioskPurchaseDocumentMeta[]>;
   canWrite: boolean;
+  canApprove: boolean;
   canPurchasingWrite: boolean;
   canReceive: boolean;
   canSeeFinancial: boolean;
@@ -137,7 +158,13 @@ export function SuppliersHub({
   const [contactEmail, setContactEmail] = React.useState('');
   const [contactPhone, setContactPhone] = React.useState('');
 
+  const [selectedQuoteId, setSelectedQuoteId] = React.useState<string | null>(
+    null
+  );
   const [quoteTitle, setQuoteTitle] = React.useState('');
+  const [quoteNumber, setQuoteNumber] = React.useState('');
+  const [quoteNotes, setQuoteNotes] = React.useState('');
+  const [quoteRejectionReason, setQuoteRejectionReason] = React.useState('');
   const [quoteSupplierId, setQuoteSupplierId] = React.useState(
     suppliers[0]?.id ?? ''
   );
@@ -149,8 +176,19 @@ export function SuppliersHub({
   const [linePrice, setLinePrice] = React.useState('');
   const [lineLead, setLineLead] = React.useState('');
   const [shipping, setShipping] = React.useState('');
+  const [extraQuoteLines, setExtraQuoteLines] = React.useState<
+    SupplierQuoteLineRow[]
+  >([]);
   const [materialCompare, setMaterialCompare] = React.useState(compareKey || '');
 
+  const [editingPurchaseId, setEditingPurchaseId] = React.useState<
+    string | null
+  >(null);
+  const [poSourceQuoteId, setPoSourceQuoteId] = React.useState<string>('none');
+  const [poQuoteId, setPoQuoteId] = React.useState<string | null>(null);
+  const [poClientRequestId, setPoClientRequestId] = React.useState(() =>
+    newClientRequestId()
+  );
   const [poSupplierId, setPoSupplierId] = React.useState(suppliers[0]?.id ?? '');
   const [poCategory, setPoCategory] = React.useState<SupplierCategory>('otros');
   const [poTitle, setPoTitle] = React.useState('');
@@ -162,9 +200,13 @@ export function SuppliersHub({
   const [poTax, setPoTax] = React.useState('');
   const [poShipping, setPoShipping] = React.useState('');
   const [poTotal, setPoTotal] = React.useState('');
+  const [poNotes, setPoNotes] = React.useState('');
   const [poLineDesc, setPoLineDesc] = React.useState('');
   const [poLineQty, setPoLineQty] = React.useState('1');
   const [poLinePrice, setPoLinePrice] = React.useState('');
+  const [extraPoLines, setExtraPoLines] = React.useState<
+    SupplierPurchaseLineRow[]
+  >([]);
   const [selectedPurchaseId, setSelectedPurchaseId] = React.useState<
     string | null
   >(generalPurchases[0]?.id ?? null);
@@ -172,6 +214,152 @@ export function SuppliersHub({
     React.useState<SupplierPurchaseDocType>('invoice');
 
   const selected = suppliers.find((s) => s.id === selectedId) ?? null;
+  const acceptedQuotes = quotes.filter((q) => q.status === 'aprobado');
+  const quotesWithActivePo = new Set(
+    generalPurchases
+      .filter((o) => o.quoteId && o.status !== 'cancelado')
+      .map((o) => o.quoteId as string)
+  );
+
+  function resetQuoteForm() {
+    setSelectedQuoteId(null);
+    setQuoteTitle('');
+    setQuoteNumber('');
+    setQuoteNotes('');
+    setQuoteRejectionReason('');
+    setQuoteStatus('recibido');
+    setLineMaterial('');
+    setLineDesc('');
+    setLineQty('1');
+    setLinePrice('');
+    setLineLead('');
+    setShipping('');
+    setExtraQuoteLines([]);
+    setQuoteSupplierId(suppliers[0]?.id ?? '');
+  }
+
+  function openQuote(q: SupplierQuoteRow) {
+    setTab('presupuestos');
+    setSelectedQuoteId(q.id);
+    setQuoteSupplierId(q.supplierId);
+    setQuoteTitle(q.title);
+    setQuoteNumber(q.quoteNumber ?? '');
+    setQuoteNotes(q.notes ?? '');
+    setQuoteRejectionReason(q.rejectionReason ?? '');
+    setQuoteStatus(q.status);
+    setShipping(centsToEurosInput(q.shippingCents));
+    const lines = quoteLinesById[q.id] ?? [];
+    const first = lines[0];
+    setLineMaterial(first?.materialKey ?? '');
+    setLineDesc(first?.description ?? '');
+    setLineQty(first ? String(first.quantity) : '1');
+    setLinePrice(first ? centsToEurosInput(first.unitPriceCents) : '');
+    setLineLead(first?.leadDays != null ? String(first.leadDays) : '');
+    setExtraQuoteLines(lines.slice(1));
+  }
+
+  function resetPoForm(opts?: { keepRequestId?: boolean }) {
+    setEditingPurchaseId(null);
+    setPoSourceQuoteId('none');
+    setPoQuoteId(null);
+    if (!opts?.keepRequestId) setPoClientRequestId(newClientRequestId());
+    setPoSupplierId(suppliers[0]?.id ?? '');
+    setPoCategory('otros');
+    setPoTitle('');
+    setPoStatus('borrador');
+    setPoOrderedAt('');
+    setPoExpected('');
+    setPoSubtotal('');
+    setPoTax('');
+    setPoShipping('');
+    setPoTotal('');
+    setPoNotes('');
+    setPoLineDesc('');
+    setPoLineQty('1');
+    setPoLinePrice('');
+    setExtraPoLines([]);
+  }
+
+  function openPurchase(o: SupplierPurchaseOrderRow) {
+    setTab('pedidos');
+    setSelectedPurchaseId(o.id);
+    setEditingPurchaseId(o.id);
+    setPoQuoteId(o.quoteId);
+    setPoSourceQuoteId(o.quoteId ?? 'none');
+    setPoSupplierId(o.supplierId);
+    setPoCategory(o.category);
+    setPoTitle(o.title);
+    setPoStatus(o.status);
+    setPoOrderedAt(o.orderedAt ? o.orderedAt.slice(0, 10) : '');
+    setPoExpected(o.expectedDeliveryAt ? o.expectedDeliveryAt.slice(0, 10) : '');
+    setPoSubtotal(centsToEurosInput(o.subtotalCents));
+    setPoTax(centsToEurosInput(o.taxCents));
+    setPoShipping(centsToEurosInput(o.shippingCents));
+    setPoTotal(centsToEurosInput(o.totalCents));
+    setPoNotes(o.notes ?? '');
+    const lines = purchaseLinesById[o.id] ?? [];
+    const first = lines[0];
+    setPoLineDesc(first?.description ?? '');
+    setPoLineQty(first ? String(first.quantity) : '1');
+    setPoLinePrice(first ? centsToEurosInput(first.unitPriceCents) : '');
+    setExtraPoLines(lines.slice(1));
+  }
+
+  function preloadFromAcceptedQuote(quoteId: string) {
+    if (quoteId === 'none') {
+      setPoSourceQuoteId('none');
+      setPoQuoteId(null);
+      setPoClientRequestId(newClientRequestId());
+      return;
+    }
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) return;
+    setPoSourceQuoteId(quoteId);
+    setPoQuoteId(quoteId);
+    setEditingPurchaseId(null);
+    setPoClientRequestId(newClientRequestId());
+    setPoSupplierId(q.supplierId);
+    setPoCategory(q.supplierCategory ?? 'otros');
+    setPoTitle(q.title);
+    setPoStatus('borrador');
+    setPoShipping(centsToEurosInput(q.shippingCents));
+    setPoNotes(
+      [
+        q.notes ? `Condiciones: ${q.notes}` : null,
+        `Origen presupuesto: ${q.title}`,
+      ]
+        .filter(Boolean)
+        .join('\n')
+    );
+    const lines = quoteLinesById[q.id] ?? [];
+    let subtotal = 0;
+    let tax = 0;
+    for (const l of lines) {
+      const net = Math.round(l.quantity * l.unitPriceCents);
+      subtotal += net;
+      tax += Math.round(net * (l.vatBps / 10000));
+    }
+    const shippingCents = q.shippingCents ?? 0;
+    setPoSubtotal(centsToEurosInput(subtotal || null));
+    setPoTax(centsToEurosInput(tax || null));
+    setPoTotal(centsToEurosInput(subtotal + tax + shippingCents || null));
+    const first = lines[0];
+    setPoLineDesc(first?.description || first?.materialKey || '');
+    setPoLineQty(first ? String(first.quantity) : '1');
+    setPoLinePrice(first ? centsToEurosInput(first.unitPriceCents) : '');
+    setExtraPoLines(
+      lines.slice(1).map((l, i) => ({
+        id: `tmp-${i}`,
+        purchaseOrderId: '',
+        description: l.description || l.materialKey,
+        quantity: l.quantity,
+        unit: l.unit,
+        unitPriceCents: l.unitPriceCents,
+        vatBps: l.vatBps,
+        lineTotalCents: null,
+      }))
+    );
+  }
 
   React.useEffect(() => {
     if (!selected) {
@@ -531,13 +719,30 @@ export function SuppliersHub({
         <div className="space-y-6">
           {canWrite ? (
             <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-              <h2 className="text-base font-semibold">Registrar presupuesto</h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-semibold">
+                  {selectedQuoteId
+                    ? 'Ficha de presupuesto'
+                    : 'Registrar presupuesto'}
+                </h2>
+                {selectedQuoteId ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => resetQuoteForm()}
+                  >
+                    Nuevo presupuesto
+                  </Button>
+                ) : null}
+              </div>
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>Proveedor</Label>
                   <Select
                     value={quoteSupplierId}
                     onValueChange={setQuoteSupplierId}
+                    disabled={Boolean(selectedQuoteId)}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona" />
@@ -558,18 +763,42 @@ export function SuppliersHub({
                     onValueChange={(v) =>
                       setQuoteStatus(v as SupplierQuoteStatus)
                     }
+                    disabled={
+                      (quoteStatus === 'aprobado' ||
+                        quoteStatus === 'rechazado') &&
+                      !canApprove
+                    }
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {SUPPLIER_QUOTE_STATUSES.map((s) => (
-                        <SelectItem key={s} value={s}>
+                      {SUPPLIER_QUOTE_UI_STATUSES.map((s) => (
+                        <SelectItem
+                          key={s}
+                          value={s}
+                          disabled={
+                            (s === 'aprobado' || s === 'rechazado') &&
+                            !canApprove
+                          }
+                        >
                           {SUPPLIER_QUOTE_STATUS_LABELS[s]}
                         </SelectItem>
                       ))}
+                      {quoteStatus === 'caducado' ? (
+                        <SelectItem value="caducado">
+                          {SUPPLIER_QUOTE_STATUS_LABELS.caducado}
+                        </SelectItem>
+                      ) : null}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Nº presupuesto</Label>
+                  <Input
+                    value={quoteNumber}
+                    onChange={(e) => setQuoteNumber(e.target.value)}
+                  />
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Título</Label>
@@ -621,47 +850,131 @@ export function SuppliersHub({
                     onChange={(e) => setShipping(e.target.value)}
                   />
                 </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>Notas / condiciones</Label>
+                  <Textarea
+                    value={quoteNotes}
+                    onChange={(e) => setQuoteNotes(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+                {quoteStatus === 'rechazado' ? (
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Motivo de rechazo</Label>
+                    <Textarea
+                      value={quoteRejectionReason}
+                      onChange={(e) => setQuoteRejectionReason(e.target.value)}
+                      rows={2}
+                      required
+                    />
+                  </div>
+                ) : null}
+                {extraQuoteLines.length > 0 ? (
+                  <p className="sm:col-span-2 text-xs text-muted-foreground">
+                    +{extraQuoteLines.length} línea(s) adicional(es) se
+                    conservan al guardar.
+                  </p>
+                ) : null}
               </div>
-              <Button
-                type="button"
-                disabled={busy || !quoteSupplierId}
-                onClick={() =>
-                  run(async () => {
-                    const qty = Number(lineQty);
-                    const res = await upsertSupplierQuoteAction({
-                      supplierId: quoteSupplierId,
-                      title: quoteTitle,
-                      status: quoteStatus,
-                      shippingCents: shipping ? eurosToCents(shipping) : null,
-                      lines:
-                        lineMaterial.trim() && lineDesc.trim()
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  disabled={busy || !quoteSupplierId}
+                  onClick={() =>
+                    run(async () => {
+                      const qty = Number(lineQty);
+                      const primary =
+                        lineMaterial.trim() || lineDesc.trim()
                           ? [
                               {
-                                materialKey: lineMaterial,
-                                description: lineDesc,
+                                materialKey:
+                                  lineMaterial.trim() ||
+                                  lineDesc.trim().toLowerCase().slice(0, 40),
+                                description: lineDesc.trim() || lineMaterial,
                                 quantity:
                                   Number.isFinite(qty) && qty > 0 ? qty : 1,
                                 unitPriceCents: eurosToCents(linePrice),
                                 leadDays: lineLead ? Number(lineLead) : null,
                               },
                             ]
-                          : [],
-                    });
-                    if (!res.ok) {
-                      toast.error(res.error);
-                      return;
+                          : [];
+                      const lines = [
+                        ...primary,
+                        ...extraQuoteLines.map((l) => ({
+                          materialKey: l.materialKey,
+                          description: l.description,
+                          quantity: l.quantity,
+                          unit: l.unit,
+                          unitPriceCents: l.unitPriceCents,
+                          vatBps: l.vatBps,
+                          leadDays: l.leadDays,
+                        })),
+                      ];
+                      const res = await upsertSupplierQuoteAction({
+                        id: selectedQuoteId,
+                        supplierId: quoteSupplierId,
+                        title: quoteTitle,
+                        quoteNumber: quoteNumber || null,
+                        status: quoteStatus,
+                        shippingCents: shipping
+                          ? eurosToCents(shipping)
+                          : null,
+                        notes: quoteNotes || null,
+                        rejectionReason:
+                          quoteStatus === 'rechazado'
+                            ? quoteRejectionReason
+                            : null,
+                        replaceLines: Boolean(selectedQuoteId) || lines.length > 0,
+                        lines,
+                      });
+                      if (!res.ok) {
+                        toast.error(res.error);
+                        return;
+                      }
+                      toast.success(
+                        selectedQuoteId
+                          ? 'Presupuesto actualizado'
+                          : 'Presupuesto registrado'
+                      );
+                      setSelectedQuoteId(res.id);
+                      router.refresh();
+                    })
+                  }
+                >
+                  {selectedQuoteId ? 'Guardar cambios' : 'Guardar presupuesto'}
+                </Button>
+                {canWrite &&
+                selectedQuoteId &&
+                quoteStatus === 'aprobado' ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() =>
+                      run(async () => {
+                        const res = await preparePurchaseFromQuoteAction({
+                          quoteId: selectedQuoteId,
+                          clientRequestId: newClientRequestId(),
+                        });
+                        if (!res.ok) {
+                          toast.error(res.error);
+                          return;
+                        }
+                        toast.success(
+                          res.alreadyExisted
+                            ? 'Ya existía un pedido vinculado; abierto para revisión'
+                            : 'Borrador de pedido preparado (sin confirmar compra)'
+                        );
+                        setTab('pedidos');
+                        setSelectedPurchaseId(res.id);
+                        router.refresh();
+                      })
                     }
-                    toast.success('Presupuesto registrado');
-                    setQuoteTitle('');
-                    setLineDesc('');
-                    setLinePrice('');
-                    setLineMaterial('');
-                    router.refresh();
-                  })
-                }
-              >
-                Guardar presupuesto
-              </Button>
+                  >
+                    Preparar pedido
+                  </Button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 
@@ -685,13 +998,27 @@ export function SuppliersHub({
                   </tr>
                 ) : (
                   quotes.map((q) => (
-                    <tr key={q.id} className="border-b border-border/70 align-top">
+                    <tr
+                      key={q.id}
+                      className={`border-b border-border/70 align-top cursor-pointer ${
+                        selectedQuoteId === q.id ? 'bg-primary/5' : ''
+                      }`}
+                      onClick={() => openQuote(q)}
+                    >
                       <td className="px-3 py-2">{q.supplierName ?? '—'}</td>
                       <td className="px-3 py-2">{q.title}</td>
                       <td className="px-3 py-2">
-                        {SUPPLIER_QUOTE_STATUS_LABELS[q.status]}
+                        {SUPPLIER_QUOTE_STATUS_LABELS[q.status] ?? q.status}
+                        {q.status === 'rechazado' && q.rejectionReason ? (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {q.rejectionReason}
+                          </p>
+                        ) : null}
                       </td>
-                      <td className="px-3 py-2">
+                      <td
+                        className="px-3 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <ul className="space-y-1 text-xs">
                           {(quoteDocumentsById[q.id] ?? []).map((d) => (
                             <li key={d.id}>
@@ -737,63 +1064,87 @@ export function SuppliersHub({
                           </label>
                         ) : null}
                       </td>
-                      <td className="px-3 py-2">
-                        {canWrite && q.status === 'aprobado' ? (
-                          <div className="flex flex-col gap-1">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={busy}
-                              onClick={() =>
-                                run(async () => {
-                                  const res =
-                                    await convertApprovedQuoteToPurchaseAction({
-                                      quoteId: q.id,
-                                      target: 'general',
-                                    });
-                                  if (!res.ok) {
-                                    toast.error(res.error);
-                                    return;
-                                  }
-                                  toast.success('Pedido general creado');
-                                  setTab('pedidos');
-                                  router.refresh();
-                                })
-                              }
-                            >
-                              → Pedido general
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              disabled={busy}
-                              onClick={() =>
-                                run(async () => {
-                                  const res =
-                                    await convertApprovedQuoteToPurchaseAction({
-                                      quoteId: q.id,
-                                      target: 'kiosk',
-                                      quantity: 1,
-                                      model: q.title,
-                                    });
-                                  if (!res.ok) {
-                                    toast.error(res.error);
-                                    return;
-                                  }
-                                  toast.success('Pedido kiosko creado');
-                                  setTab('compras-kioskos');
-                                  router.refresh();
-                                })
-                              }
-                            >
-                              → Pedido kiosko
-                            </Button>
-                          </div>
-                        ) : (
-                          '—'
-                        )}
+                      <td
+                        className="px-3 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex flex-col gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openQuote(q)}
+                          >
+                            Abrir / editar
+                          </Button>
+                          {canWrite && q.status === 'aprobado' ? (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="secondary"
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    const res =
+                                      await preparePurchaseFromQuoteAction({
+                                        quoteId: q.id,
+                                        clientRequestId: newClientRequestId(),
+                                      });
+                                    if (!res.ok) {
+                                      toast.error(res.error);
+                                      return;
+                                    }
+                                    toast.success(
+                                      res.alreadyExisted
+                                        ? 'Pedido ya vinculado; abierto'
+                                        : 'Borrador preparado (revisar antes de confirmar)'
+                                    );
+                                    setTab('pedidos');
+                                    setSelectedPurchaseId(res.id);
+                                    router.refresh();
+                                  })
+                                }
+                              >
+                                Preparar pedido
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={busy}
+                                onClick={() =>
+                                  run(async () => {
+                                    const res =
+                                      await convertApprovedQuoteToPurchaseAction(
+                                        {
+                                          quoteId: q.id,
+                                          target: 'kiosk',
+                                          quantity: 1,
+                                          model: q.title,
+                                        }
+                                      );
+                                    if (!res.ok) {
+                                      toast.error(res.error);
+                                      return;
+                                    }
+                                    toast.success('Pedido kiosko creado');
+                                    setTab('compras-kioskos');
+                                    router.refresh();
+                                  })
+                                }
+                              >
+                                → Pedido kiosko
+                              </Button>
+                            </>
+                          ) : null}
+                          {q.status === 'aprobado' &&
+                          quotesWithActivePo.has(q.id) ? (
+                            <span className="text-[11px] text-muted-foreground">
+                              Pedido vinculado
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -811,13 +1162,65 @@ export function SuppliersHub({
           ) : null}
           {canWrite ? (
             <div className="space-y-3 rounded-xl border border-border bg-card p-4">
-              <h2 className="text-base font-semibold">
-                Nuevo pedido de materiales / servicios
-              </h2>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-semibold">
+                  {editingPurchaseId
+                    ? 'Editar pedido general'
+                    : 'Pedido de materiales / servicios'}
+                </h2>
+                {editingPurchaseId ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => resetPoForm()}
+                  >
+                    Pedido sin presupuesto
+                  </Button>
+                ) : null}
+              </div>
+              {!editingPurchaseId ? (
+                <div className="space-y-1.5">
+                  <Label>Origen</Label>
+                  <Select
+                    value={poSourceQuoteId}
+                    onValueChange={(v) => preloadFromAcceptedQuote(v)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Pedido sin presupuesto" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        Pedido sin presupuesto
+                      </SelectItem>
+                      {acceptedQuotes.map((q) => (
+                        <SelectItem key={q.id} value={q.id}>
+                          {q.supplierName ?? 'Proveedor'} · {q.title}
+                          {quotesWithActivePo.has(q.id) ? ' (ya vinculado)' : ''}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Crear desde presupuesto aceptado precarga proveedor, líneas e
+                    importes. El borrador no confirma la compra.
+                  </p>
+                </div>
+              ) : poQuoteId ? (
+                <p className="text-xs text-muted-foreground">
+                  Vinculado a presupuesto origen ·{' '}
+                  {generalPurchases.find((o) => o.id === editingPurchaseId)
+                    ?.quoteTitle ?? poQuoteId}
+                </p>
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label>Proveedor</Label>
-                  <Select value={poSupplierId} onValueChange={setPoSupplierId}>
+                  <Select
+                    value={poSupplierId}
+                    onValueChange={setPoSupplierId}
+                    disabled={Boolean(poQuoteId)}
+                  >
                     <SelectTrigger>
                       <SelectValue placeholder="Selecciona" />
                     </SelectTrigger>
@@ -860,11 +1263,19 @@ export function SuppliersHub({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {SUPPLIER_PO_STATUSES.map((s) => (
+                      {SUPPLIER_PO_UI_STATUSES.map((s) => (
                         <SelectItem key={s} value={s}>
                           {SUPPLIER_PO_STATUS_LABELS[s]}
                         </SelectItem>
                       ))}
+                      {(poStatus === 'parcial' || poStatus === 'facturado') &&
+                      !(SUPPLIER_PO_UI_STATUSES as readonly string[]).includes(
+                        poStatus
+                      ) ? (
+                        <SelectItem value={poStatus}>
+                          {SUPPLIER_PO_STATUS_LABELS[poStatus]}
+                        </SelectItem>
+                      ) : null}
                     </SelectContent>
                   </Select>
                 </div>
@@ -940,6 +1351,20 @@ export function SuppliersHub({
                     onChange={(e) => setPoLinePrice(e.target.value)}
                   />
                 </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>Notas</Label>
+                  <Textarea
+                    value={poNotes}
+                    onChange={(e) => setPoNotes(e.target.value)}
+                    rows={2}
+                  />
+                </div>
+                {extraPoLines.length > 0 ? (
+                  <p className="sm:col-span-2 text-xs text-muted-foreground">
+                    +{extraPoLines.length} línea(s) adicional(es) se conservan al
+                    guardar.
+                  </p>
+                ) : null}
               </div>
               <Button
                 type="button"
@@ -947,8 +1372,30 @@ export function SuppliersHub({
                 onClick={() =>
                   run(async () => {
                     const qty = Number(poLineQty);
+                    const primary = poLineDesc.trim()
+                      ? [
+                          {
+                            description: poLineDesc,
+                            quantity:
+                              Number.isFinite(qty) && qty > 0 ? qty : 1,
+                            unitPriceCents: eurosToCents(poLinePrice),
+                          },
+                        ]
+                      : [];
+                    const lines = [
+                      ...primary,
+                      ...extraPoLines.map((l) => ({
+                        description: l.description,
+                        quantity: l.quantity,
+                        unit: l.unit,
+                        unitPriceCents: l.unitPriceCents,
+                        vatBps: l.vatBps,
+                      })),
+                    ];
                     const res = await upsertGeneralPurchaseOrderAction({
+                      id: editingPurchaseId,
                       supplierId: poSupplierId,
+                      quoteId: poQuoteId,
                       category: poCategory,
                       title: poTitle,
                       status: poStatus,
@@ -962,30 +1409,33 @@ export function SuppliersHub({
                         ? eurosToCents(poShipping)
                         : null,
                       totalCents: poTotal ? eurosToCents(poTotal) : null,
-                      lines: poLineDesc.trim()
-                        ? [
-                            {
-                              description: poLineDesc,
-                              quantity:
-                                Number.isFinite(qty) && qty > 0 ? qty : 1,
-                              unitPriceCents: eurosToCents(poLinePrice),
-                            },
-                          ]
-                        : [],
+                      notes: poNotes || null,
+                      clientRequestId: editingPurchaseId
+                        ? null
+                        : poClientRequestId,
+                      replaceLines:
+                        Boolean(editingPurchaseId) || lines.length > 0,
+                      lines,
                     });
                     if (!res.ok) {
                       toast.error(res.error);
                       return;
                     }
-                    toast.success('Pedido general creado');
-                    setPoTitle('');
-                    setPoLineDesc('');
+                    toast.success(
+                      editingPurchaseId
+                        ? 'Pedido actualizado'
+                        : poStatus === 'borrador'
+                          ? 'Borrador guardado (compra no confirmada)'
+                          : 'Pedido general guardado'
+                    );
+                    setEditingPurchaseId(res.id);
                     setSelectedPurchaseId(res.id);
+                    setPoClientRequestId(newClientRequestId());
                     router.refresh();
                   })
                 }
               >
-                Guardar pedido
+                {editingPurchaseId ? 'Guardar cambios' : 'Guardar borrador'}
               </Button>
             </div>
           ) : null}
@@ -997,16 +1447,17 @@ export function SuppliersHub({
                   <tr>
                     <th className="px-3 py-2">Proveedor</th>
                     <th className="px-3 py-2">Título</th>
-                    <th className="px-3 py-2">Categoría</th>
+                    <th className="px-3 py-2">Origen</th>
                     <th className="px-3 py-2">Estado</th>
                     <th className="px-3 py-2">Total</th>
+                    <th className="px-3 py-2">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {generalPurchases.length === 0 ? (
                     <tr>
                       <td
-                        colSpan={5}
+                        colSpan={6}
                         className="px-3 py-6 text-muted-foreground"
                       >
                         Sin pedidos generales.
@@ -1017,20 +1468,38 @@ export function SuppliersHub({
                       <tr
                         key={o.id}
                         className={`border-b border-border/70 cursor-pointer ${
-                          selectedPurchaseId === o.id ? 'bg-primary/5' : ''
+                          selectedPurchaseId === o.id ||
+                          editingPurchaseId === o.id
+                            ? 'bg-primary/5'
+                            : ''
                         }`}
-                        onClick={() => setSelectedPurchaseId(o.id)}
+                        onClick={() => openPurchase(o)}
                       >
                         <td className="px-3 py-2">{o.supplierName ?? '—'}</td>
                         <td className="px-3 py-2">{o.title}</td>
-                        <td className="px-3 py-2">
-                          {SUPPLIER_CATEGORY_LABELS[o.category]}
+                        <td className="px-3 py-2 text-xs text-muted-foreground">
+                          {o.quoteTitle
+                            ? `Presupuesto: ${o.quoteTitle}`
+                            : 'Sin presupuesto'}
                         </td>
                         <td className="px-3 py-2">
                           {SUPPLIER_PO_STATUS_LABELS[o.status]}
                         </td>
                         <td className="px-3 py-2">
                           {formatCents(o.totalCents)}
+                        </td>
+                        <td
+                          className="px-3 py-2"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openPurchase(o)}
+                          >
+                            Abrir / editar
+                          </Button>
                         </td>
                       </tr>
                     ))

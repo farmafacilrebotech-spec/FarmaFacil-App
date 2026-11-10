@@ -30,3 +30,11 @@ export async function hasSuppliersWrite(): Promise<boolean> {
   const r = await hasPlatformPermission('platform.suppliers.write');
   return r.ok;
 }
+
+/** Aceptar/rechazar presupuestos. No autoriza por sí solo la compra. */
+export async function hasSuppliersApprove(): Promise<boolean> {
+  const r = await hasPlatformPermission('platform.suppliers.approve');
+  if (r.ok) return true;
+  // Compatibilidad pre-077: write implica aprobación hasta aplicar migración.
+  return hasSuppliersWrite();
+}

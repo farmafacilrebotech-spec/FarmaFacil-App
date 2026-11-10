@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache';
 
 import { createClient } from '@/lib/supabase/server';
 import {
+  hasSuppliersApprove,
   hasSuppliersWrite,
 } from '@/lib/kiosk-inventory/authz';
 import {
@@ -11,13 +12,16 @@ import {
   SUPPLIER_DOCS_BUCKET,
   SUPPLIER_PO_DOC_TYPES,
   SUPPLIER_PO_STATUSES,
+  SUPPLIER_PO_UI_STATUSES,
   SUPPLIER_QUOTE_STATUSES,
+  SUPPLIER_QUOTE_UI_STATUSES,
   type SupplierCategory,
   type SupplierPurchaseDocType,
   type SupplierPurchaseStatus,
   type SupplierQuoteStatus,
 } from '@/lib/suppliers/types';
 import { getCurrentProfile } from '@/lib/auth/platform';
+import { listQuoteLines } from '@/lib/suppliers/queries';
 
 export type SupplierActionResult<T = Record<string, unknown>> =
   | ({ ok: true } & T)
@@ -46,6 +50,37 @@ async function logActivity(
     action,
     summary,
   });
+}
+
+async function logStatusEvent(input: {
+  entityType: 'quote' | 'purchase_order';
+  entityId: string;
+  supplierId?: string | null;
+  fromStatus?: string | null;
+  toStatus: string;
+  reason?: string | null;
+  metadata?: Record<string, unknown>;
+}) {
+  const supabase = createClient();
+  const uid = await actorId();
+  const { error } = await supabase.from('platform_supplier_status_events').insert({
+    entity_type: input.entityType,
+    entity_id: input.entityId,
+    supplier_id: input.supplierId ?? null,
+    from_status: input.fromStatus ?? null,
+    to_status: input.toStatus,
+    reason: input.reason?.trim() || null,
+    actor_profile_id: uid,
+    metadata: input.metadata ?? {},
+  });
+  // Compatibilidad pre-077: ignorar si la tabla aún no existe.
+  if (error && !String(error.message).toLowerCase().includes('does not exist')) {
+    console.error('[suppliers] status_event', error.code, error.message);
+  }
+}
+
+function isApproveTransition(from: string | null, to: string): boolean {
+  return to === 'aprobado' || to === 'rechazado' || from === 'aprobado';
 }
 
 export async function upsertSupplierAction(input: {
@@ -192,6 +227,9 @@ export async function upsertSupplierQuoteAction(input: {
   validUntil?: string | null;
   shippingCents?: number | null;
   notes?: string | null;
+  rejectionReason?: string | null;
+  /** Si true, sustituye todas las líneas por `lines` (incluso vacío). */
+  replaceLines?: boolean;
   lines?: Array<{
     materialKey: string;
     description: string;
@@ -211,10 +249,41 @@ export async function upsertSupplierQuoteAction(input: {
   if (!(SUPPLIER_QUOTE_STATUSES as readonly string[]).includes(status)) {
     return { ok: false, error: 'Estado de presupuesto no válido.' };
   }
+  if (
+    !(SUPPLIER_QUOTE_UI_STATUSES as readonly string[]).includes(status) &&
+    status !== 'caducado'
+  ) {
+    return { ok: false, error: 'Estado de presupuesto no permitido en UI.' };
+  }
+  if (status === 'rechazado' && !input.rejectionReason?.trim()) {
+    return { ok: false, error: 'Indica el motivo de rechazo.' };
+  }
 
   const supabase = createClient();
   const uid = await actorId();
-  const base = {
+
+  let previousStatus: string | null = null;
+  if (input.id) {
+    const { data: prev } = await supabase
+      .from('platform_supplier_quotes')
+      .select('id, status, supplier_id')
+      .eq('id', input.id)
+      .maybeSingle();
+    if (!prev) return { ok: false, error: 'Presupuesto no encontrado.' };
+    previousStatus = String((prev as { status: string }).status);
+  }
+
+  if (isApproveTransition(previousStatus, status)) {
+    if (!(await hasSuppliersApprove())) {
+      return {
+        ok: false,
+        error: 'Sin permiso para aceptar o rechazar presupuestos.',
+      };
+    }
+  }
+
+  const nowIso = new Date().toISOString();
+  const base: Record<string, unknown> = {
     supplier_id: input.supplierId,
     title,
     quote_number: input.quoteNumber?.trim() || null,
@@ -224,11 +293,22 @@ export async function upsertSupplierQuoteAction(input: {
     shipping_cents: input.shippingCents ?? null,
     notes: input.notes?.trim() || null,
     updated_by: uid,
-    updated_at: new Date().toISOString(),
-    ...(status === 'aprobado'
-      ? { approved_by: uid, approved_at: new Date().toISOString() }
-      : {}),
+    updated_at: nowIso,
   };
+
+  if (status === 'aprobado') {
+    base.approved_by = uid;
+    base.approved_at = nowIso;
+    base.rejection_reason = null;
+    base.rejected_by = null;
+    base.rejected_at = null;
+  } else if (status === 'rechazado') {
+    base.rejection_reason = input.rejectionReason?.trim() || null;
+    base.rejected_by = uid;
+    base.rejected_at = nowIso;
+  } else if (input.rejectionReason !== undefined) {
+    base.rejection_reason = input.rejectionReason?.trim() || null;
+  }
 
   let quoteId = input.id ?? null;
   if (quoteId) {
@@ -236,7 +316,12 @@ export async function upsertSupplierQuoteAction(input: {
       .from('platform_supplier_quotes')
       .update(base)
       .eq('id', quoteId);
-    if (error) return { ok: false, error: 'No se ha podido actualizar el presupuesto.' };
+    if (error) {
+      return {
+        ok: false,
+        error: `No se ha podido actualizar el presupuesto.${error.message ? ` (${error.message})` : ''}`,
+      };
+    }
   } else {
     const { data, error } = await supabase
       .from('platform_supplier_quotes')
@@ -249,28 +334,45 @@ export async function upsertSupplierQuoteAction(input: {
     quoteId = String((data as { id: string }).id);
   }
 
-  if (input.lines && input.lines.length > 0) {
+  const shouldReplace =
+    input.replaceLines === true ||
+    (input.lines != null && input.lines.length > 0 && !input.id);
+  if (shouldReplace || (input.replaceLines && input.lines)) {
     await supabase
       .from('platform_supplier_quote_lines')
       .delete()
       .eq('quote_id', quoteId);
-    const rows = input.lines.map((l, i) => ({
-      quote_id: quoteId,
-      material_key: l.materialKey.trim().toLowerCase(),
-      description: l.description.trim(),
-      quantity: l.quantity,
-      unit: l.unit?.trim() || null,
-      unit_price_cents: l.unitPriceCents,
-      vat_bps: l.vatBps ?? 2100,
-      lead_days: l.leadDays ?? null,
-      sort_order: i,
-    }));
-    const { error: lineErr } = await supabase
-      .from('platform_supplier_quote_lines')
-      .insert(rows);
-    if (lineErr) {
-      return { ok: false, error: 'Presupuesto guardado, pero fallaron las líneas.' };
+    const lines = input.lines ?? [];
+    if (lines.length > 0) {
+      const rows = lines.map((l, i) => ({
+        quote_id: quoteId,
+        material_key: l.materialKey.trim().toLowerCase(),
+        description: l.description.trim(),
+        quantity: l.quantity,
+        unit: l.unit?.trim() || null,
+        unit_price_cents: l.unitPriceCents,
+        vat_bps: l.vatBps ?? 2100,
+        lead_days: l.leadDays ?? null,
+        sort_order: i,
+      }));
+      const { error: lineErr } = await supabase
+        .from('platform_supplier_quote_lines')
+        .insert(rows);
+      if (lineErr) {
+        return { ok: false, error: 'Presupuesto guardado, pero fallaron las líneas.' };
+      }
     }
+  }
+
+  if (previousStatus !== status) {
+    await logStatusEvent({
+      entityType: 'quote',
+      entityId: quoteId,
+      supplierId: input.supplierId,
+      fromStatus: previousStatus,
+      toStatus: status,
+      reason: status === 'rechazado' ? input.rejectionReason : null,
+    });
   }
 
   await logActivity(
@@ -299,6 +401,9 @@ export async function upsertGeneralPurchaseOrderAction(input: {
   shippingCents?: number | null;
   totalCents?: number | null;
   notes?: string | null;
+  /** Idempotencia anti doble clic / reintentos. */
+  clientRequestId?: string | null;
+  replaceLines?: boolean;
   lines?: Array<{
     description: string;
     quantity: number;
@@ -319,12 +424,55 @@ export async function upsertGeneralPurchaseOrderAction(input: {
   if (!(SUPPLIER_PO_STATUSES as readonly string[]).includes(status)) {
     return { ok: false, error: 'Estado de pedido no válido.' };
   }
+  if (
+    !(SUPPLIER_PO_UI_STATUSES as readonly string[]).includes(status) &&
+    status !== 'parcial' &&
+    status !== 'facturado'
+  ) {
+    return { ok: false, error: 'Estado de pedido no permitido.' };
+  }
 
   const supabase = createClient();
   const uid = await actorId();
-  const base = {
+  const clientRequestId = input.clientRequestId?.trim() || null;
+
+  if (!input.id && clientRequestId) {
+    const { data: existing } = await supabase
+      .from('platform_supplier_purchase_orders')
+      .select('id')
+      .eq('client_request_id', clientRequestId)
+      .maybeSingle();
+    if (existing) {
+      return { ok: true, id: String((existing as { id: string }).id) };
+    }
+  }
+
+  let previousStatus: string | null = null;
+  let preservedQuoteId: string | null = input.quoteId || null;
+  if (input.id) {
+    const { data: prev } = await supabase
+      .from('platform_supplier_purchase_orders')
+      .select('id, status, quote_id')
+      .eq('id', input.id)
+      .maybeSingle();
+    if (!prev) return { ok: false, error: 'Pedido no encontrado.' };
+    previousStatus = String((prev as { status: string }).status);
+    const prevQuote = (prev as { quote_id?: string | null }).quote_id;
+    if (prevQuote) preservedQuoteId = String(prevQuote);
+  }
+
+  // Relación permanente con presupuesto origen: no se elimina al editar.
+  if (input.quoteId && preservedQuoteId && input.quoteId !== preservedQuoteId) {
+    return {
+      ok: false,
+      error: 'No se puede cambiar el presupuesto origen de un pedido existente.',
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const base: Record<string, unknown> = {
     supplier_id: input.supplierId,
-    quote_id: input.quoteId || null,
+    quote_id: preservedQuoteId,
     category: input.category,
     title,
     order_number: input.orderNumber?.trim() || null,
@@ -338,8 +486,11 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     total_cents: input.totalCents ?? null,
     notes: input.notes?.trim() || null,
     updated_by: uid,
-    updated_at: new Date().toISOString(),
+    updated_at: nowIso,
   };
+  if (!input.id && clientRequestId) {
+    base.client_request_id = clientRequestId;
+  }
 
   let poId = input.id ?? null;
   if (poId) {
@@ -347,7 +498,12 @@ export async function upsertGeneralPurchaseOrderAction(input: {
       .from('platform_supplier_purchase_orders')
       .update(base)
       .eq('id', poId);
-    if (error) return { ok: false, error: 'No se ha podido actualizar el pedido.' };
+    if (error) {
+      return {
+        ok: false,
+        error: `No se ha podido actualizar el pedido.${error.message ? ` (${error.message})` : ''}`,
+      };
+    }
   } else {
     const { data, error } = await supabase
       .from('platform_supplier_purchase_orders')
@@ -355,38 +511,78 @@ export async function upsertGeneralPurchaseOrderAction(input: {
       .select('id')
       .single();
     if (error || !data) {
+      // Unique quote activo / client_request_id → devolver existente
+      if (error && (error.code === '23505' || /unique|duplicate/i.test(error.message))) {
+        if (clientRequestId) {
+          const { data: byReq } = await supabase
+            .from('platform_supplier_purchase_orders')
+            .select('id')
+            .eq('client_request_id', clientRequestId)
+            .maybeSingle();
+          if (byReq) return { ok: true, id: String((byReq as { id: string }).id) };
+        }
+        if (preservedQuoteId) {
+          const { data: byQuote } = await supabase
+            .from('platform_supplier_purchase_orders')
+            .select('id')
+            .eq('quote_id', preservedQuoteId)
+            .neq('status', 'cancelado')
+            .maybeSingle();
+          if (byQuote) return { ok: true, id: String((byQuote as { id: string }).id) };
+        }
+        return {
+          ok: false,
+          error: 'Ya existe un pedido activo para este presupuesto.',
+        };
+      }
       return { ok: false, error: 'No se ha podido crear el pedido general.' };
     }
     poId = String((data as { id: string }).id);
   }
 
-  if (input.lines && input.lines.length > 0) {
+  const shouldReplace =
+    input.replaceLines === true ||
+    (input.lines != null && input.lines.length > 0 && !input.id);
+  if (shouldReplace || (input.replaceLines && input.lines)) {
     await supabase
       .from('platform_supplier_purchase_lines')
       .delete()
       .eq('purchase_order_id', poId);
-    const rows = input.lines.map((l, i) => {
-      const qty = l.quantity > 0 ? l.quantity : 1;
-      const vat = l.vatBps ?? 2100;
-      const net = Math.round(qty * l.unitPriceCents);
-      const lineTotal = Math.round(net * (1 + vat / 10000));
-      return {
-        purchase_order_id: poId,
-        description: l.description.trim(),
-        quantity: qty,
-        unit: l.unit?.trim() || null,
-        unit_price_cents: l.unitPriceCents,
-        vat_bps: vat,
-        line_total_cents: lineTotal,
-        sort_order: i,
-      };
-    });
-    const { error: lineErr } = await supabase
-      .from('platform_supplier_purchase_lines')
-      .insert(rows);
-    if (lineErr) {
-      return { ok: false, error: 'Pedido guardado, pero fallaron las líneas.' };
+    const lines = input.lines ?? [];
+    if (lines.length > 0) {
+      const rows = lines.map((l, i) => {
+        const qty = l.quantity > 0 ? l.quantity : 1;
+        const vat = l.vatBps ?? 2100;
+        const net = Math.round(qty * l.unitPriceCents);
+        const lineTotal = Math.round(net * (1 + vat / 10000));
+        return {
+          purchase_order_id: poId,
+          description: l.description.trim(),
+          quantity: qty,
+          unit: l.unit?.trim() || null,
+          unit_price_cents: l.unitPriceCents,
+          vat_bps: vat,
+          line_total_cents: lineTotal,
+          sort_order: i,
+        };
+      });
+      const { error: lineErr } = await supabase
+        .from('platform_supplier_purchase_lines')
+        .insert(rows);
+      if (lineErr) {
+        return { ok: false, error: 'Pedido guardado, pero fallaron las líneas.' };
+      }
     }
+  }
+
+  if (previousStatus !== status) {
+    await logStatusEvent({
+      entityType: 'purchase_order',
+      entityId: poId,
+      supplierId: input.supplierId,
+      fromStatus: previousStatus,
+      toStatus: status,
+    });
   }
 
   await logActivity(
@@ -399,9 +595,115 @@ export async function upsertGeneralPurchaseOrderAction(input: {
 }
 
 /**
- * Convierte presupuesto aprobado:
- * - target 'general' → platform_supplier_purchase_orders
- * - target 'kiosk' → kiosk_purchase_orders (integración existente)
+ * Prepara borrador de pedido general desde presupuesto aceptado.
+ * No confirma la compra (queda en borrador para revisión).
+ */
+export async function preparePurchaseFromQuoteAction(input: {
+  quoteId: string;
+  clientRequestId?: string | null;
+}): Promise<SupplierActionResult<{ id: string; alreadyExisted: boolean }>> {
+  if (!(await hasSuppliersWrite())) {
+    return { ok: false, error: 'Sin permiso de pedidos.' };
+  }
+  const supabase = createClient();
+  const { data: quote, error } = await supabase
+    .from('platform_supplier_quotes')
+    .select(
+      'id, status, title, supplier_id, shipping_cents, notes, platform_suppliers ( legal_name, category, payment_terms )'
+    )
+    .eq('id', input.quoteId)
+    .maybeSingle();
+  if (error || !quote) return { ok: false, error: 'Presupuesto no encontrado.' };
+  const q = quote as Record<string, unknown>;
+  if (String(q.status) !== 'aprobado') {
+    return {
+      ok: false,
+      error: 'Solo se prepara pedido desde presupuestos aceptados.',
+    };
+  }
+
+  const { data: existing } = await supabase
+    .from('platform_supplier_purchase_orders')
+    .select('id')
+    .eq('quote_id', input.quoteId)
+    .neq('status', 'cancelado')
+    .maybeSingle();
+  if (existing) {
+    return {
+      ok: true,
+      id: String((existing as { id: string }).id),
+      alreadyExisted: true,
+    };
+  }
+
+  const linesRes = await listQuoteLines(input.quoteId);
+  if (!linesRes.ok) return linesRes;
+  const supplier = q.platform_suppliers as {
+    legal_name?: string;
+    category?: string;
+    payment_terms?: string | null;
+  } | null;
+  const category = isSupplierCategory(supplier?.category)
+    ? (supplier!.category as SupplierCategory)
+    : 'otros';
+
+  let subtotal = 0;
+  let tax = 0;
+  const poLines = linesRes.lines.map((l) => {
+    const net = Math.round(l.quantity * l.unitPriceCents);
+    const lineTax = Math.round(net * (l.vatBps / 10000));
+    subtotal += net;
+    tax += lineTax;
+    return {
+      description: l.description || l.materialKey,
+      quantity: l.quantity,
+      unit: l.unit,
+      unitPriceCents: l.unitPriceCents,
+      vatBps: l.vatBps,
+    };
+  });
+  const shipping =
+    q.shipping_cents == null ? null : Number(q.shipping_cents);
+  const total =
+    subtotal + tax + (shipping == null ? 0 : shipping);
+
+  const notesParts = [
+    `Borrador desde presupuesto aceptado ${input.quoteId}`,
+    q.notes ? `Condiciones presupuesto: ${String(q.notes)}` : null,
+    supplier?.payment_terms
+      ? `Pago proveedor: ${supplier.payment_terms}`
+      : null,
+  ].filter(Boolean);
+
+  const created = await upsertGeneralPurchaseOrderAction({
+    supplierId: String(q.supplier_id),
+    quoteId: String(q.id),
+    category,
+    title: String(q.title),
+    status: 'borrador',
+    shippingCents: shipping,
+    subtotalCents: subtotal || null,
+    taxCents: tax || null,
+    totalCents: total || null,
+    notes: notesParts.join('\n'),
+    clientRequestId: input.clientRequestId ?? null,
+    replaceLines: true,
+    lines: poLines,
+  });
+  if (!created.ok) return created;
+
+  await logActivity(
+    String(q.supplier_id),
+    'supplier.quote_prepare_purchase',
+    `Presupuesto → borrador pedido ${created.id}`
+  );
+  return { ok: true, id: created.id, alreadyExisted: false };
+}
+
+/**
+ * Convierte presupuesto aceptado:
+ * - target 'general' → borrador revisable (no confirma compra)
+ * - target 'kiosk' → kiosk_purchase_orders (integración existente, sin marcar pedido)
  */
 export async function convertApprovedQuoteToPurchaseAction(input: {
   quoteId: string;
@@ -409,10 +711,21 @@ export async function convertApprovedQuoteToPurchaseAction(input: {
   quantity?: number;
   category?: SupplierCategory;
   model?: string | null;
+  clientRequestId?: string | null;
 }): Promise<SupplierActionResult<{ purchaseOrderId: string; kind: 'general' | 'kiosk' }>> {
   if (!(await hasSuppliersWrite())) {
     return { ok: false, error: 'Sin permiso.' };
   }
+
+  if (input.target === 'general') {
+    const prepared = await preparePurchaseFromQuoteAction({
+      quoteId: input.quoteId,
+      clientRequestId: input.clientRequestId ?? null,
+    });
+    if (!prepared.ok) return prepared;
+    return { ok: true, purchaseOrderId: prepared.id, kind: 'general' };
+  }
+
   const supabase = createClient();
   const { data: quote, error } = await supabase
     .from('platform_supplier_quotes')
@@ -424,7 +737,7 @@ export async function convertApprovedQuoteToPurchaseAction(input: {
   if (error || !quote) return { ok: false, error: 'Presupuesto no encontrado.' };
   const q = quote as Record<string, unknown>;
   if (String(q.status) !== 'aprobado') {
-    return { ok: false, error: 'Solo se convierten presupuestos aprobados.' };
+    return { ok: false, error: 'Solo se convierten presupuestos aceptados.' };
   }
   const supplier = q.platform_suppliers as {
     legal_name?: string;
@@ -432,34 +745,6 @@ export async function convertApprovedQuoteToPurchaseAction(input: {
   } | null;
   const supplierName = supplier?.legal_name?.trim();
   if (!supplierName) return { ok: false, error: 'Proveedor sin razón social.' };
-  const supplierCategory = isSupplierCategory(supplier?.category)
-    ? supplier!.category
-    : 'otros';
-
-  if (input.target === 'general') {
-    const category =
-      input.category && isSupplierCategory(input.category)
-        ? input.category
-        : supplierCategory;
-    const created = await upsertGeneralPurchaseOrderAction({
-      supplierId: String(q.supplier_id),
-      quoteId: String(q.id),
-      category,
-      title: String(q.title),
-      status: 'pedido',
-      orderedAt: new Date().toISOString().slice(0, 10),
-      shippingCents:
-        q.shipping_cents == null ? null : Number(q.shipping_cents),
-      notes: `Convertido desde presupuesto ${input.quoteId}`,
-    });
-    if (!created.ok) return created;
-    await logActivity(
-      String(q.supplier_id),
-      'supplier.quote_converted_general',
-      `Presupuesto → pedido general ${created.id}`
-    );
-    return { ok: true, purchaseOrderId: created.id, kind: 'general' };
-  }
 
   const { data: rpc, error: rpcErr } = await supabase.rpc(
     'ff_kiosk_purchase_order_upsert_v1',

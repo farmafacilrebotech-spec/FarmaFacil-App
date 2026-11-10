@@ -33,15 +33,18 @@ describe('supplier categories', () => {
 });
 
 describe('supplier quote and purchase statuses', () => {
-  it('cubre el ciclo comercial acordado', () => {
+  it('cubre el ciclo comercial acordado (076+077)', () => {
     assert.deepEqual([...SUPPLIER_QUOTE_STATUSES], [
       'recibido',
       'en_revision',
       'aprobado',
       'rechazado',
       'caducado',
+      'archivado',
     ]);
     assert.equal(SUPPLIER_QUOTE_STATUS_LABELS.en_revision, 'En revisión');
+    assert.equal(SUPPLIER_QUOTE_STATUS_LABELS.aprobado, 'Aceptado');
+    assert.equal(SUPPLIER_QUOTE_STATUS_LABELS.archivado, 'Archivado');
     assert.ok(SUPPLIER_PO_STATUSES.includes('facturado'));
     assert.equal(SUPPLIER_DOCS_BUCKET, 'supplier-docs');
   });
