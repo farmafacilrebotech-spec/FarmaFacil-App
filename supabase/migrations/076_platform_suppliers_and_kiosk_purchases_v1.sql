@@ -618,14 +618,20 @@ CREATE TABLE IF NOT EXISTS public.kiosk_purchase_receipts (
 CREATE INDEX IF NOT EXISTS kiosk_po_receipts_po_idx
   ON public.kiosk_purchase_receipts (purchase_order_id, created_at DESC);
 
--- Enlace activo → pedido (nullable; activos previos sin PO siguen válidos)
-ALTER TABLE public.kiosk_assets
-  ADD COLUMN IF NOT EXISTS purchase_order_id uuid
-    REFERENCES public.kiosk_purchase_orders (id) ON DELETE SET NULL;
-
-CREATE INDEX IF NOT EXISTS kiosk_assets_purchase_order_id_idx
-  ON public.kiosk_assets (purchase_order_id)
-  WHERE purchase_order_id IS NOT NULL;
+-- Enlace activo → pedido (nullable). Solo si 065 (kiosk_assets) ya existe en el entorno.
+DO $$
+BEGIN
+  IF to_regclass('public.kiosk_assets') IS NOT NULL THEN
+    ALTER TABLE public.kiosk_assets
+      ADD COLUMN IF NOT EXISTS purchase_order_id uuid
+        REFERENCES public.kiosk_purchase_orders (id) ON DELETE SET NULL;
+    CREATE INDEX IF NOT EXISTS kiosk_assets_purchase_order_id_idx
+      ON public.kiosk_assets (purchase_order_id)
+      WHERE purchase_order_id IS NOT NULL;
+  ELSE
+    RAISE NOTICE '076: kiosk_assets ausente — se omite enlace purchase_order_id (aplicar 065 antes para recepción de activos).';
+  END IF;
+END $$;
 
 -- -----------------------------------------------------------------------------
 -- ETA helper
