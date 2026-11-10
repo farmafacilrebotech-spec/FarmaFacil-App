@@ -1,10 +1,14 @@
 /**
- * Clientes PWA/cuenta (account_kind customer|both) — SuperAdmin solo lectura.
+ * Clientes PWA/cuenta (account_kind customer|both) — solo SuperAdmin Total.
  * No es CRM de Excel; aislamiento: vínculos vía customer_saved_pharmacies / pedidos.
+ * Soporte / permisos genéricos de farmacias NO bastan para ver datos personales.
  */
 
 import { createClient } from '@/lib/supabase/server';
-import { hasPlatformPermission } from '@/lib/auth/platform';
+import {
+  getCurrentProfile,
+  hasPlatformSuperAdminRole,
+} from '@/lib/auth/platform';
 
 export type SaCustomerRow = {
   id: string;
@@ -15,14 +19,33 @@ export type SaCustomerRow = {
   savedPharmacyCount: number;
 };
 
+async function requireSuperAdminTotalCustomers(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  const { profile, authenticated, error } = await getCurrentProfile();
+  if (!authenticated || !profile) {
+    return { ok: false, error: 'Debes iniciar sesión.' };
+  }
+  if (error) {
+    return { ok: false, error: 'No se ha podido verificar la sesión.' };
+  }
+  const sa = await hasPlatformSuperAdminRole(profile.id);
+  if (!sa.ok) {
+    return {
+      ok: false,
+      error:
+        'Solo SuperAdmin Total puede consultar datos personales de clientes.',
+    };
+  }
+  return { ok: true };
+}
+
 export async function listSaCustomers(limit = 100): Promise<
   | { ok: true; customers: SaCustomerRow[] }
   | { ok: false; error: string }
 > {
-  const read = await hasPlatformPermission('platform.pharmacies.read');
-  if (!read.ok) {
-    return { ok: false, error: 'Sin permiso para consultar clientes de plataforma.' };
-  }
+  const gate = await requireSuperAdminTotalCustomers();
+  if (!gate.ok) return gate;
 
   const supabase = createClient();
   const { data, error } = await supabase
@@ -77,10 +100,8 @@ export async function listSaCustomersForPharmacy(
   | { ok: true; customers: SaCustomerRow[] }
   | { ok: false; error: string }
 > {
-  const read = await hasPlatformPermission('platform.pharmacies.read');
-  if (!read.ok) {
-    return { ok: false, error: 'Sin permiso.' };
-  }
+  const gate = await requireSuperAdminTotalCustomers();
+  if (!gate.ok) return gate;
   if (!pharmacyId) return { ok: false, error: 'Farmacia no indicada.' };
 
   const supabase = createClient();

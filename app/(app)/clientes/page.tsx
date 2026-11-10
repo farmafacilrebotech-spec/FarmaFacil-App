@@ -12,13 +12,13 @@ export default async function ClientesPage() {
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Clientes"
-        description="Cuentas de cliente (PWA) con vínculo a farmacias guardadas. Acceso SuperAdmin; datos personales minimizados."
+        description="Cuentas de cliente (PWA) con vínculo a farmacias guardadas. Solo SuperAdmin Total."
       />
 
       <div className="rounded-xl border border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
         No es un CRM de importación Excel. Solo perfiles con{' '}
-        <code className="text-xs">account_kind</code> customer/both. Soporte no
-        tiene esta entrada en el menú.
+        <code className="text-xs">account_kind</code> customer/both. Soporte y
+        otros roles de plataforma no pueden consultar estos datos personales.
       </div>
 
       {!listed.ok ? (
