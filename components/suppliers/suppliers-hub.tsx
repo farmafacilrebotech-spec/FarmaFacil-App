@@ -7,11 +7,10 @@ import { useRouter } from 'next/navigation';
 
 import {
   archiveSupplierAction,
-  convertApprovedQuoteToPurchaseAction,
+  createPurchaseFromQuoteAction,
   getSupplierDocSignedUrlAction,
   loadSupplierPurchaseDetailAction,
   loadSupplierQuoteDetailAction,
-  preparePurchaseFromQuoteAction,
   uploadPurchaseDocumentAction,
   uploadSupplierQuoteDocumentAction,
   upsertGeneralPurchaseOrderAction,
@@ -566,8 +565,8 @@ export function SuppliersHub({
           [
             ['directorio', 'Directorio'],
             ['presupuestos', 'Presupuestos'],
-            ['pedidos', 'Pedidos generales'],
-            ['compras-kioskos', 'Compras kioskos'],
+            ['pedidos', 'Pedidos de compra'],
+            ['compras-kioskos', 'Compras de kioskos'],
             ['comparar', 'Comparar materiales'],
           ] as const
         ).map(([id, label]) => (
@@ -1180,35 +1179,52 @@ export function SuppliersHub({
                 >
                   {selectedQuoteId ? 'Guardar cambios' : 'Guardar presupuesto'}
                 </Button>
-                {canWrite &&
-                selectedQuoteId &&
-                quoteStatus === 'aprobado' ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        const res = await preparePurchaseFromQuoteAction({
-                          quoteId: selectedQuoteId,
-                          clientRequestId: newClientRequestId(),
-                        });
-                        if (!res.ok) {
-                          toast.error(res.error);
-                          return;
-                        }
-                        toast.success(
-                          res.alreadyExisted
-                            ? 'Ya existía un pedido vinculado; abierto para revisión'
-                            : 'Borrador de pedido preparado (sin confirmar compra)'
+                {selectedQuoteId && quoteStatus === 'aprobado' ? (
+                  quotesWithActivePo.has(selectedQuoteId) ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => {
+                        const po = generalPurchases.find(
+                          (o) =>
+                            o.quoteId === selectedQuoteId &&
+                            o.status !== 'cancelado'
                         );
-                        await openPurchaseById(res.id);
-                        router.refresh();
-                      })
-                    }
-                  >
-                    Preparar pedido
-                  </Button>
+                        if (po) void openPurchaseById(po.id);
+                        else setTab('pedidos');
+                      }}
+                    >
+                      Ver pedido
+                    </Button>
+                  ) : canWrite ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          const res = await createPurchaseFromQuoteAction({
+                            quoteId: selectedQuoteId,
+                            clientRequestId: newClientRequestId(),
+                          });
+                          if (!res.ok) {
+                            toast.error(res.error);
+                            return;
+                          }
+                          toast.success(
+                            res.alreadyExisted
+                              ? 'Pedido ya vinculado; abierto'
+                              : 'Pedido de compra creado en borrador (compra no confirmada)'
+                          );
+                          await openPurchaseById(res.id);
+                          router.refresh();
+                        })
+                      }
+                    >
+                      Crear pedido de compra
+                    </Button>
+                  ) : null
                 ) : null}
               </div>
             </div>
@@ -1313,72 +1329,54 @@ export function SuppliersHub({
                           >
                             Abrir / editar
                           </Button>
-                          {canWrite && q.status === 'aprobado' ? (
-                            <>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="secondary"
-                                disabled={busy}
-                                onClick={() =>
-                                  run(async () => {
-                                    const res =
-                                      await preparePurchaseFromQuoteAction({
-                                        quoteId: q.id,
-                                        clientRequestId: newClientRequestId(),
-                                      });
-                                    if (!res.ok) {
-                                      toast.error(res.error);
-                                      return;
-                                    }
-                                    toast.success(
-                                      res.alreadyExisted
-                                        ? 'Pedido ya vinculado; abierto'
-                                        : 'Borrador preparado (revisar antes de confirmar)'
-                                    );
-                                    setTab('pedidos');
-                                    setSelectedPurchaseId(res.id);
-                                    router.refresh();
-                                  })
-                                }
-                              >
-                                Preparar pedido
-                              </Button>
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                disabled={busy}
-                                onClick={() =>
-                                  run(async () => {
-                                    const res =
-                                      await convertApprovedQuoteToPurchaseAction(
-                                        {
-                                          quoteId: q.id,
-                                          target: 'kiosk',
-                                          quantity: 1,
-                                          model: q.title,
-                                        }
-                                      );
-                                    if (!res.ok) {
-                                      toast.error(res.error);
-                                      return;
-                                    }
-                                    toast.success('Pedido kiosko creado');
-                                    setTab('compras-kioskos');
-                                    router.refresh();
-                                  })
-                                }
-                              >
-                                → Pedido kiosko
-                              </Button>
-                            </>
-                          ) : null}
                           {q.status === 'aprobado' &&
                           quotesWithActivePo.has(q.id) ? (
-                            <span className="text-[11px] text-muted-foreground">
-                              Pedido vinculado
-                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() => {
+                                const po = generalPurchases.find(
+                                  (o) =>
+                                    o.quoteId === q.id &&
+                                    o.status !== 'cancelado'
+                                );
+                                if (po) void openPurchaseById(po.id);
+                                else setTab('pedidos');
+                              }}
+                            >
+                              Ver pedido
+                            </Button>
+                          ) : canWrite && q.status === 'aprobado' ? (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              disabled={busy}
+                              onClick={() =>
+                                run(async () => {
+                                  const res =
+                                    await createPurchaseFromQuoteAction({
+                                      quoteId: q.id,
+                                      clientRequestId: newClientRequestId(),
+                                    });
+                                  if (!res.ok) {
+                                    toast.error(res.error);
+                                    return;
+                                  }
+                                  toast.success(
+                                    res.alreadyExisted
+                                      ? 'Pedido ya vinculado; abierto'
+                                      : 'Pedido de compra creado en borrador (compra no confirmada)'
+                                  );
+                                  await openPurchaseById(res.id);
+                                  router.refresh();
+                                })
+                              }
+                            >
+                              Crear pedido de compra
+                            </Button>
                           ) : null}
                         </div>
                       </td>
@@ -1884,9 +1882,13 @@ export function SuppliersHub({
       {tab === 'compras-kioskos' ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Integración existente de compras de kioskos (
-            <code className="text-xs">kiosk_purchase_orders</code>). Independiente
-            de los pedidos generales.
+            Vista operativa de pedidos de compra con categoría kioskos
+            (extensión 1:1 de{' '}
+            <code className="text-xs">platform_supplier_purchase_orders</code>
+            ). Los importes canónicos viven en «Pedidos de compra»; aquí se
+            gestionan modelo, unidades, plazo y recepción a inventario. La
+            recepción real de activos KSK requiere la migración 065 (ausente en
+            staging).
           </p>
           {purchasesError ? (
             <p className="text-sm text-destructive">{purchasesError}</p>

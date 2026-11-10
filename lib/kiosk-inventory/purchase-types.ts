@@ -53,6 +53,9 @@ export type KioskPurchaseOrderOperational = {
   deliveryLeadMonths: number;
   estimatedDeliveryAt: string | null;
   notes: string | null;
+  /** Pedido económico canónico (079). */
+  generalPurchaseOrderId: string | null;
+  sourceQuoteId: string | null;
   createdAt: string;
   updatedAt: string;
 };

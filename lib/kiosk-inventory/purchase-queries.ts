@@ -23,6 +23,8 @@ type PoRow = {
   delivery_lead_months: number;
   estimated_delivery_at: string | null;
   notes: string | null;
+  general_purchase_order_id?: string | null;
+  source_quote_id?: string | null;
   unit_price_cents: number | null;
   shipping_cents: number | null;
   total_cents: number | null;
@@ -47,6 +49,10 @@ function mapOperational(row: PoRow): KioskPurchaseOrderOperational {
     deliveryLeadMonths: Number(row.delivery_lead_months ?? 2),
     estimatedDeliveryAt: row.estimated_delivery_at,
     notes: row.notes,
+    generalPurchaseOrderId: row.general_purchase_order_id
+      ? String(row.general_purchase_order_id)
+      : null,
+    sourceQuoteId: row.source_quote_id ? String(row.source_quote_id) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -78,6 +84,7 @@ export async function listKioskPurchaseOrders(): Promise<
     ? `
       id, supplier_name, order_number, model, quantity, received_quantity, status,
       ordered_at, delivery_lead_months, estimated_delivery_at, notes,
+      general_purchase_order_id, source_quote_id,
       created_at, updated_at,
       costs:kiosk_purchase_order_costs (
         unit_price_cents, shipping_cents, total_cents, currency
@@ -86,14 +93,42 @@ export async function listKioskPurchaseOrders(): Promise<
     : `
       id, supplier_name, order_number, model, quantity, received_quantity, status,
       ordered_at, delivery_lead_months, estimated_delivery_at, notes,
+      general_purchase_order_id, source_quote_id,
       created_at, updated_at
     `;
 
-  const { data, error } = await supabase
+  let { data, error } = await supabase
     .from('kiosk_purchase_orders')
     .select(selectCols)
     .order('created_at', { ascending: false })
     .limit(100);
+
+  // Compatibilidad pre-079
+  if (
+    error &&
+    (String(error.message).toLowerCase().includes('general_purchase_order_id') ||
+      String(error.message).toLowerCase().includes('source_quote_id'))
+  ) {
+    const legacy = canSeeFinancial
+      ? `
+      id, supplier_name, order_number, model, quantity, received_quantity, status,
+      ordered_at, delivery_lead_months, estimated_delivery_at, notes,
+      created_at, updated_at,
+      costs:kiosk_purchase_order_costs (
+        unit_price_cents, shipping_cents, total_cents, currency
+      )
+    `
+      : `
+      id, supplier_name, order_number, model, quantity, received_quantity, status,
+      ordered_at, delivery_lead_months, estimated_delivery_at, notes,
+      created_at, updated_at
+    `;
+    ({ data, error } = await supabase
+      .from('kiosk_purchase_orders')
+      .select(legacy)
+      .order('created_at', { ascending: false })
+      .limit(100));
+  }
 
   if (error) {
     console.error('[kiosk-purchasing] list', error.code, error.message);

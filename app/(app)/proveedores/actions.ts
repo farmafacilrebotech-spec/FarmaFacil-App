@@ -685,18 +685,219 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     'supplier.purchase_upsert',
     `Pedido «${title}» (${status})`
   );
+
+  // Categoría kioskos → extensión operativa 1:1 (sin segundo circuito económico).
+  if (input.category === 'kioskos' && poId) {
+    const { data: supRow } = await supabase
+      .from('platform_suppliers')
+      .select('legal_name')
+      .eq('id', input.supplierId)
+      .maybeSingle();
+    const supplierName =
+      (supRow as { legal_name?: string } | null)?.legal_name?.trim() ||
+      'Proveedor';
+    const qtyFromLines = (input.lines ?? []).reduce(
+      (acc, l) => acc + (l.quantity > 0 ? l.quantity : 0),
+      0
+    );
+    const ext = await ensureKioskExtensionForPurchaseAction({
+      generalPurchaseOrderId: poId,
+      supplierId: input.supplierId,
+      supplierName,
+      sourceQuoteId: preservedQuoteId,
+      model: title,
+      quantity: qtyFromLines > 0 ? Math.round(qtyFromLines) : 1,
+    });
+    if (!ext.ok) {
+      return {
+        ok: false,
+        error: `Pedido guardado, pero falló la extensión kiosk: ${ext.error}`,
+      };
+    }
+  }
+
   revalidateSuppliers(input.supplierId);
   return { ok: true, id: poId };
 }
 
 /**
- * Prepara borrador de pedido general desde presupuesto aceptado.
- * No confirma la compra (queda en borrador para revisión).
+ * Asegura extensión operativa kiosk 1:1 para un pedido económico.
+ * No duplica importes (costs quedan null; la verdad económica es el general).
+ * Idempotente por general_purchase_order_id y source_quote_id.
  */
-export async function preparePurchaseFromQuoteAction(input: {
+export async function ensureKioskExtensionForPurchaseAction(input: {
+  generalPurchaseOrderId: string;
+  supplierId: string;
+  supplierName: string;
+  sourceQuoteId?: string | null;
+  model?: string | null;
+  quantity?: number;
+}): Promise<
+  SupplierActionResult<{ kioskPurchaseOrderId: string; alreadyExisted: boolean }>
+> {
+  if (!(await hasSuppliersWrite())) {
+    return { ok: false, error: 'Sin permiso de pedidos.' };
+  }
+  const supabase = createClient();
+  const generalId = input.generalPurchaseOrderId;
+
+  const { data: byGeneral } = await supabase
+    .from('kiosk_purchase_orders')
+    .select('id')
+    .eq('general_purchase_order_id', generalId)
+    .neq('status', 'cancelado')
+    .maybeSingle();
+  if (byGeneral) {
+    return {
+      ok: true,
+      kioskPurchaseOrderId: String((byGeneral as { id: string }).id),
+      alreadyExisted: true,
+    };
+  }
+
+  if (input.sourceQuoteId) {
+    const { data: byQuote } = await supabase
+      .from('kiosk_purchase_orders')
+      .select('id')
+      .eq('source_quote_id', input.sourceQuoteId)
+      .neq('status', 'cancelado')
+      .maybeSingle();
+    if (byQuote) {
+      const kid = String((byQuote as { id: string }).id);
+      await supabase
+        .from('kiosk_purchase_orders')
+        .update({
+          general_purchase_order_id: generalId,
+          supplier_id: input.supplierId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', kid);
+      return { ok: true, kioskPurchaseOrderId: kid, alreadyExisted: true };
+    }
+  }
+
+  const qty =
+    input.quantity && input.quantity > 0
+      ? Math.min(Math.floor(input.quantity), 5000)
+      : 1;
+
+  const { data: rpc, error: rpcErr } = await supabase.rpc(
+    'ff_kiosk_purchase_order_upsert_v1',
+    {
+      p_id: null,
+      p_supplier_name: input.supplierName,
+      p_order_number: null,
+      p_model: input.model?.trim() || null,
+      p_quantity: qty,
+      p_ordered_at: null,
+      p_delivery_lead_months: 2,
+      // Importes canónicos en el pedido general — no duplicar en costs.
+      p_unit_price_cents: null,
+      p_shipping_cents: null,
+      p_total_cents: null,
+      p_notes: input.sourceQuoteId
+        ? `Extensión kiosk del pedido económico ${generalId} (presupuesto ${input.sourceQuoteId})`
+        : `Extensión kiosk del pedido económico ${generalId}`,
+      p_mark_as_ordered: false,
+      p_cancel: false,
+    }
+  );
+  if (rpcErr) {
+    return {
+      ok: false,
+      error:
+        'No se pudo crear la extensión kiosk. ¿Migración 076? ¿Permiso kiosk_purchasing.write?',
+    };
+  }
+  const status = (rpc as { status?: string; id?: string } | null)?.status;
+  const poId = (rpc as { id?: string } | null)?.id;
+  if (status !== 'ok' || !poId) {
+    // Carrera: otro request pudo crear la extensión
+    const { data: raced } = await supabase
+      .from('kiosk_purchase_orders')
+      .select('id')
+      .eq('general_purchase_order_id', generalId)
+      .neq('status', 'cancelado')
+      .maybeSingle();
+    if (raced) {
+      return {
+        ok: true,
+        kioskPurchaseOrderId: String((raced as { id: string }).id),
+        alreadyExisted: true,
+      };
+    }
+    return { ok: false, error: 'RPC de pedido kiosko no disponible o rechazada.' };
+  }
+
+  const { error: linkErr } = await supabase
+    .from('kiosk_purchase_orders')
+    .update({
+      supplier_id: input.supplierId,
+      general_purchase_order_id: generalId,
+      source_quote_id: input.sourceQuoteId ?? null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', poId);
+
+  if (linkErr) {
+    // Unique violation → devolver la extensión ya existente
+    if (linkErr.code === '23505' || /unique|duplicate/i.test(linkErr.message)) {
+      const { data: existing } = await supabase
+        .from('kiosk_purchase_orders')
+        .select('id')
+        .eq('general_purchase_order_id', generalId)
+        .neq('status', 'cancelado')
+        .maybeSingle();
+      if (existing) {
+        // Cancelar la fila huérfana recién creada para no dejar basura económica
+        await supabase
+          .from('kiosk_purchase_orders')
+          .update({
+            status: 'cancelado',
+            notes: `Cancelado por carrera idempotente; canónica = ${String(
+              (existing as { id: string }).id
+            )}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', poId);
+        return {
+          ok: true,
+          kioskPurchaseOrderId: String((existing as { id: string }).id),
+          alreadyExisted: true,
+        };
+      }
+    }
+    return {
+      ok: false,
+      error: `Extensión kiosk creada pero no vinculada (${linkErr.message}).`,
+    };
+  }
+
+  await logActivity(
+    input.supplierId,
+    'supplier.kiosk_extension_ensured',
+    `Pedido económico ${generalId} → extensión kiosk ${poId}`
+  );
+  revalidatePath('/proveedores');
+  revalidatePath('/inventario-kioskos');
+  return { ok: true, kioskPurchaseOrderId: poId, alreadyExisted: false };
+}
+
+/**
+ * Crea (o reabre) el pedido de compra económico desde presupuesto aceptado.
+ * No confirma la compra (queda en borrador).
+ * Si la categoría es kioskos, asegura la extensión operativa 1:1.
+ */
+export async function createPurchaseFromQuoteAction(input: {
   quoteId: string;
   clientRequestId?: string | null;
-}): Promise<SupplierActionResult<{ id: string; alreadyExisted: boolean }>> {
+}): Promise<
+  SupplierActionResult<{
+    id: string;
+    alreadyExisted: boolean;
+    kioskPurchaseOrderId: string | null;
+  }>
+> {
   if (!(await hasSuppliersWrite())) {
     return { ok: false, error: 'Sin permiso de pedidos.' };
   }
@@ -713,26 +914,10 @@ export async function preparePurchaseFromQuoteAction(input: {
   if (String(q.status) !== 'aprobado') {
     return {
       ok: false,
-      error: 'Solo se prepara pedido desde presupuestos aceptados.',
+      error: 'Solo se crea pedido desde presupuestos aceptados.',
     };
   }
 
-  const { data: existing } = await supabase
-    .from('platform_supplier_purchase_orders')
-    .select('id')
-    .eq('quote_id', input.quoteId)
-    .neq('status', 'cancelado')
-    .maybeSingle();
-  if (existing) {
-    return {
-      ok: true,
-      id: String((existing as { id: string }).id),
-      alreadyExisted: true,
-    };
-  }
-
-  const linesRes = await listQuoteLines(input.quoteId);
-  if (!linesRes.ok) return linesRes;
   const supplier = q.platform_suppliers as {
     legal_name?: string;
     category?: string;
@@ -741,167 +926,164 @@ export async function preparePurchaseFromQuoteAction(input: {
   const category = isSupplierCategory(supplier?.category)
     ? (supplier!.category as SupplierCategory)
     : 'otros';
+  const supplierName = supplier?.legal_name?.trim() || 'Proveedor';
 
-  let subtotal = 0;
-  let tax = 0;
-  const poLines = linesRes.lines.map((l) => {
-    const net = Math.round(l.quantity * l.unitPriceCents);
-    const lineTax = Math.round(net * (l.vatBps / 10000));
-    subtotal += net;
-    tax += lineTax;
-    return {
-      description: l.description || l.materialKey,
-      quantity: l.quantity,
-      unit: l.unit,
-      unitPriceCents: l.unitPriceCents,
-      vatBps: l.vatBps,
-    };
-  });
-  const shipping =
-    q.shipping_cents == null ? null : Number(q.shipping_cents);
-  const total =
-    subtotal + tax + (shipping == null ? 0 : shipping);
+  let alreadyExisted = false;
+  let generalId: string | null = null;
 
-  const notesParts = [
-    `Borrador desde presupuesto aceptado ${input.quoteId}`,
-    q.notes ? `Condiciones presupuesto: ${String(q.notes)}` : null,
-    supplier?.payment_terms
-      ? `Pago proveedor: ${supplier.payment_terms}`
-      : null,
-  ].filter(Boolean);
+  const { data: existing } = await supabase
+    .from('platform_supplier_purchase_orders')
+    .select('id, category')
+    .eq('quote_id', input.quoteId)
+    .neq('status', 'cancelado')
+    .maybeSingle();
 
-  const created = await upsertGeneralPurchaseOrderAction({
-    supplierId: String(q.supplier_id),
-    quoteId: String(q.id),
-    category,
-    title: String(q.title),
-    status: 'borrador',
-    shippingCents: shipping,
-    shippingIncludesVat: false,
-    subtotalCents: subtotal || null,
-    taxCents: tax || null,
-    totalCents: total || null,
-    notes: notesParts.join('\n'),
-    clientRequestId: input.clientRequestId ?? null,
-    replaceLines: true,
-    lines: poLines,
-  });
-  if (!created.ok) return created;
+  if (existing) {
+    alreadyExisted = true;
+    generalId = String((existing as { id: string }).id);
+  } else {
+    const linesRes = await listQuoteLines(input.quoteId);
+    if (!linesRes.ok) return linesRes;
 
-  await logActivity(
-    String(q.supplier_id),
-    'supplier.quote_prepare_purchase',
-    `Presupuesto → borrador pedido ${created.id}`
-  );
-  return { ok: true, id: created.id, alreadyExisted: false };
+    let subtotal = 0;
+    let tax = 0;
+    const poLines = linesRes.lines.map((l) => {
+      const net = Math.round(l.quantity * l.unitPriceCents);
+      const lineTax = Math.round(net * (l.vatBps / 10000));
+      subtotal += net;
+      tax += lineTax;
+      return {
+        description: l.description || l.materialKey,
+        quantity: l.quantity,
+        unit: l.unit,
+        unitPriceCents: l.unitPriceCents,
+        vatBps: l.vatBps,
+      };
+    });
+    const shipping =
+      q.shipping_cents == null ? null : Number(q.shipping_cents);
+    const total = subtotal + tax + (shipping == null ? 0 : shipping);
+
+    const notesParts = [
+      `Borrador desde presupuesto aceptado ${input.quoteId}`,
+      q.notes ? `Condiciones presupuesto: ${String(q.notes)}` : null,
+      supplier?.payment_terms
+        ? `Pago proveedor: ${supplier.payment_terms}`
+        : null,
+    ].filter(Boolean);
+
+    const created = await upsertGeneralPurchaseOrderAction({
+      supplierId: String(q.supplier_id),
+      quoteId: String(q.id),
+      category,
+      title: String(q.title),
+      status: 'borrador',
+      shippingCents: shipping,
+      shippingIncludesVat: false,
+      subtotalCents: subtotal || null,
+      taxCents: tax || null,
+      totalCents: total || null,
+      notes: notesParts.join('\n'),
+      clientRequestId: input.clientRequestId ?? null,
+      replaceLines: true,
+      lines: poLines,
+    });
+    if (!created.ok) return created;
+    generalId = created.id;
+
+    await logActivity(
+      String(q.supplier_id),
+      'supplier.quote_create_purchase',
+      `Presupuesto → borrador pedido ${created.id}`
+    );
+  }
+
+  let kioskPurchaseOrderId: string | null = null;
+  const effectiveCategory =
+    existing && isSupplierCategory(String((existing as { category?: string }).category))
+      ? (String((existing as { category: string }).category) as SupplierCategory)
+      : category;
+
+  if (effectiveCategory === 'kioskos' && generalId) {
+    const linesRes = await listQuoteLines(input.quoteId);
+    const qty = linesRes.ok
+      ? linesRes.lines.reduce((acc, l) => acc + (l.quantity > 0 ? l.quantity : 0), 0)
+      : 1;
+    const ext = await ensureKioskExtensionForPurchaseAction({
+      generalPurchaseOrderId: generalId,
+      supplierId: String(q.supplier_id),
+      supplierName,
+      sourceQuoteId: String(q.id),
+      model: String(q.title),
+      quantity: qty > 0 ? Math.round(qty) : 1,
+    });
+    if (!ext.ok) return ext;
+    kioskPurchaseOrderId = ext.kioskPurchaseOrderId;
+  }
+
+  return {
+    ok: true,
+    id: generalId!,
+    alreadyExisted,
+    kioskPurchaseOrderId,
+  };
+}
+
+/** @deprecated usar createPurchaseFromQuoteAction */
+export async function preparePurchaseFromQuoteAction(input: {
+  quoteId: string;
+  clientRequestId?: string | null;
+}): Promise<SupplierActionResult<{ id: string; alreadyExisted: boolean }>> {
+  const res = await createPurchaseFromQuoteAction(input);
+  if (!res.ok) return res;
+  return { ok: true, id: res.id, alreadyExisted: res.alreadyExisted };
 }
 
 /**
- * Convierte presupuesto aceptado:
- * - target 'general' → borrador revisable (no confirma compra)
- * - target 'kiosk' → kiosk_purchase_orders (integración existente, sin marcar pedido)
+ * @deprecated Ya no se crean compras kiosk sueltas desde presupuesto.
+ * Siempre crea/abre el pedido económico (y extensión kiosk si aplica).
  */
 export async function convertApprovedQuoteToPurchaseAction(input: {
   quoteId: string;
-  target: 'general' | 'kiosk';
+  target?: 'general' | 'kiosk';
   quantity?: number;
   category?: SupplierCategory;
   model?: string | null;
   clientRequestId?: string | null;
-}): Promise<SupplierActionResult<{ purchaseOrderId: string; kind: 'general' | 'kiosk' }>> {
-  if (!(await hasSuppliersWrite())) {
-    return { ok: false, error: 'Sin permiso.' };
-  }
-
-  if (input.target === 'general') {
-    const prepared = await preparePurchaseFromQuoteAction({
-      quoteId: input.quoteId,
-      clientRequestId: input.clientRequestId ?? null,
-    });
-    if (!prepared.ok) return prepared;
-    return { ok: true, purchaseOrderId: prepared.id, kind: 'general' };
-  }
-
-  const supabase = createClient();
-  const { data: quote, error } = await supabase
-    .from('platform_supplier_quotes')
-    .select(
-      'id, status, title, supplier_id, shipping_cents, platform_suppliers ( legal_name, category )'
-    )
-    .eq('id', input.quoteId)
-    .maybeSingle();
-  if (error || !quote) return { ok: false, error: 'Presupuesto no encontrado.' };
-  const q = quote as Record<string, unknown>;
-  if (String(q.status) !== 'aprobado') {
-    return { ok: false, error: 'Solo se convierten presupuestos aceptados.' };
-  }
-  const supplier = q.platform_suppliers as {
-    legal_name?: string;
-    category?: string;
-  } | null;
-  const supplierName = supplier?.legal_name?.trim();
-  if (!supplierName) return { ok: false, error: 'Proveedor sin razón social.' };
-
-  const { data: rpc, error: rpcErr } = await supabase.rpc(
-    'ff_kiosk_purchase_order_upsert_v1',
-    {
-      p_id: null,
-      p_supplier_name: supplierName,
-      p_order_number: null,
-      p_model: input.model?.trim() || String(q.title),
-      p_quantity: input.quantity && input.quantity > 0 ? input.quantity : 1,
-      p_ordered_at: null,
-      p_delivery_lead_months: 2,
-      p_unit_price_cents: null,
-      p_shipping_cents: null,
-      p_total_cents: null,
-      p_notes: `Desde presupuesto ${input.quoteId}`,
-      p_mark_as_ordered: false,
-      p_cancel: false,
-    }
-  );
-  if (rpcErr) {
-    return {
-      ok: false,
-      error:
-        'No se pudo crear el pedido kiosko. ¿Migración 076? ¿Permiso kiosk_purchasing.write?',
-    };
-  }
-  const status = (rpc as { status?: string; id?: string } | null)?.status;
-  const poId = (rpc as { id?: string } | null)?.id;
-  if (status !== 'ok' || !poId) {
-    return { ok: false, error: 'RPC de pedido kiosko no disponible o rechazada.' };
-  }
-
-  await supabase
-    .from('kiosk_purchase_orders')
-    .update({ supplier_id: String(q.supplier_id) })
-    .eq('id', poId);
-
-  await logActivity(
-    String(q.supplier_id),
-    'supplier.quote_converted_kiosk',
-    `Presupuesto → pedido kiosko ${poId}`
-  );
-  revalidatePath('/proveedores');
-  revalidatePath('/inventario-kioskos');
-  return { ok: true, purchaseOrderId: poId, kind: 'kiosk' };
+}): Promise<
+  SupplierActionResult<{
+    purchaseOrderId: string;
+    kind: 'general' | 'kiosk';
+    kioskPurchaseOrderId: string | null;
+  }>
+> {
+  const created = await createPurchaseFromQuoteAction({
+    quoteId: input.quoteId,
+    clientRequestId: input.clientRequestId ?? null,
+  });
+  if (!created.ok) return created;
+  return {
+    ok: true,
+    purchaseOrderId: created.id,
+    kind: created.kioskPurchaseOrderId ? 'kiosk' : 'general',
+    kioskPurchaseOrderId: created.kioskPurchaseOrderId,
+  };
 }
 
-/** @deprecated usar convertApprovedQuoteToPurchaseAction */
+/** @deprecated usar createPurchaseFromQuoteAction */
 export async function convertApprovedQuoteToKioskPurchaseAction(input: {
   quoteId: string;
   quantity: number;
   model?: string | null;
 }): Promise<SupplierActionResult<{ purchaseOrderId: string }>> {
-  const res = await convertApprovedQuoteToPurchaseAction({
+  const res = await createPurchaseFromQuoteAction({
     quoteId: input.quoteId,
-    target: 'kiosk',
-    quantity: input.quantity,
-    model: input.model,
   });
   if (!res.ok) return res;
-  return { ok: true, purchaseOrderId: res.purchaseOrderId };
+  return {
+    ok: true,
+    purchaseOrderId: res.kioskPurchaseOrderId ?? res.id,
+  };
 }
 
 export async function uploadSupplierQuoteDocumentAction(formData: FormData): Promise<
