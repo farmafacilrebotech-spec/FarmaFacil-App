@@ -9,6 +9,8 @@ import {
   archiveSupplierAction,
   convertApprovedQuoteToPurchaseAction,
   getSupplierDocSignedUrlAction,
+  loadSupplierPurchaseDetailAction,
+  loadSupplierQuoteDetailAction,
   preparePurchaseFromQuoteAction,
   uploadPurchaseDocumentAction,
   uploadSupplierQuoteDocumentAction,
@@ -17,6 +19,12 @@ import {
   upsertSupplierContactAction,
   upsertSupplierQuoteAction,
 } from '@/app/(app)/proveedores/actions';
+import {
+  DEFAULT_PO_UNIT_PRICE_NOTE,
+  DEFAULT_VAT_BPS,
+  unitCostExVatWithShipping,
+  withDefaultPoNoteOnCreate,
+} from '@/lib/suppliers/purchase-math';
 import { PurchasesPanel } from '@/components/kiosk-inventory/purchases-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,6 +79,30 @@ function centsToEurosInput(cents: number | null | undefined): string {
   return (cents / 100).toFixed(2);
 }
 
+type QuoteLineDraft = {
+  key: string;
+  materialKey: string;
+  description: string;
+  quantity: string;
+  unitPrice: string;
+  leadDays: string;
+};
+
+function newLineKey(): string {
+  return `ln-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function emptyQuoteLine(): QuoteLineDraft {
+  return {
+    key: newLineKey(),
+    materialKey: '',
+    description: '',
+    quantity: '1',
+    unitPrice: '',
+    leadDays: '',
+  };
+}
+
 function eurosToCents(raw: string): number {
   const n = Number(raw.trim().replace(',', '.'));
   if (!Number.isFinite(n) || n < 0) return 0;
@@ -111,6 +143,9 @@ export function SuppliersHub({
   canPurchasingWrite,
   canReceive,
   canSeeFinancial,
+  initialTab,
+  initialQuoteId,
+  initialPoId,
   loadError,
   purchasesError,
   generalPurchasesError,
@@ -133,14 +168,54 @@ export function SuppliersHub({
   canPurchasingWrite: boolean;
   canReceive: boolean;
   canSeeFinancial: boolean;
+  initialTab?: string;
+  initialQuoteId?: string | null;
+  initialPoId?: string | null;
   loadError?: string | null;
   purchasesError?: string | null;
   generalPurchasesError?: string | null;
 }) {
   const router = useRouter();
-  const [tab, setTab] = React.useState<Tab>('directorio');
+  const [tab, setTab] = React.useState<Tab>(() => {
+    if (
+      initialTab === 'presupuestos' ||
+      initialTab === 'pedidos' ||
+      initialTab === 'directorio' ||
+      initialTab === 'compras-kioskos' ||
+      initialTab === 'comparar'
+    ) {
+      return initialTab;
+    }
+    if (initialQuoteId) return 'presupuestos';
+    if (initialPoId) return 'pedidos';
+    return 'directorio';
+  });
   const [busy, setBusy] = React.useState(false);
   const lock = React.useRef(false);
+  const quoteFormRef = React.useRef<HTMLDivElement | null>(null);
+  const poFormRef = React.useRef<HTMLDivElement | null>(null);
+  const bootstrappedQuote = React.useRef<string | null>(null);
+  const bootstrappedPo = React.useRef<string | null>(null);
+
+  function syncUrl(next: {
+    tab?: Tab;
+    quote?: string | null;
+    po?: string | null;
+  }) {
+    const params = new URLSearchParams(
+      typeof window !== 'undefined' ? window.location.search : ''
+    );
+    const t = next.tab ?? tab;
+    params.set('tab', t);
+    if (next.quote === null) params.delete('quote');
+    else if (next.quote) params.set('quote', next.quote);
+    if (next.po === null) params.delete('po');
+    else if (next.po) params.set('po', next.po);
+    const qs = params.toString();
+    router.replace(qs ? `/proveedores?${qs}` : '/proveedores', {
+      scroll: false,
+    });
+  }
 
   const [selectedId, setSelectedId] = React.useState<string | null>(
     suppliers[0]?.id ?? null
@@ -159,7 +234,7 @@ export function SuppliersHub({
   const [contactPhone, setContactPhone] = React.useState('');
 
   const [selectedQuoteId, setSelectedQuoteId] = React.useState<string | null>(
-    null
+    initialQuoteId ?? null
   );
   const [quoteTitle, setQuoteTitle] = React.useState('');
   const [quoteNumber, setQuoteNumber] = React.useState('');
@@ -170,20 +245,15 @@ export function SuppliersHub({
   );
   const [quoteStatus, setQuoteStatus] =
     React.useState<SupplierQuoteStatus>('recibido');
-  const [lineMaterial, setLineMaterial] = React.useState('');
-  const [lineDesc, setLineDesc] = React.useState('');
-  const [lineQty, setLineQty] = React.useState('1');
-  const [linePrice, setLinePrice] = React.useState('');
-  const [lineLead, setLineLead] = React.useState('');
   const [shipping, setShipping] = React.useState('');
-  const [extraQuoteLines, setExtraQuoteLines] = React.useState<
-    SupplierQuoteLineRow[]
-  >([]);
+  const [quoteLinesDraft, setQuoteLinesDraft] = React.useState<QuoteLineDraft[]>(
+    [emptyQuoteLine()]
+  );
   const [materialCompare, setMaterialCompare] = React.useState(compareKey || '');
 
   const [editingPurchaseId, setEditingPurchaseId] = React.useState<
     string | null
-  >(null);
+  >(initialPoId ?? null);
   const [poSourceQuoteId, setPoSourceQuoteId] = React.useState<string>('none');
   const [poQuoteId, setPoQuoteId] = React.useState<string | null>(null);
   const [poClientRequestId, setPoClientRequestId] = React.useState(() =>
@@ -199,17 +269,17 @@ export function SuppliersHub({
   const [poSubtotal, setPoSubtotal] = React.useState('');
   const [poTax, setPoTax] = React.useState('');
   const [poShipping, setPoShipping] = React.useState('');
-  const [poTotal, setPoTotal] = React.useState('');
+  const [poShippingIncludesVat, setPoShippingIncludesVat] =
+    React.useState(false);
   const [poNotes, setPoNotes] = React.useState('');
   const [poLineDesc, setPoLineDesc] = React.useState('');
   const [poLineQty, setPoLineQty] = React.useState('1');
-  const [poLinePrice, setPoLinePrice] = React.useState('');
   const [extraPoLines, setExtraPoLines] = React.useState<
     SupplierPurchaseLineRow[]
   >([]);
   const [selectedPurchaseId, setSelectedPurchaseId] = React.useState<
     string | null
-  >(generalPurchases[0]?.id ?? null);
+  >(initialPoId ?? generalPurchases[0]?.id ?? null);
   const [poDocType, setPoDocType] =
     React.useState<SupplierPurchaseDocType>('invoice');
 
@@ -221,6 +291,57 @@ export function SuppliersHub({
       .map((o) => o.quoteId as string)
   );
 
+  const poQtyNum = Number(poLineQty.replace(',', '.'));
+  const poSubtotalCents = poSubtotal.trim() ? eurosToCents(poSubtotal) : 0;
+  const poTaxCents = poTax.trim() ? eurosToCents(poTax) : 0;
+  const poShippingCents = poShipping.trim() ? eurosToCents(poShipping) : 0;
+  const poTotalCents = poSubtotalCents + poTaxCents + poShippingCents;
+  let poUnitCostCents: number | null = null;
+  let poCalcError: string | null = null;
+  if (Number.isFinite(poQtyNum) && poQtyNum > 0) {
+    try {
+      poUnitCostCents = unitCostExVatWithShipping({
+        subtotalCents: poSubtotalCents,
+        shippingCents: poShippingCents,
+        shippingIncludesVat: poShippingIncludesVat,
+        quantity: poQtyNum,
+        shippingVatBps: DEFAULT_VAT_BPS,
+      });
+    } catch (e) {
+      poCalcError = e instanceof Error ? e.message : 'Cálculo no válido';
+    }
+  } else if (poLineQty.trim()) {
+    poCalcError = 'La cantidad debe ser mayor que cero';
+  }
+
+  function applyQuoteToForm(
+    quote: SupplierQuoteRow,
+    lines: SupplierQuoteLineRow[]
+  ) {
+    setSelectedQuoteId(quote.id);
+    setQuoteSupplierId(quote.supplierId);
+    setQuoteTitle(quote.title);
+    setQuoteNumber(quote.quoteNumber ?? '');
+    setQuoteNotes(quote.notes ?? '');
+    setQuoteRejectionReason(quote.rejectionReason ?? '');
+    setQuoteStatus(quote.status);
+    setShipping(centsToEurosInput(quote.shippingCents));
+    if (lines.length === 0) {
+      setQuoteLinesDraft([emptyQuoteLine()]);
+    } else {
+      setQuoteLinesDraft(
+        lines.map((l) => ({
+          key: l.id || newLineKey(),
+          materialKey: l.materialKey,
+          description: l.description,
+          quantity: String(l.quantity),
+          unitPrice: centsToEurosInput(l.unitPriceCents),
+          leadDays: l.leadDays != null ? String(l.leadDays) : '',
+        }))
+      );
+    }
+  }
+
   function resetQuoteForm() {
     setSelectedQuoteId(null);
     setQuoteTitle('');
@@ -228,34 +349,32 @@ export function SuppliersHub({
     setQuoteNotes('');
     setQuoteRejectionReason('');
     setQuoteStatus('recibido');
-    setLineMaterial('');
-    setLineDesc('');
-    setLineQty('1');
-    setLinePrice('');
-    setLineLead('');
     setShipping('');
-    setExtraQuoteLines([]);
+    setQuoteLinesDraft([emptyQuoteLine()]);
     setQuoteSupplierId(suppliers[0]?.id ?? '');
+    syncUrl({ tab: 'presupuestos', quote: null });
+  }
+
+  async function openQuoteById(quoteId: string) {
+    setTab('presupuestos');
+    syncUrl({ tab: 'presupuestos', quote: quoteId });
+    // Precarga inmediata desde props (si existen) para feedback UI.
+    const cached = quotes.find((x) => x.id === quoteId);
+    if (cached) {
+      applyQuoteToForm(cached, quoteLinesById[quoteId] ?? []);
+    }
+    quoteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const res = await loadSupplierQuoteDetailAction(quoteId);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    applyQuoteToForm(res.quote, res.lines);
+    quoteFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function openQuote(q: SupplierQuoteRow) {
-    setTab('presupuestos');
-    setSelectedQuoteId(q.id);
-    setQuoteSupplierId(q.supplierId);
-    setQuoteTitle(q.title);
-    setQuoteNumber(q.quoteNumber ?? '');
-    setQuoteNotes(q.notes ?? '');
-    setQuoteRejectionReason(q.rejectionReason ?? '');
-    setQuoteStatus(q.status);
-    setShipping(centsToEurosInput(q.shippingCents));
-    const lines = quoteLinesById[q.id] ?? [];
-    const first = lines[0];
-    setLineMaterial(first?.materialKey ?? '');
-    setLineDesc(first?.description ?? '');
-    setLineQty(first ? String(first.quantity) : '1');
-    setLinePrice(first ? centsToEurosInput(first.unitPriceCents) : '');
-    setLineLead(first?.leadDays != null ? String(first.leadDays) : '');
-    setExtraQuoteLines(lines.slice(1));
+    void openQuoteById(q.id);
   }
 
   function resetPoForm(opts?: { keepRequestId?: boolean }) {
@@ -272,16 +391,18 @@ export function SuppliersHub({
     setPoSubtotal('');
     setPoTax('');
     setPoShipping('');
-    setPoTotal('');
-    setPoNotes('');
+    setPoShippingIncludesVat(false);
+    setPoNotes(DEFAULT_PO_UNIT_PRICE_NOTE);
     setPoLineDesc('');
     setPoLineQty('1');
-    setPoLinePrice('');
     setExtraPoLines([]);
+    syncUrl({ tab: 'pedidos', po: null });
   }
 
-  function openPurchase(o: SupplierPurchaseOrderRow) {
-    setTab('pedidos');
+  function applyPurchaseToForm(
+    o: SupplierPurchaseOrderRow,
+    lines: SupplierPurchaseLineRow[]
+  ) {
     setSelectedPurchaseId(o.id);
     setEditingPurchaseId(o.id);
     setPoQuoteId(o.quoteId);
@@ -295,14 +416,33 @@ export function SuppliersHub({
     setPoSubtotal(centsToEurosInput(o.subtotalCents));
     setPoTax(centsToEurosInput(o.taxCents));
     setPoShipping(centsToEurosInput(o.shippingCents));
-    setPoTotal(centsToEurosInput(o.totalCents));
+    setPoShippingIncludesVat(Boolean(o.shippingIncludesVat));
     setPoNotes(o.notes ?? '');
-    const lines = purchaseLinesById[o.id] ?? [];
     const first = lines[0];
     setPoLineDesc(first?.description ?? '');
     setPoLineQty(first ? String(first.quantity) : '1');
-    setPoLinePrice(first ? centsToEurosInput(first.unitPriceCents) : '');
     setExtraPoLines(lines.slice(1));
+  }
+
+  async function openPurchaseById(purchaseId: string) {
+    setTab('pedidos');
+    syncUrl({ tab: 'pedidos', po: purchaseId });
+    const cached = generalPurchases.find((x) => x.id === purchaseId);
+    if (cached) {
+      applyPurchaseToForm(cached, purchaseLinesById[purchaseId] ?? []);
+    }
+    poFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const res = await loadSupplierPurchaseDetailAction(purchaseId);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    applyPurchaseToForm(res.order, res.lines);
+    poFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function openPurchase(o: SupplierPurchaseOrderRow) {
+    void openPurchaseById(o.id);
   }
 
   function preloadFromAcceptedQuote(quoteId: string) {
@@ -310,6 +450,7 @@ export function SuppliersHub({
       setPoSourceQuoteId('none');
       setPoQuoteId(null);
       setPoClientRequestId(newClientRequestId());
+      setPoNotes(DEFAULT_PO_UNIT_PRICE_NOTE);
       return;
     }
     const q = quotes.find((x) => x.id === quoteId);
@@ -323,13 +464,16 @@ export function SuppliersHub({
     setPoTitle(q.title);
     setPoStatus('borrador');
     setPoShipping(centsToEurosInput(q.shippingCents));
+    setPoShippingIncludesVat(false);
     setPoNotes(
-      [
-        q.notes ? `Condiciones: ${q.notes}` : null,
-        `Origen presupuesto: ${q.title}`,
-      ]
-        .filter(Boolean)
-        .join('\n')
+      withDefaultPoNoteOnCreate(
+        [
+          q.notes ? `Condiciones: ${q.notes}` : null,
+          `Origen presupuesto: ${q.title}`,
+        ]
+          .filter(Boolean)
+          .join('\n')
+      )
     );
     const lines = quoteLinesById[q.id] ?? [];
     let subtotal = 0;
@@ -339,14 +483,11 @@ export function SuppliersHub({
       subtotal += net;
       tax += Math.round(net * (l.vatBps / 10000));
     }
-    const shippingCents = q.shippingCents ?? 0;
     setPoSubtotal(centsToEurosInput(subtotal || null));
     setPoTax(centsToEurosInput(tax || null));
-    setPoTotal(centsToEurosInput(subtotal + tax + shippingCents || null));
     const first = lines[0];
     setPoLineDesc(first?.description || first?.materialKey || '');
     setPoLineQty(first ? String(first.quantity) : '1');
-    setPoLinePrice(first ? centsToEurosInput(first.unitPriceCents) : '');
     setExtraPoLines(
       lines.slice(1).map((l, i) => ({
         id: `tmp-${i}`,
@@ -360,6 +501,20 @@ export function SuppliersHub({
       }))
     );
   }
+
+  React.useEffect(() => {
+    if (!initialQuoteId || bootstrappedQuote.current === initialQuoteId) return;
+    bootstrappedQuote.current = initialQuoteId;
+    void openQuoteById(initialQuoteId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuoteId]);
+
+  React.useEffect(() => {
+    if (!initialPoId || bootstrappedPo.current === initialPoId) return;
+    bootstrappedPo.current = initialPoId;
+    void openPurchaseById(initialPoId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialPoId]);
 
   React.useEffect(() => {
     if (!selected) {
@@ -718,13 +873,23 @@ export function SuppliersHub({
       {tab === 'presupuestos' ? (
         <div className="space-y-6">
           {canWrite ? (
-            <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+            <div
+              ref={quoteFormRef}
+              className="space-y-3 rounded-xl border border-border bg-card p-4"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-semibold">
-                  {selectedQuoteId
-                    ? 'Ficha de presupuesto'
-                    : 'Registrar presupuesto'}
-                </h2>
+                <div>
+                  <h2 className="text-base font-semibold">
+                    {selectedQuoteId
+                      ? 'Editar presupuesto'
+                      : 'Registrar presupuesto'}
+                  </h2>
+                  {selectedQuoteId ? (
+                    <p className="text-xs text-muted-foreground">
+                      ID: {selectedQuoteId}
+                    </p>
+                  ) : null}
+                </div>
                 {selectedQuoteId ? (
                   <Button
                     type="button"
@@ -808,42 +973,6 @@ export function SuppliersHub({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Material (clave)</Label>
-                  <Input
-                    value={lineMaterial}
-                    onChange={(e) => setLineMaterial(e.target.value)}
-                    placeholder="ej. flyer-a5, tote-bag…"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Descripción línea</Label>
-                  <Input
-                    value={lineDesc}
-                    onChange={(e) => setLineDesc(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Cantidad</Label>
-                  <Input
-                    value={lineQty}
-                    onChange={(e) => setLineQty(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Precio unitario (€)</Label>
-                  <Input
-                    value={linePrice}
-                    onChange={(e) => setLinePrice(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Plazo (días)</Label>
-                  <Input
-                    value={lineLead}
-                    onChange={(e) => setLineLead(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
                   <Label>Transporte (€)</Label>
                   <Input
                     value={shipping}
@@ -869,47 +998,149 @@ export function SuppliersHub({
                     />
                   </div>
                 ) : null}
-                {extraQuoteLines.length > 0 ? (
-                  <p className="sm:col-span-2 text-xs text-muted-foreground">
-                    +{extraQuoteLines.length} línea(s) adicional(es) se
-                    conservan al guardar.
-                  </p>
-                ) : null}
               </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Líneas</Label>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setQuoteLinesDraft((prev) => [...prev, emptyQuoteLine()])
+                    }
+                  >
+                    Añadir línea
+                  </Button>
+                </div>
+                {quoteLinesDraft.map((line, idx) => (
+                  <div
+                    key={line.key}
+                    className="grid gap-2 rounded-lg border border-border/70 p-3 sm:grid-cols-6"
+                  >
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs">Material</Label>
+                      <Input
+                        value={line.materialKey}
+                        onChange={(e) =>
+                          setQuoteLinesDraft((prev) =>
+                            prev.map((l, i) =>
+                              i === idx
+                                ? { ...l, materialKey: e.target.value }
+                                : l
+                            )
+                          )
+                        }
+                        placeholder="ej. flyer-a5"
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs">Descripción</Label>
+                      <Input
+                        value={line.description}
+                        onChange={(e) =>
+                          setQuoteLinesDraft((prev) =>
+                            prev.map((l, i) =>
+                              i === idx
+                                ? { ...l, description: e.target.value }
+                                : l
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Cantidad</Label>
+                      <Input
+                        value={line.quantity}
+                        onChange={(e) =>
+                          setQuoteLinesDraft((prev) =>
+                            prev.map((l, i) =>
+                              i === idx
+                                ? { ...l, quantity: e.target.value }
+                                : l
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Precio u. (€)</Label>
+                      <Input
+                        value={line.unitPrice}
+                        onChange={(e) =>
+                          setQuoteLinesDraft((prev) =>
+                            prev.map((l, i) =>
+                              i === idx
+                                ? { ...l, unitPrice: e.target.value }
+                                : l
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="space-y-1 sm:col-span-2">
+                      <Label className="text-xs">Plazo (días)</Label>
+                      <Input
+                        value={line.leadDays}
+                        onChange={(e) =>
+                          setQuoteLinesDraft((prev) =>
+                            prev.map((l, i) =>
+                              i === idx
+                                ? { ...l, leadDays: e.target.value }
+                                : l
+                            )
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="flex items-end sm:col-span-4">
+                      {quoteLinesDraft.length > 1 ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            setQuoteLinesDraft((prev) =>
+                              prev.filter((_, i) => i !== idx)
+                            )
+                          }
+                        >
+                          Quitar línea
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   disabled={busy || !quoteSupplierId}
                   onClick={() =>
                     run(async () => {
-                      const qty = Number(lineQty);
-                      const primary =
-                        lineMaterial.trim() || lineDesc.trim()
-                          ? [
-                              {
-                                materialKey:
-                                  lineMaterial.trim() ||
-                                  lineDesc.trim().toLowerCase().slice(0, 40),
-                                description: lineDesc.trim() || lineMaterial,
-                                quantity:
-                                  Number.isFinite(qty) && qty > 0 ? qty : 1,
-                                unitPriceCents: eurosToCents(linePrice),
-                                leadDays: lineLead ? Number(lineLead) : null,
-                              },
-                            ]
-                          : [];
-                      const lines = [
-                        ...primary,
-                        ...extraQuoteLines.map((l) => ({
-                          materialKey: l.materialKey,
-                          description: l.description,
-                          quantity: l.quantity,
-                          unit: l.unit,
-                          unitPriceCents: l.unitPriceCents,
-                          vatBps: l.vatBps,
-                          leadDays: l.leadDays,
-                        })),
-                      ];
+                      const lines = quoteLinesDraft
+                        .filter(
+                          (l) => l.materialKey.trim() || l.description.trim()
+                        )
+                        .map((l) => {
+                          const qty = Number(l.quantity.replace(',', '.'));
+                          return {
+                            materialKey:
+                              l.materialKey.trim() ||
+                              l.description.trim().toLowerCase().slice(0, 40),
+                            description:
+                              l.description.trim() || l.materialKey.trim(),
+                            quantity:
+                              Number.isFinite(qty) && qty > 0 ? qty : 1,
+                            unitPriceCents: eurosToCents(l.unitPrice),
+                            leadDays: l.leadDays
+                              ? Number(l.leadDays)
+                              : null,
+                          };
+                        });
                       const res = await upsertSupplierQuoteAction({
                         id: selectedQuoteId,
                         supplierId: quoteSupplierId,
@@ -924,7 +1155,7 @@ export function SuppliersHub({
                           quoteStatus === 'rechazado'
                             ? quoteRejectionReason
                             : null,
-                        replaceLines: Boolean(selectedQuoteId) || lines.length > 0,
+                        replaceLines: true,
                         lines,
                       });
                       if (!res.ok) {
@@ -933,10 +1164,16 @@ export function SuppliersHub({
                       }
                       toast.success(
                         selectedQuoteId
-                          ? 'Presupuesto actualizado'
+                          ? 'Cambios guardados en el presupuesto'
                           : 'Presupuesto registrado'
                       );
                       setSelectedQuoteId(res.id);
+                      syncUrl({ tab: 'presupuestos', quote: res.id });
+                      // Recargar ficha completa desde servidor (mismo ID).
+                      const detail = await loadSupplierQuoteDetailAction(res.id);
+                      if (detail.ok) {
+                        applyQuoteToForm(detail.quote, detail.lines);
+                      }
                       router.refresh();
                     })
                   }
@@ -965,8 +1202,7 @@ export function SuppliersHub({
                             ? 'Ya existía un pedido vinculado; abierto para revisión'
                             : 'Borrador de pedido preparado (sin confirmar compra)'
                         );
-                        setTab('pedidos');
-                        setSelectedPurchaseId(res.id);
+                        await openPurchaseById(res.id);
                         router.refresh();
                       })
                     }
@@ -1161,13 +1397,23 @@ export function SuppliersHub({
             <p className="text-sm text-destructive">{generalPurchasesError}</p>
           ) : null}
           {canWrite ? (
-            <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+            <div
+              ref={poFormRef}
+              className="space-y-3 rounded-xl border border-border bg-card p-4"
+            >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-semibold">
-                  {editingPurchaseId
-                    ? 'Editar pedido general'
-                    : 'Pedido de materiales / servicios'}
-                </h2>
+                <div>
+                  <h2 className="text-base font-semibold">
+                    {editingPurchaseId
+                      ? 'Editar pedido general'
+                      : 'Pedido de materiales / servicios'}
+                  </h2>
+                  {editingPurchaseId ? (
+                    <p className="text-xs text-muted-foreground">
+                      ID: {editingPurchaseId}
+                    </p>
+                  ) : null}
+                </div>
                 {editingPurchaseId ? (
                   <Button
                     type="button"
@@ -1302,34 +1548,6 @@ export function SuppliersHub({
                     onChange={(e) => setPoExpected(e.target.value)}
                   />
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Subtotal (€)</Label>
-                  <Input
-                    value={poSubtotal}
-                    onChange={(e) => setPoSubtotal(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Impuestos (€)</Label>
-                  <Input
-                    value={poTax}
-                    onChange={(e) => setPoTax(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Transporte (€)</Label>
-                  <Input
-                    value={poShipping}
-                    onChange={(e) => setPoShipping(e.target.value)}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Total (€)</Label>
-                  <Input
-                    value={poTotal}
-                    onChange={(e) => setPoTotal(e.target.value)}
-                  />
-                </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Línea (descripción)</Label>
                   <Input
@@ -1342,46 +1560,125 @@ export function SuppliersHub({
                   <Input
                     value={poLineQty}
                     onChange={(e) => setPoLineQty(e.target.value)}
+                    inputMode="decimal"
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Precio u. (€)</Label>
+                  <Label>Subtotal sin IVA (€)</Label>
                   <Input
-                    value={poLinePrice}
-                    onChange={(e) => setPoLinePrice(e.target.value)}
+                    value={poSubtotal}
+                    onChange={(e) => setPoSubtotal(e.target.value)}
+                    inputMode="decimal"
                   />
                 </div>
+                <div className="space-y-1.5">
+                  <Label>Impuestos (€)</Label>
+                  <Input
+                    value={poTax}
+                    onChange={(e) => setPoTax(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Transporte (€)</Label>
+                  <Input
+                    value={poShipping}
+                    onChange={(e) => setPoShipping(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </div>
+                <div className="flex items-end sm:col-span-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={poShippingIncludesVat}
+                      onChange={(e) =>
+                        setPoShippingIncludesVat(e.target.checked)
+                      }
+                    />
+                    El transporte incluye IVA
+                  </label>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Total (€) — calculado</Label>
+                  <Input
+                    value={formatCents(poTotalCents)}
+                    readOnly
+                    className="bg-muted/40"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Precio unitario sin IVA c/ transporte — calculado</Label>
+                  <Input
+                    value={
+                      poUnitCostCents == null
+                        ? ''
+                        : formatCents(poUnitCostCents)
+                    }
+                    readOnly
+                    className="bg-muted/40"
+                  />
+                </div>
+                {poCalcError ? (
+                  <p className="sm:col-span-2 text-sm text-destructive">
+                    {poCalcError}
+                  </p>
+                ) : (
+                  <p className="sm:col-span-2 text-xs text-muted-foreground">
+                    Total = subtotal sin IVA + impuestos + transporte. El precio
+                    unitario usa la base del transporte (sin IVA) y, con varias
+                    líneas, reparte el transporte proporcionalmente al neto de
+                    cada línea.
+                  </p>
+                )}
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Notas</Label>
                   <Textarea
                     value={poNotes}
                     onChange={(e) => setPoNotes(e.target.value)}
-                    rows={2}
+                    rows={3}
                   />
                 </div>
                 {extraPoLines.length > 0 ? (
                   <p className="sm:col-span-2 text-xs text-muted-foreground">
-                    +{extraPoLines.length} línea(s) adicional(es) se conservan al
-                    guardar.
+                    +{extraPoLines.length} línea(s) adicional(es): el transporte
+                    se reparte proporcionalmente al guardar; se conservan al
+                    editar.
                   </p>
                 ) : null}
               </div>
               <Button
                 type="button"
-                disabled={busy || !poSupplierId}
+                disabled={busy || !poSupplierId || Boolean(poCalcError)}
                 onClick={() =>
                   run(async () => {
-                    const qty = Number(poLineQty);
+                    const qty = Number(poLineQty.replace(',', '.'));
+                    if (!(Number.isFinite(qty) && qty > 0)) {
+                      toast.error('La cantidad debe ser mayor que cero');
+                      return;
+                    }
+                    // Persistimos precio de línea sin transporte:
+                    // unit = subtotal / qty. El unitario con transporte es solo UI.
+                    const unitExShipping = Math.round(poSubtotalCents / qty);
                     const primary = poLineDesc.trim()
                       ? [
                           {
                             description: poLineDesc,
-                            quantity:
-                              Number.isFinite(qty) && qty > 0 ? qty : 1,
-                            unitPriceCents: eurosToCents(poLinePrice),
+                            quantity: qty,
+                            unitPriceCents: unitExShipping,
                           },
                         ]
-                      : [];
+                      : poSubtotalCents > 0
+                        ? [
+                            {
+                              description: poTitle.trim() || 'Línea pedido',
+                              quantity: qty,
+                              unitPriceCents: unitExShipping,
+                            },
+                          ]
+                        : [];
+                    // Extra lines keep their stored unit prices; shipping
+                    // allocation is computed server-side for display totals.
                     const lines = [
                       ...primary,
                       ...extraPoLines.map((l) => ({
@@ -1401,20 +1698,16 @@ export function SuppliersHub({
                       status: poStatus,
                       orderedAt: poOrderedAt || null,
                       expectedDeliveryAt: poExpected || null,
-                      subtotalCents: poSubtotal
-                        ? eurosToCents(poSubtotal)
-                        : null,
-                      taxCents: poTax ? eurosToCents(poTax) : null,
-                      shippingCents: poShipping
-                        ? eurosToCents(poShipping)
-                        : null,
-                      totalCents: poTotal ? eurosToCents(poTotal) : null,
+                      subtotalCents: poSubtotalCents,
+                      taxCents: poTaxCents,
+                      shippingCents: poShippingCents,
+                      shippingIncludesVat: poShippingIncludesVat,
+                      totalCents: poTotalCents,
                       notes: poNotes || null,
                       clientRequestId: editingPurchaseId
                         ? null
                         : poClientRequestId,
-                      replaceLines:
-                        Boolean(editingPurchaseId) || lines.length > 0,
+                      replaceLines: true,
                       lines,
                     });
                     if (!res.ok) {
@@ -1428,9 +1721,8 @@ export function SuppliersHub({
                           ? 'Borrador guardado (compra no confirmada)'
                           : 'Pedido general guardado'
                     );
-                    setEditingPurchaseId(res.id);
-                    setSelectedPurchaseId(res.id);
                     setPoClientRequestId(newClientRequestId());
+                    await openPurchaseById(res.id);
                     router.refresh();
                   })
                 }

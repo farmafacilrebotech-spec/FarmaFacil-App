@@ -41,13 +41,23 @@ export const dynamic = 'force-dynamic';
 export default async function ProveedoresPage({
   searchParams,
 }: {
-  searchParams?: { material?: string; q?: string; status?: string };
+  searchParams?: {
+    material?: string;
+    q?: string;
+    status?: string;
+    tab?: string;
+    quote?: string;
+    po?: string;
+  };
 }) {
   if (!(await hasSuppliersRead()) && !(await hasKioskPurchasingRead())) {
     redirect('/access-denied');
   }
 
   const material = (searchParams?.material ?? '').trim().toLowerCase();
+  const initialTab = (searchParams?.tab ?? '').trim();
+  const initialQuoteId = (searchParams?.quote ?? '').trim() || null;
+  const initialPoId = (searchParams?.po ?? '').trim() || null;
   const [
     suppliersRes,
     quotesRes,
@@ -158,6 +168,9 @@ export default async function ProveedoresPage({
         canPurchasingWrite={canPurchasingWrite}
         canReceive={canReceive}
         canSeeFinancial={canSeeFinancial}
+        initialTab={initialTab}
+        initialQuoteId={initialQuoteId}
+        initialPoId={initialPoId}
         loadError={suppliersRes.ok ? null : suppliersRes.error}
         purchasesError={purchasesRes.ok ? null : purchasesRes.error}
         generalPurchasesError={

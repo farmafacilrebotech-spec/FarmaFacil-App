@@ -202,6 +202,8 @@ export type SupplierPurchaseOrderRow = {
   subtotalCents: number | null;
   taxCents: number | null;
   shippingCents: number | null;
+  /** true = shipping_cents incluye IVA (078). */
+  shippingIncludesVat: boolean;
   totalCents: number | null;
   notes: string | null;
   clientRequestId: string | null;

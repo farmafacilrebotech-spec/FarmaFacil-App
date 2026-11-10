@@ -239,6 +239,41 @@ async function listSupplierQuotesLegacy(opts?: {
   };
 }
 
+export async function getSupplierQuoteById(
+  quoteId: string
+): Promise<
+  | { ok: true; quote: SupplierQuoteRow; lines: SupplierQuoteLineRow[] }
+  | { ok: false; error: string }
+> {
+  if (!(await hasSuppliersRead())) return { ok: false, error: 'Sin permiso.' };
+  const id = quoteId.trim();
+  if (!id) return { ok: false, error: 'Presupuesto no indicado.' };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('platform_supplier_quotes')
+    .select(
+      `
+      id, supplier_id, quote_number, title, status, received_at, valid_until,
+      currency, shipping_cents, notes, rejection_reason, created_at, updated_at,
+      platform_suppliers ( legal_name, category )
+    `
+    )
+    .eq('id', id)
+    .maybeSingle();
+  if (error) {
+    console.error('[suppliers] quote_by_id', error.code, error.message);
+    return { ok: false, error: 'No se ha podido cargar el presupuesto.' };
+  }
+  if (!data) return { ok: false, error: 'Presupuesto no encontrado.' };
+  const linesRes = await listQuoteLines(id);
+  if (!linesRes.ok) return linesRes;
+  return {
+    ok: true,
+    quote: mapQuoteRow(data as Record<string, unknown>),
+    lines: linesRes.lines,
+  };
+}
+
 export async function listQuoteLines(
   quoteId: string
 ): Promise<{ ok: true; lines: SupplierQuoteLineRow[] } | { ok: false; error: string }> {
@@ -365,8 +400,8 @@ export async function listSupplierPurchaseOrders(opts?: {
       `
       id, supplier_id, quote_id, category, title, order_number, status,
       ordered_at, expected_delivery_at, actual_delivery_at, currency,
-      subtotal_cents, tax_cents, shipping_cents, total_cents, notes,
-      client_request_id, created_at, updated_at,
+      subtotal_cents, tax_cents, shipping_cents, shipping_includes_vat,
+      total_cents, notes, client_request_id, created_at, updated_at,
       platform_suppliers ( legal_name ),
       platform_supplier_quotes ( title )
     `
@@ -391,6 +426,7 @@ export async function listSupplierPurchaseOrders(opts?: {
     }
     if (
       String(error.message).toLowerCase().includes('client_request_id') ||
+      String(error.message).toLowerCase().includes('shipping_includes_vat') ||
       String(error.message).toLowerCase().includes('platform_supplier_quotes')
     ) {
       return listSupplierPurchaseOrdersLegacy(opts);
@@ -425,6 +461,7 @@ function mapPurchaseRow(r: Record<string, unknown>): SupplierPurchaseOrderRow {
     subtotalCents: r.subtotal_cents == null ? null : Number(r.subtotal_cents),
     taxCents: r.tax_cents == null ? null : Number(r.tax_cents),
     shippingCents: r.shipping_cents == null ? null : Number(r.shipping_cents),
+    shippingIncludesVat: Boolean(r.shipping_includes_vat),
     totalCents: r.total_cents == null ? null : Number(r.total_cents),
     notes: r.notes == null ? null : String(r.notes),
     clientRequestId:
@@ -464,6 +501,53 @@ async function listSupplierPurchaseOrdersLegacy(opts?: {
     ok: true,
     orders: ((data as Record<string, unknown>[] | null) ?? []).map(mapPurchaseRow),
   };
+}
+
+export async function getSupplierPurchaseById(
+  purchaseOrderId: string
+): Promise<
+  | {
+      ok: true;
+      order: SupplierPurchaseOrderRow;
+      lines: SupplierPurchaseLineRow[];
+    }
+  | { ok: false; error: string }
+> {
+  if (!(await hasSuppliersRead())) return { ok: false, error: 'Sin permiso.' };
+  const id = purchaseOrderId.trim();
+  if (!id) return { ok: false, error: 'Pedido no indicado.' };
+  const list = await listSupplierPurchaseOrders();
+  if (!list.ok) return list;
+  const order = list.orders.find((o) => o.id === id);
+  if (!order) {
+    // Fallback: consulta directa por si no está en el top 100
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('platform_supplier_purchase_orders')
+      .select(
+        `
+        id, supplier_id, quote_id, category, title, order_number, status,
+        ordered_at, expected_delivery_at, actual_delivery_at, currency,
+        subtotal_cents, tax_cents, shipping_cents, shipping_includes_vat,
+        total_cents, notes, client_request_id, created_at, updated_at,
+        platform_suppliers ( legal_name ),
+        platform_supplier_quotes ( title )
+      `
+      )
+      .eq('id', id)
+      .maybeSingle();
+    if (error || !data) return { ok: false, error: 'Pedido no encontrado.' };
+    const linesRes = await listPurchaseLines(id);
+    if (!linesRes.ok) return linesRes;
+    return {
+      ok: true,
+      order: mapPurchaseRow(data as Record<string, unknown>),
+      lines: linesRes.lines,
+    };
+  }
+  const linesRes = await listPurchaseLines(id);
+  if (!linesRes.ok) return linesRes;
+  return { ok: true, order, lines: linesRes.lines };
 }
 
 export async function listPurchaseLines(

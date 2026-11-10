@@ -21,7 +21,21 @@ import {
   type SupplierQuoteStatus,
 } from '@/lib/suppliers/types';
 import { getCurrentProfile } from '@/lib/auth/platform';
-import { listQuoteLines } from '@/lib/suppliers/queries';
+import {
+  getSupplierPurchaseById,
+  getSupplierQuoteById,
+  listQuoteLines,
+} from '@/lib/suppliers/queries';
+import {
+  computePurchaseMoney,
+  withDefaultPoNoteOnCreate,
+} from '@/lib/suppliers/purchase-math';
+import type {
+  SupplierPurchaseLineRow,
+  SupplierPurchaseOrderRow,
+  SupplierQuoteLineRow,
+  SupplierQuoteRow,
+} from '@/lib/suppliers/types';
 
 export type SupplierActionResult<T = Record<string, unknown>> =
   | ({ ok: true } & T)
@@ -217,6 +231,28 @@ export async function upsertSupplierContactAction(input: {
   return { ok: true, id: String((data as { id: string }).id) };
 }
 
+export async function loadSupplierQuoteDetailAction(
+  quoteId: string
+): Promise<
+  | { ok: true; quote: SupplierQuoteRow; lines: SupplierQuoteLineRow[] }
+  | { ok: false; error: string }
+> {
+  return getSupplierQuoteById(quoteId);
+}
+
+export async function loadSupplierPurchaseDetailAction(
+  purchaseOrderId: string
+): Promise<
+  | {
+      ok: true;
+      order: SupplierPurchaseOrderRow;
+      lines: SupplierPurchaseLineRow[];
+    }
+  | { ok: false; error: string }
+> {
+  return getSupplierPurchaseById(purchaseOrderId);
+}
+
 export async function upsertSupplierQuoteAction(input: {
   id?: string | null;
   supplierId: string;
@@ -400,6 +436,7 @@ export async function upsertGeneralPurchaseOrderAction(input: {
   taxCents?: number | null;
   shippingCents?: number | null;
   totalCents?: number | null;
+  shippingIncludesVat?: boolean;
   notes?: string | null;
   /** Idempotencia anti doble clic / reintentos. */
   clientRequestId?: string | null;
@@ -469,7 +506,39 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     };
   }
 
+  const shippingIncludesVat = Boolean(input.shippingIncludesVat);
+  const linesForMath = (input.lines ?? []).map((l) => ({
+    quantity: l.quantity > 0 ? l.quantity : 1,
+    unitPriceCents: l.unitPriceCents,
+    vatBps: l.vatBps ?? 2100,
+  }));
+  let subtotalCents = input.subtotalCents ?? null;
+  let taxCents = input.taxCents ?? null;
+  let shippingCents = input.shippingCents ?? null;
+  let totalCents = input.totalCents ?? null;
+  try {
+    const money = computePurchaseMoney({
+      lines: linesForMath,
+      shippingCents: shippingCents ?? 0,
+      shippingIncludesVat,
+      subtotalOverrideCents: subtotalCents,
+      taxOverrideCents: taxCents,
+    });
+    subtotalCents = money.subtotalCents;
+    taxCents = money.taxCents;
+    shippingCents = money.shippingCents;
+    totalCents = money.totalCents;
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : 'Importes del pedido no válidos.',
+    };
+  }
+
   const nowIso = new Date().toISOString();
+  const notesValue = input.id
+    ? input.notes?.trim() || null
+    : withDefaultPoNoteOnCreate(input.notes);
   const base: Record<string, unknown> = {
     supplier_id: input.supplierId,
     quote_id: preservedQuoteId,
@@ -480,11 +549,12 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     ordered_at: input.orderedAt || null,
     expected_delivery_at: input.expectedDeliveryAt || null,
     actual_delivery_at: input.actualDeliveryAt || null,
-    subtotal_cents: input.subtotalCents ?? null,
-    tax_cents: input.taxCents ?? null,
-    shipping_cents: input.shippingCents ?? null,
-    total_cents: input.totalCents ?? null,
-    notes: input.notes?.trim() || null,
+    subtotal_cents: subtotalCents,
+    tax_cents: taxCents,
+    shipping_cents: shippingCents,
+    shipping_includes_vat: shippingIncludesVat,
+    total_cents: totalCents,
+    notes: notesValue,
     updated_by: uid,
     updated_at: nowIso,
   };
@@ -492,12 +562,34 @@ export async function upsertGeneralPurchaseOrderAction(input: {
     base.client_request_id = clientRequestId;
   }
 
+  async function writePo(
+    payload: Record<string, unknown>,
+    mode: 'update' | 'insert',
+    id: string | null
+  ) {
+    if (mode === 'update' && id) {
+      return supabase
+        .from('platform_supplier_purchase_orders')
+        .update(payload)
+        .eq('id', id);
+    }
+    return supabase
+      .from('platform_supplier_purchase_orders')
+      .insert({ ...payload, created_by: uid })
+      .select('id')
+      .single();
+  }
+
   let poId = input.id ?? null;
   if (poId) {
-    const { error } = await supabase
-      .from('platform_supplier_purchase_orders')
-      .update(base)
-      .eq('id', poId);
+    let { error } = await writePo(base, 'update', poId);
+    if (
+      error &&
+      String(error.message).toLowerCase().includes('shipping_includes_vat')
+    ) {
+      const { shipping_includes_vat: _drop, ...legacy } = base;
+      ({ error } = await writePo(legacy, 'update', poId));
+    }
     if (error) {
       return {
         ok: false,
@@ -505,11 +597,14 @@ export async function upsertGeneralPurchaseOrderAction(input: {
       };
     }
   } else {
-    const { data, error } = await supabase
-      .from('platform_supplier_purchase_orders')
-      .insert({ ...base, created_by: uid })
-      .select('id')
-      .single();
+    let { data, error } = await writePo(base, 'insert', null);
+    if (
+      error &&
+      String(error.message).toLowerCase().includes('shipping_includes_vat')
+    ) {
+      const { shipping_includes_vat: _drop, ...legacy } = base;
+      ({ data, error } = await writePo(legacy, 'insert', null));
+    }
     if (error || !data) {
       // Unique quote activo / client_request_id → devolver existente
       if (error && (error.code === '23505' || /unique|duplicate/i.test(error.message))) {
@@ -682,6 +777,7 @@ export async function preparePurchaseFromQuoteAction(input: {
     title: String(q.title),
     status: 'borrador',
     shippingCents: shipping,
+    shippingIncludesVat: false,
     subtotalCents: subtotal || null,
     taxCents: tax || null,
     totalCents: total || null,
