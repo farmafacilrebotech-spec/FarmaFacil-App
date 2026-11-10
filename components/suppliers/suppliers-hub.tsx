@@ -7,7 +7,11 @@ import { useRouter } from 'next/navigation';
 
 import {
   archiveSupplierAction,
-  convertApprovedQuoteToKioskPurchaseAction,
+  convertApprovedQuoteToPurchaseAction,
+  getSupplierDocSignedUrlAction,
+  uploadPurchaseDocumentAction,
+  uploadSupplierQuoteDocumentAction,
+  upsertGeneralPurchaseOrderAction,
   upsertSupplierAction,
   upsertSupplierContactAction,
   upsertSupplierQuoteAction,
@@ -30,11 +34,23 @@ import type {
   KioskPurchaseOrderOperational,
 } from '@/lib/kiosk-inventory/purchase-types';
 import {
+  SUPPLIER_CATEGORIES,
+  SUPPLIER_CATEGORY_LABELS,
+  SUPPLIER_PO_DOC_LABELS,
+  SUPPLIER_PO_DOC_TYPES,
+  SUPPLIER_PO_STATUS_LABELS,
+  SUPPLIER_PO_STATUSES,
   SUPPLIER_QUOTE_STATUS_LABELS,
   SUPPLIER_QUOTE_STATUSES,
   type MaterialOfferCompareRow,
   type SupplierActivityRow,
+  type SupplierCategory,
   type SupplierContactRow,
+  type SupplierPurchaseDocType,
+  type SupplierPurchaseDocumentRow,
+  type SupplierPurchaseOrderRow,
+  type SupplierPurchaseStatus,
+  type SupplierQuoteDocumentRow,
   type SupplierQuoteRow,
   type SupplierQuoteStatus,
   type SupplierRow,
@@ -46,18 +62,27 @@ function eurosToCents(raw: string): number {
   return Math.round(n * 100);
 }
 
-function formatCents(cents: number): string {
+function formatCents(cents: number | null | undefined): string {
+  if (cents == null) return '—';
   return new Intl.NumberFormat('es-ES', {
     style: 'currency',
     currency: 'EUR',
   }).format(cents / 100);
 }
 
-type Tab = 'directorio' | 'presupuestos' | 'compras' | 'comparar';
+type Tab =
+  | 'directorio'
+  | 'presupuestos'
+  | 'pedidos'
+  | 'compras-kioskos'
+  | 'comparar';
 
 export function SuppliersHub({
   suppliers,
   quotes,
+  quoteDocumentsById,
+  generalPurchases,
+  purchaseDocumentsById,
   contactsBySupplier,
   activityBySupplier,
   compareOffers,
@@ -70,9 +95,13 @@ export function SuppliersHub({
   canSeeFinancial,
   loadError,
   purchasesError,
+  generalPurchasesError,
 }: {
   suppliers: SupplierRow[];
   quotes: SupplierQuoteRow[];
+  quoteDocumentsById: Record<string, SupplierQuoteDocumentRow[]>;
+  generalPurchases: SupplierPurchaseOrderRow[];
+  purchaseDocumentsById: Record<string, SupplierPurchaseDocumentRow[]>;
   contactsBySupplier: Record<string, SupplierContactRow[]>;
   activityBySupplier: Record<string, SupplierActivityRow[]>;
   compareOffers: MaterialOfferCompareRow[];
@@ -85,6 +114,7 @@ export function SuppliersHub({
   canSeeFinancial: boolean;
   loadError?: string | null;
   purchasesError?: string | null;
+  generalPurchasesError?: string | null;
 }) {
   const router = useRouter();
   const [tab, setTab] = React.useState<Tab>('directorio');
@@ -97,7 +127,7 @@ export function SuppliersHub({
   const [legalName, setLegalName] = React.useState('');
   const [tradeName, setTradeName] = React.useState('');
   const [taxId, setTaxId] = React.useState('');
-  const [category, setCategory] = React.useState('');
+  const [category, setCategory] = React.useState<SupplierCategory>('otros');
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
   const [paymentTerms, setPaymentTerms] = React.useState('');
@@ -113,13 +143,33 @@ export function SuppliersHub({
   );
   const [quoteStatus, setQuoteStatus] =
     React.useState<SupplierQuoteStatus>('recibido');
-  const [lineMaterial, setLineMaterial] = React.useState('kiosk');
+  const [lineMaterial, setLineMaterial] = React.useState('');
   const [lineDesc, setLineDesc] = React.useState('');
   const [lineQty, setLineQty] = React.useState('1');
   const [linePrice, setLinePrice] = React.useState('');
   const [lineLead, setLineLead] = React.useState('');
   const [shipping, setShipping] = React.useState('');
-  const [materialCompare, setMaterialCompare] = React.useState(compareKey || 'kiosk');
+  const [materialCompare, setMaterialCompare] = React.useState(compareKey || '');
+
+  const [poSupplierId, setPoSupplierId] = React.useState(suppliers[0]?.id ?? '');
+  const [poCategory, setPoCategory] = React.useState<SupplierCategory>('otros');
+  const [poTitle, setPoTitle] = React.useState('');
+  const [poStatus, setPoStatus] =
+    React.useState<SupplierPurchaseStatus>('borrador');
+  const [poOrderedAt, setPoOrderedAt] = React.useState('');
+  const [poExpected, setPoExpected] = React.useState('');
+  const [poSubtotal, setPoSubtotal] = React.useState('');
+  const [poTax, setPoTax] = React.useState('');
+  const [poShipping, setPoShipping] = React.useState('');
+  const [poTotal, setPoTotal] = React.useState('');
+  const [poLineDesc, setPoLineDesc] = React.useState('');
+  const [poLineQty, setPoLineQty] = React.useState('1');
+  const [poLinePrice, setPoLinePrice] = React.useState('');
+  const [selectedPurchaseId, setSelectedPurchaseId] = React.useState<
+    string | null
+  >(generalPurchases[0]?.id ?? null);
+  const [poDocType, setPoDocType] =
+    React.useState<SupplierPurchaseDocType>('invoice');
 
   const selected = suppliers.find((s) => s.id === selectedId) ?? null;
 
@@ -128,7 +178,7 @@ export function SuppliersHub({
       setLegalName('');
       setTradeName('');
       setTaxId('');
-      setCategory('');
+      setCategory('otros');
       setEmail('');
       setPhone('');
       setPaymentTerms('');
@@ -138,7 +188,7 @@ export function SuppliersHub({
     setLegalName(selected.legalName);
     setTradeName(selected.tradeName ?? '');
     setTaxId(selected.taxId ?? '');
-    setCategory(selected.category ?? '');
+    setCategory(selected.category);
     setEmail(selected.email ?? '');
     setPhone(selected.phone ?? '');
     setPaymentTerms(selected.paymentTerms ?? '');
@@ -157,6 +207,15 @@ export function SuppliersHub({
     }
   }
 
+  async function openSigned(path: string) {
+    const res = await getSupplierDocSignedUrlAction(path);
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    window.open(res.url, '_blank', 'noopener,noreferrer');
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
@@ -164,7 +223,8 @@ export function SuppliersHub({
           [
             ['directorio', 'Directorio'],
             ['presupuestos', 'Presupuestos'],
-            ['compras', 'Compras'],
+            ['pedidos', 'Pedidos generales'],
+            ['compras-kioskos', 'Compras kioskos'],
             ['comparar', 'Comparar materiales'],
           ] as const
         ).map(([id, label]) => (
@@ -203,7 +263,7 @@ export function SuppliersHub({
                     setLegalName('');
                     setTradeName('');
                     setTaxId('');
-                    setCategory('');
+                    setCategory('otros');
                     setEmail('');
                     setPhone('');
                     setPaymentTerms('');
@@ -233,7 +293,7 @@ export function SuppliersHub({
                     >
                       <span className="block truncate">{s.legalName}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {s.category ?? s.status}
+                        {SUPPLIER_CATEGORY_LABELS[s.category]}
                       </span>
                     </button>
                   </li>
@@ -257,6 +317,25 @@ export function SuppliersHub({
                 />
               </div>
               <div className="space-y-1.5">
+                <Label>Categoría</Label>
+                <Select
+                  value={category}
+                  onValueChange={(v) => setCategory(v as SupplierCategory)}
+                  disabled={!canWrite || busy}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUPPLIER_CATEGORIES.map((c) => (
+                      <SelectItem key={c} value={c}>
+                        {SUPPLIER_CATEGORY_LABELS[c]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
                 <Label htmlFor="sup-trade">Nombre comercial</Label>
                 <Input
                   id="sup-trade"
@@ -272,16 +351,6 @@ export function SuppliersHub({
                   value={taxId}
                   onChange={(e) => setTaxId(e.target.value)}
                   disabled={!canWrite || busy}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="sup-cat">Categoría</Label>
-                <Input
-                  id="sup-cat"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  disabled={!canWrite || busy}
-                  placeholder="kioskos, material, logística…"
                 />
               </div>
               <div className="space-y-1.5">
@@ -344,7 +413,9 @@ export function SuppliersHub({
                         toast.error(res.error);
                         return;
                       }
-                      toast.success(selectedId ? 'Proveedor actualizado' : 'Proveedor creado');
+                      toast.success(
+                        selectedId ? 'Proveedor actualizado' : 'Proveedor creado'
+                      );
                       setSelectedId(res.id);
                       router.refresh();
                     })
@@ -512,6 +583,7 @@ export function SuppliersHub({
                   <Input
                     value={lineMaterial}
                     onChange={(e) => setLineMaterial(e.target.value)}
+                    placeholder="ej. flyer-a5, tote-bag…"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -567,11 +639,10 @@ export function SuppliersHub({
                               {
                                 materialKey: lineMaterial,
                                 description: lineDesc,
-                                quantity: Number.isFinite(qty) && qty > 0 ? qty : 1,
+                                quantity:
+                                  Number.isFinite(qty) && qty > 0 ? qty : 1,
                                 unitPriceCents: eurosToCents(linePrice),
-                                leadDays: lineLead
-                                  ? Number(lineLead)
-                                  : null,
+                                leadDays: lineLead ? Number(lineLead) : null,
                               },
                             ]
                           : [],
@@ -584,6 +655,7 @@ export function SuppliersHub({
                     setQuoteTitle('');
                     setLineDesc('');
                     setLinePrice('');
+                    setLineMaterial('');
                     router.refresh();
                   })
                 }
@@ -594,70 +666,131 @@ export function SuppliersHub({
           ) : null}
 
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[720px] text-left text-sm">
+            <table className="w-full min-w-[860px] text-left text-sm">
               <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2">Proveedor</th>
                   <th className="px-3 py-2">Título</th>
                   <th className="px-3 py-2">Estado</th>
-                  <th className="px-3 py-2">Transporte</th>
+                  <th className="px-3 py-2">Adjuntos</th>
                   <th className="px-3 py-2">Acciones</th>
                 </tr>
               </thead>
               <tbody>
                 {quotes.length === 0 ? (
                   <tr>
-                    <td
-                      colSpan={5}
-                      className="px-3 py-6 text-muted-foreground"
-                    >
+                    <td colSpan={5} className="px-3 py-6 text-muted-foreground">
                       Sin presupuestos registrados.
                     </td>
                   </tr>
                 ) : (
                   quotes.map((q) => (
-                    <tr key={q.id} className="border-b border-border/70">
+                    <tr key={q.id} className="border-b border-border/70 align-top">
                       <td className="px-3 py-2">{q.supplierName ?? '—'}</td>
                       <td className="px-3 py-2">{q.title}</td>
                       <td className="px-3 py-2">
                         {SUPPLIER_QUOTE_STATUS_LABELS[q.status]}
                       </td>
                       <td className="px-3 py-2">
-                        {q.shippingCents == null
-                          ? '—'
-                          : formatCents(q.shippingCents)}
+                        <ul className="space-y-1 text-xs">
+                          {(quoteDocumentsById[q.id] ?? []).map((d) => (
+                            <li key={d.id}>
+                              <button
+                                type="button"
+                                className="text-primary underline-offset-2 hover:underline"
+                                onClick={() => openSigned(d.storagePath)}
+                              >
+                                {d.fileName}
+                              </button>
+                            </li>
+                          ))}
+                          {(quoteDocumentsById[q.id] ?? []).length === 0 ? (
+                            <li className="text-muted-foreground">Sin archivos</li>
+                          ) : null}
+                        </ul>
+                        {canWrite ? (
+                          <label className="mt-2 inline-flex cursor-pointer text-xs text-primary underline-offset-2 hover:underline">
+                            Adjuntar PDF/Excel/imagen
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept=".pdf,.xls,.xlsx,.png,.jpg,.jpeg,application/pdf,image/*,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (!file) return;
+                                run(async () => {
+                                  const fd = new FormData();
+                                  fd.set('quoteId', q.id);
+                                  fd.set('file', file);
+                                  const res =
+                                    await uploadSupplierQuoteDocumentAction(fd);
+                                  if (!res.ok) {
+                                    toast.error(res.error);
+                                    return;
+                                  }
+                                  toast.success('Adjunto subido');
+                                  router.refresh();
+                                });
+                              }}
+                            />
+                          </label>
+                        ) : null}
                       </td>
                       <td className="px-3 py-2">
                         {canWrite && q.status === 'aprobado' ? (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={busy}
-                            onClick={() =>
-                              run(async () => {
-                                const res =
-                                  await convertApprovedQuoteToKioskPurchaseAction(
-                                    {
+                          <div className="flex flex-col gap-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() =>
+                                run(async () => {
+                                  const res =
+                                    await convertApprovedQuoteToPurchaseAction({
                                       quoteId: q.id,
+                                      target: 'general',
+                                    });
+                                  if (!res.ok) {
+                                    toast.error(res.error);
+                                    return;
+                                  }
+                                  toast.success('Pedido general creado');
+                                  setTab('pedidos');
+                                  router.refresh();
+                                })
+                              }
+                            >
+                              → Pedido general
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={busy}
+                              onClick={() =>
+                                run(async () => {
+                                  const res =
+                                    await convertApprovedQuoteToPurchaseAction({
+                                      quoteId: q.id,
+                                      target: 'kiosk',
                                       quantity: 1,
                                       model: q.title,
-                                    }
-                                  );
-                                if (!res.ok) {
-                                  toast.error(res.error);
-                                  return;
-                                }
-                                toast.success(
-                                  'Pedido de compra creado (compras kioskos)'
-                                );
-                                setTab('compras');
-                                router.refresh();
-                              })
-                            }
-                          >
-                            Convertir en pedido
-                          </Button>
+                                    });
+                                  if (!res.ok) {
+                                    toast.error(res.error);
+                                    return;
+                                  }
+                                  toast.success('Pedido kiosko creado');
+                                  setTab('compras-kioskos');
+                                  router.refresh();
+                                })
+                              }
+                            >
+                              → Pedido kiosko
+                            </Button>
+                          </div>
                         ) : (
                           '—'
                         )}
@@ -671,12 +804,328 @@ export function SuppliersHub({
         </div>
       ) : null}
 
-      {tab === 'compras' ? (
+      {tab === 'pedidos' ? (
+        <div className="space-y-6">
+          {generalPurchasesError ? (
+            <p className="text-sm text-destructive">{generalPurchasesError}</p>
+          ) : null}
+          {canWrite ? (
+            <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <h2 className="text-base font-semibold">
+                Nuevo pedido de materiales / servicios
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Proveedor</Label>
+                  <Select value={poSupplierId} onValueChange={setPoSupplierId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecciona" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {suppliers.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.legalName}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Categoría</Label>
+                  <Select
+                    value={poCategory}
+                    onValueChange={(v) => setPoCategory(v as SupplierCategory)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUPPLIER_CATEGORIES.map((c) => (
+                        <SelectItem key={c} value={c}>
+                          {SUPPLIER_CATEGORY_LABELS[c]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Estado</Label>
+                  <Select
+                    value={poStatus}
+                    onValueChange={(v) =>
+                      setPoStatus(v as SupplierPurchaseStatus)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUPPLIER_PO_STATUSES.map((s) => (
+                        <SelectItem key={s} value={s}>
+                          {SUPPLIER_PO_STATUS_LABELS[s]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>Título</Label>
+                  <Input
+                    value={poTitle}
+                    onChange={(e) => setPoTitle(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Fecha pedido</Label>
+                  <Input
+                    type="date"
+                    value={poOrderedAt}
+                    onChange={(e) => setPoOrderedAt(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Entrega prevista</Label>
+                  <Input
+                    type="date"
+                    value={poExpected}
+                    onChange={(e) => setPoExpected(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Subtotal (€)</Label>
+                  <Input
+                    value={poSubtotal}
+                    onChange={(e) => setPoSubtotal(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Impuestos (€)</Label>
+                  <Input
+                    value={poTax}
+                    onChange={(e) => setPoTax(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Transporte (€)</Label>
+                  <Input
+                    value={poShipping}
+                    onChange={(e) => setPoShipping(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Total (€)</Label>
+                  <Input
+                    value={poTotal}
+                    onChange={(e) => setPoTotal(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>Línea (descripción)</Label>
+                  <Input
+                    value={poLineDesc}
+                    onChange={(e) => setPoLineDesc(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Cantidad</Label>
+                  <Input
+                    value={poLineQty}
+                    onChange={(e) => setPoLineQty(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Precio u. (€)</Label>
+                  <Input
+                    value={poLinePrice}
+                    onChange={(e) => setPoLinePrice(e.target.value)}
+                  />
+                </div>
+              </div>
+              <Button
+                type="button"
+                disabled={busy || !poSupplierId}
+                onClick={() =>
+                  run(async () => {
+                    const qty = Number(poLineQty);
+                    const res = await upsertGeneralPurchaseOrderAction({
+                      supplierId: poSupplierId,
+                      category: poCategory,
+                      title: poTitle,
+                      status: poStatus,
+                      orderedAt: poOrderedAt || null,
+                      expectedDeliveryAt: poExpected || null,
+                      subtotalCents: poSubtotal
+                        ? eurosToCents(poSubtotal)
+                        : null,
+                      taxCents: poTax ? eurosToCents(poTax) : null,
+                      shippingCents: poShipping
+                        ? eurosToCents(poShipping)
+                        : null,
+                      totalCents: poTotal ? eurosToCents(poTotal) : null,
+                      lines: poLineDesc.trim()
+                        ? [
+                            {
+                              description: poLineDesc,
+                              quantity:
+                                Number.isFinite(qty) && qty > 0 ? qty : 1,
+                              unitPriceCents: eurosToCents(poLinePrice),
+                            },
+                          ]
+                        : [],
+                    });
+                    if (!res.ok) {
+                      toast.error(res.error);
+                      return;
+                    }
+                    toast.success('Pedido general creado');
+                    setPoTitle('');
+                    setPoLineDesc('');
+                    setSelectedPurchaseId(res.id);
+                    router.refresh();
+                  })
+                }
+              >
+                Guardar pedido
+              </Button>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
+            <div className="overflow-x-auto rounded-xl border border-border bg-card">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2">Proveedor</th>
+                    <th className="px-3 py-2">Título</th>
+                    <th className="px-3 py-2">Categoría</th>
+                    <th className="px-3 py-2">Estado</th>
+                    <th className="px-3 py-2">Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {generalPurchases.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={5}
+                        className="px-3 py-6 text-muted-foreground"
+                      >
+                        Sin pedidos generales.
+                      </td>
+                    </tr>
+                  ) : (
+                    generalPurchases.map((o) => (
+                      <tr
+                        key={o.id}
+                        className={`border-b border-border/70 cursor-pointer ${
+                          selectedPurchaseId === o.id ? 'bg-primary/5' : ''
+                        }`}
+                        onClick={() => setSelectedPurchaseId(o.id)}
+                      >
+                        <td className="px-3 py-2">{o.supplierName ?? '—'}</td>
+                        <td className="px-3 py-2">{o.title}</td>
+                        <td className="px-3 py-2">
+                          {SUPPLIER_CATEGORY_LABELS[o.category]}
+                        </td>
+                        <td className="px-3 py-2">
+                          {SUPPLIER_PO_STATUS_LABELS[o.status]}
+                        </td>
+                        <td className="px-3 py-2">
+                          {formatCents(o.totalCents)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <h3 className="text-sm font-semibold">Documentos / facturas</h3>
+              {!selectedPurchaseId ? (
+                <p className="text-sm text-muted-foreground">
+                  Selecciona un pedido.
+                </p>
+              ) : (
+                <>
+                  <ul className="space-y-1 text-sm">
+                    {(purchaseDocumentsById[selectedPurchaseId] ?? []).map(
+                      (d) => (
+                        <li key={d.id}>
+                          <button
+                            type="button"
+                            className="text-primary underline-offset-2 hover:underline"
+                            onClick={() => openSigned(d.storagePath)}
+                          >
+                            [{SUPPLIER_PO_DOC_LABELS[d.docType]}] {d.fileName}
+                          </button>
+                        </li>
+                      )
+                    )}
+                    {(purchaseDocumentsById[selectedPurchaseId] ?? []).length ===
+                    0 ? (
+                      <li className="text-muted-foreground">Sin documentos.</li>
+                    ) : null}
+                  </ul>
+                  {canWrite ? (
+                    <div className="space-y-2">
+                      <Select
+                        value={poDocType}
+                        onValueChange={(v) =>
+                          setPoDocType(v as SupplierPurchaseDocType)
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUPPLIER_PO_DOC_TYPES.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {SUPPLIER_PO_DOC_LABELS[t]}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <label className="inline-flex cursor-pointer text-sm text-primary underline-offset-2 hover:underline">
+                        Subir documento
+                        <input
+                          type="file"
+                          className="hidden"
+                          accept=".pdf,.xls,.xlsx,.png,.jpg,.jpeg,application/pdf,image/*,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            e.target.value = '';
+                            if (!file || !selectedPurchaseId) return;
+                            run(async () => {
+                              const fd = new FormData();
+                              fd.set('purchaseOrderId', selectedPurchaseId);
+                              fd.set('docType', poDocType);
+                              fd.set('file', file);
+                              const res = await uploadPurchaseDocumentAction(fd);
+                              if (!res.ok) {
+                                toast.error(res.error);
+                                return;
+                              }
+                              toast.success('Documento subido');
+                              router.refresh();
+                            });
+                          }}
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {tab === 'compras-kioskos' ? (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            Pedidos operativos reutilizan <code className="text-xs">kiosk_purchase_orders</code>{' '}
-            (WIP 068 → migración 076). Documentos privados; importes solo con
-            permiso de compras.
+            Integración existente de compras de kioskos (
+            <code className="text-xs">kiosk_purchase_orders</code>). Independiente
+            de los pedidos generales.
           </p>
           {purchasesError ? (
             <p className="text-sm text-destructive">{purchasesError}</p>
@@ -699,8 +1148,9 @@ export function SuppliersHub({
             onSubmit={(e) => {
               e.preventDefault();
               const params = new URLSearchParams(window.location.search);
-              params.set('material', materialCompare.trim().toLowerCase());
-              params.set('tab', 'comparar');
+              const key = materialCompare.trim().toLowerCase();
+              if (key) params.set('material', key);
+              else params.delete('material');
               router.push(`/proveedores?${params.toString()}`);
             }}
           >
@@ -710,6 +1160,7 @@ export function SuppliersHub({
                 id="mat-key"
                 value={materialCompare}
                 onChange={(e) => setMaterialCompare(e.target.value)}
+                placeholder="Sin valor por defecto"
               />
             </div>
             <Button type="submit">Comparar</Button>
@@ -729,7 +1180,9 @@ export function SuppliersHub({
                 {compareOffers.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-3 py-6 text-muted-foreground">
-                      No hay ofertas para «{compareKey || materialCompare}».
+                      {compareKey
+                        ? `No hay ofertas para «${compareKey}».`
+                        : 'Indica una clave de material para comparar.'}
                     </td>
                   </tr>
                 ) : (

@@ -2,16 +2,28 @@ import { createClient } from '@/lib/supabase/server';
 import {
   hasSuppliersRead,
 } from '@/lib/kiosk-inventory/authz';
-import type {
-  MaterialOfferCompareRow,
-  SupplierActivityRow,
-  SupplierContactRow,
-  SupplierQuoteLineRow,
-  SupplierQuoteRow,
-  SupplierQuoteStatus,
-  SupplierRow,
-  SupplierStatus,
+import {
+  isSupplierCategory,
+  type MaterialOfferCompareRow,
+  type SupplierActivityRow,
+  type SupplierCategory,
+  type SupplierContactRow,
+  type SupplierPurchaseDocType,
+  type SupplierPurchaseDocumentRow,
+  type SupplierPurchaseOrderRow,
+  type SupplierPurchaseStatus,
+  type SupplierQuoteDocumentRow,
+  type SupplierQuoteLineRow,
+  type SupplierQuoteRow,
+  type SupplierQuoteStatus,
+  type SupplierRow,
+  type SupplierStatus,
 } from '@/lib/suppliers/types';
+
+function mapCategory(raw: unknown): SupplierCategory {
+  const v = raw == null ? '' : String(raw);
+  return isSupplierCategory(v) ? v : 'otros';
+}
 
 function mapSupplier(r: Record<string, unknown>): SupplierRow {
   return {
@@ -19,7 +31,7 @@ function mapSupplier(r: Record<string, unknown>): SupplierRow {
     legalName: String(r.legal_name ?? ''),
     tradeName: r.trade_name == null ? null : String(r.trade_name),
     taxId: r.tax_id == null ? null : String(r.tax_id),
-    category: r.category == null ? null : String(r.category),
+    category: mapCategory(r.category),
     email: r.email == null ? null : String(r.email),
     phone: r.phone == null ? null : String(r.phone),
     website: r.website == null ? null : String(r.website),
@@ -263,4 +275,138 @@ export async function compareMaterialOffers(
   }
   offers.sort((a, b) => a.unitPriceCents - b.unitPriceCents);
   return { ok: true, offers };
+}
+
+export async function listQuoteDocuments(
+  quoteId: string
+): Promise<
+  | { ok: true; documents: SupplierQuoteDocumentRow[] }
+  | { ok: false; error: string }
+> {
+  if (!(await hasSuppliersRead())) return { ok: false, error: 'Sin permiso.' };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('platform_supplier_quote_documents')
+    .select('id, quote_id, storage_path, file_name, mime_type, byte_size, created_at')
+    .eq('quote_id', quoteId)
+    .order('created_at', { ascending: false });
+  if (error) return { ok: false, error: 'No se han podido cargar adjuntos.' };
+  return {
+    ok: true,
+    documents: ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({
+      id: String(r.id),
+      quoteId: String(r.quote_id),
+      fileName: String(r.file_name ?? ''),
+      mimeType: r.mime_type == null ? null : String(r.mime_type),
+      byteSize: r.byte_size == null ? null : Number(r.byte_size),
+      storagePath: String(r.storage_path ?? ''),
+      createdAt: String(r.created_at ?? ''),
+    })),
+  };
+}
+
+export async function listSupplierPurchaseOrders(opts?: {
+  supplierId?: string;
+  category?: SupplierCategory | 'all';
+}): Promise<
+  | { ok: true; orders: SupplierPurchaseOrderRow[] }
+  | { ok: false; error: string }
+> {
+  if (!(await hasSuppliersRead())) {
+    return { ok: false, error: 'Sin permiso para consultar pedidos.' };
+  }
+  const supabase = createClient();
+  let query = supabase
+    .from('platform_supplier_purchase_orders')
+    .select(
+      `
+      id, supplier_id, quote_id, category, title, order_number, status,
+      ordered_at, expected_delivery_at, actual_delivery_at, currency,
+      subtotal_cents, tax_cents, shipping_cents, total_cents, notes, created_at,
+      platform_suppliers ( legal_name )
+    `
+    )
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (opts?.supplierId) query = query.eq('supplier_id', opts.supplierId);
+  if (opts?.category && opts.category !== 'all') {
+    query = query.eq('category', opts.category);
+  }
+  const { data, error } = await query;
+  if (error) {
+    console.error('[suppliers] purchases', error.code, error.message);
+    if (
+      error.code === '42P01' ||
+      error.message.toLowerCase().includes('does not exist')
+    ) {
+      return {
+        ok: false,
+        error: 'Falta aplicar la migración 076 (pedidos generales).',
+      };
+    }
+    return { ok: false, error: 'No se han podido cargar los pedidos.' };
+  }
+  return {
+    ok: true,
+    orders: ((data as Record<string, unknown>[] | null) ?? []).map((r) => {
+      const s = r.platform_suppliers as { legal_name?: string } | null;
+      return {
+        id: String(r.id),
+        supplierId: String(r.supplier_id),
+        supplierName: s?.legal_name ?? null,
+        quoteId: r.quote_id == null ? null : String(r.quote_id),
+        category: mapCategory(r.category),
+        title: String(r.title ?? ''),
+        orderNumber: r.order_number == null ? null : String(r.order_number),
+        status: String(r.status ?? 'borrador') as SupplierPurchaseStatus,
+        orderedAt: r.ordered_at == null ? null : String(r.ordered_at),
+        expectedDeliveryAt:
+          r.expected_delivery_at == null
+            ? null
+            : String(r.expected_delivery_at),
+        actualDeliveryAt:
+          r.actual_delivery_at == null ? null : String(r.actual_delivery_at),
+        currency: String(r.currency ?? 'EUR'),
+        subtotalCents:
+          r.subtotal_cents == null ? null : Number(r.subtotal_cents),
+        taxCents: r.tax_cents == null ? null : Number(r.tax_cents),
+        shippingCents:
+          r.shipping_cents == null ? null : Number(r.shipping_cents),
+        totalCents: r.total_cents == null ? null : Number(r.total_cents),
+        notes: r.notes == null ? null : String(r.notes),
+        createdAt: String(r.created_at ?? ''),
+      };
+    }),
+  };
+}
+
+export async function listPurchaseDocuments(
+  purchaseOrderId: string
+): Promise<
+  | { ok: true; documents: SupplierPurchaseDocumentRow[] }
+  | { ok: false; error: string }
+> {
+  if (!(await hasSuppliersRead())) return { ok: false, error: 'Sin permiso.' };
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('platform_supplier_purchase_documents')
+    .select(
+      'id, purchase_order_id, doc_type, storage_path, file_name, mime_type, byte_size, created_at'
+    )
+    .eq('purchase_order_id', purchaseOrderId)
+    .order('created_at', { ascending: false });
+  if (error) return { ok: false, error: 'No se han podido cargar documentos.' };
+  return {
+    ok: true,
+    documents: ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({
+      id: String(r.id),
+      purchaseOrderId: String(r.purchase_order_id),
+      docType: String(r.doc_type ?? 'other') as SupplierPurchaseDocType,
+      fileName: String(r.file_name ?? ''),
+      mimeType: r.mime_type == null ? null : String(r.mime_type),
+      byteSize: r.byte_size == null ? null : Number(r.byte_size),
+      storagePath: String(r.storage_path ?? ''),
+      createdAt: String(r.created_at ?? ''),
+    })),
+  };
 }

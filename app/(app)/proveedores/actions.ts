@@ -7,8 +7,14 @@ import {
   hasSuppliersWrite,
 } from '@/lib/kiosk-inventory/authz';
 import {
+  isSupplierCategory,
   SUPPLIER_DOCS_BUCKET,
+  SUPPLIER_PO_DOC_TYPES,
+  SUPPLIER_PO_STATUSES,
   SUPPLIER_QUOTE_STATUSES,
+  type SupplierCategory,
+  type SupplierPurchaseDocType,
+  type SupplierPurchaseStatus,
   type SupplierQuoteStatus,
 } from '@/lib/suppliers/types';
 import { getCurrentProfile } from '@/lib/auth/platform';
@@ -59,6 +65,11 @@ export async function upsertSupplierAction(input: {
   }
   const legalName = input.legalName.trim();
   if (!legalName) return { ok: false, error: 'La razón social es obligatoria.' };
+  const categoryRaw = (input.category ?? 'otros').trim();
+  if (!isSupplierCategory(categoryRaw)) {
+    return { ok: false, error: 'Categoría de proveedor no válida.' };
+  }
+  const category: SupplierCategory = categoryRaw;
 
   const supabase = createClient();
   const uid = await actorId();
@@ -66,7 +77,7 @@ export async function upsertSupplierAction(input: {
     legal_name: legalName,
     trade_name: input.tradeName?.trim() || null,
     tax_id: input.taxId?.trim() || null,
-    category: input.category?.trim() || null,
+    category,
     email: input.email?.trim() || null,
     phone: input.phone?.trim() || null,
     website: input.website?.trim() || null,
@@ -271,18 +282,143 @@ export async function upsertSupplierQuoteAction(input: {
   return { ok: true, id: quoteId };
 }
 
-export async function convertApprovedQuoteToKioskPurchaseAction(input: {
+/** Pedido general de materiales/servicios (no kiosko). */
+export async function upsertGeneralPurchaseOrderAction(input: {
+  id?: string | null;
+  supplierId: string;
+  quoteId?: string | null;
+  category: SupplierCategory;
+  title: string;
+  orderNumber?: string | null;
+  status?: SupplierPurchaseStatus;
+  orderedAt?: string | null;
+  expectedDeliveryAt?: string | null;
+  actualDeliveryAt?: string | null;
+  subtotalCents?: number | null;
+  taxCents?: number | null;
+  shippingCents?: number | null;
+  totalCents?: number | null;
+  notes?: string | null;
+  lines?: Array<{
+    description: string;
+    quantity: number;
+    unit?: string | null;
+    unitPriceCents: number;
+    vatBps?: number;
+  }>;
+}): Promise<SupplierActionResult<{ id: string }>> {
+  if (!(await hasSuppliersWrite())) {
+    return { ok: false, error: 'Sin permiso de pedidos.' };
+  }
+  if (!isSupplierCategory(input.category)) {
+    return { ok: false, error: 'Categoría no válida.' };
+  }
+  const title = input.title.trim();
+  if (!title) return { ok: false, error: 'Título del pedido obligatorio.' };
+  const status = input.status ?? 'borrador';
+  if (!(SUPPLIER_PO_STATUSES as readonly string[]).includes(status)) {
+    return { ok: false, error: 'Estado de pedido no válido.' };
+  }
+
+  const supabase = createClient();
+  const uid = await actorId();
+  const base = {
+    supplier_id: input.supplierId,
+    quote_id: input.quoteId || null,
+    category: input.category,
+    title,
+    order_number: input.orderNumber?.trim() || null,
+    status,
+    ordered_at: input.orderedAt || null,
+    expected_delivery_at: input.expectedDeliveryAt || null,
+    actual_delivery_at: input.actualDeliveryAt || null,
+    subtotal_cents: input.subtotalCents ?? null,
+    tax_cents: input.taxCents ?? null,
+    shipping_cents: input.shippingCents ?? null,
+    total_cents: input.totalCents ?? null,
+    notes: input.notes?.trim() || null,
+    updated_by: uid,
+    updated_at: new Date().toISOString(),
+  };
+
+  let poId = input.id ?? null;
+  if (poId) {
+    const { error } = await supabase
+      .from('platform_supplier_purchase_orders')
+      .update(base)
+      .eq('id', poId);
+    if (error) return { ok: false, error: 'No se ha podido actualizar el pedido.' };
+  } else {
+    const { data, error } = await supabase
+      .from('platform_supplier_purchase_orders')
+      .insert({ ...base, created_by: uid })
+      .select('id')
+      .single();
+    if (error || !data) {
+      return { ok: false, error: 'No se ha podido crear el pedido general.' };
+    }
+    poId = String((data as { id: string }).id);
+  }
+
+  if (input.lines && input.lines.length > 0) {
+    await supabase
+      .from('platform_supplier_purchase_lines')
+      .delete()
+      .eq('purchase_order_id', poId);
+    const rows = input.lines.map((l, i) => {
+      const qty = l.quantity > 0 ? l.quantity : 1;
+      const vat = l.vatBps ?? 2100;
+      const net = Math.round(qty * l.unitPriceCents);
+      const lineTotal = Math.round(net * (1 + vat / 10000));
+      return {
+        purchase_order_id: poId,
+        description: l.description.trim(),
+        quantity: qty,
+        unit: l.unit?.trim() || null,
+        unit_price_cents: l.unitPriceCents,
+        vat_bps: vat,
+        line_total_cents: lineTotal,
+        sort_order: i,
+      };
+    });
+    const { error: lineErr } = await supabase
+      .from('platform_supplier_purchase_lines')
+      .insert(rows);
+    if (lineErr) {
+      return { ok: false, error: 'Pedido guardado, pero fallaron las líneas.' };
+    }
+  }
+
+  await logActivity(
+    input.supplierId,
+    'supplier.purchase_upsert',
+    `Pedido «${title}» (${status})`
+  );
+  revalidateSuppliers(input.supplierId);
+  return { ok: true, id: poId };
+}
+
+/**
+ * Convierte presupuesto aprobado:
+ * - target 'general' → platform_supplier_purchase_orders
+ * - target 'kiosk' → kiosk_purchase_orders (integración existente)
+ */
+export async function convertApprovedQuoteToPurchaseAction(input: {
   quoteId: string;
-  quantity: number;
+  target: 'general' | 'kiosk';
+  quantity?: number;
+  category?: SupplierCategory;
   model?: string | null;
-}): Promise<SupplierActionResult<{ purchaseOrderId: string }>> {
+}): Promise<SupplierActionResult<{ purchaseOrderId: string; kind: 'general' | 'kiosk' }>> {
   if (!(await hasSuppliersWrite())) {
     return { ok: false, error: 'Sin permiso.' };
   }
   const supabase = createClient();
   const { data: quote, error } = await supabase
     .from('platform_supplier_quotes')
-    .select('id, status, title, supplier_id, platform_suppliers ( legal_name )')
+    .select(
+      'id, status, title, supplier_id, shipping_cents, platform_suppliers ( legal_name, category )'
+    )
     .eq('id', input.quoteId)
     .maybeSingle();
   if (error || !quote) return { ok: false, error: 'Presupuesto no encontrado.' };
@@ -290,9 +426,40 @@ export async function convertApprovedQuoteToKioskPurchaseAction(input: {
   if (String(q.status) !== 'aprobado') {
     return { ok: false, error: 'Solo se convierten presupuestos aprobados.' };
   }
-  const supplier = q.platform_suppliers as { legal_name?: string } | null;
+  const supplier = q.platform_suppliers as {
+    legal_name?: string;
+    category?: string;
+  } | null;
   const supplierName = supplier?.legal_name?.trim();
   if (!supplierName) return { ok: false, error: 'Proveedor sin razón social.' };
+  const supplierCategory = isSupplierCategory(supplier?.category)
+    ? supplier!.category
+    : 'otros';
+
+  if (input.target === 'general') {
+    const category =
+      input.category && isSupplierCategory(input.category)
+        ? input.category
+        : supplierCategory;
+    const created = await upsertGeneralPurchaseOrderAction({
+      supplierId: String(q.supplier_id),
+      quoteId: String(q.id),
+      category,
+      title: String(q.title),
+      status: 'pedido',
+      orderedAt: new Date().toISOString().slice(0, 10),
+      shippingCents:
+        q.shipping_cents == null ? null : Number(q.shipping_cents),
+      notes: `Convertido desde presupuesto ${input.quoteId}`,
+    });
+    if (!created.ok) return created;
+    await logActivity(
+      String(q.supplier_id),
+      'supplier.quote_converted_general',
+      `Presupuesto → pedido general ${created.id}`
+    );
+    return { ok: true, purchaseOrderId: created.id, kind: 'general' };
+  }
 
   const { data: rpc, error: rpcErr } = await supabase.rpc(
     'ff_kiosk_purchase_order_upsert_v1',
@@ -301,7 +468,7 @@ export async function convertApprovedQuoteToKioskPurchaseAction(input: {
       p_supplier_name: supplierName,
       p_order_number: null,
       p_model: input.model?.trim() || String(q.title),
-      p_quantity: input.quantity,
+      p_quantity: input.quantity && input.quantity > 0 ? input.quantity : 1,
       p_ordered_at: null,
       p_delivery_lead_months: 2,
       p_unit_price_cents: null,
@@ -316,13 +483,13 @@ export async function convertApprovedQuoteToKioskPurchaseAction(input: {
     return {
       ok: false,
       error:
-        'No se pudo crear el pedido. ¿Migración 076 aplicada? ¿Permiso kiosk_purchasing.write?',
+        'No se pudo crear el pedido kiosko. ¿Migración 076? ¿Permiso kiosk_purchasing.write?',
     };
   }
   const status = (rpc as { status?: string; id?: string } | null)?.status;
   const poId = (rpc as { id?: string } | null)?.id;
   if (status !== 'ok' || !poId) {
-    return { ok: false, error: 'RPC de pedido no disponible o rechazada.' };
+    return { ok: false, error: 'RPC de pedido kiosko no disponible o rechazada.' };
   }
 
   await supabase
@@ -332,12 +499,28 @@ export async function convertApprovedQuoteToKioskPurchaseAction(input: {
 
   await logActivity(
     String(q.supplier_id),
-    'supplier.quote_converted',
-    `Presupuesto convertido en pedido ${poId}`
+    'supplier.quote_converted_kiosk',
+    `Presupuesto → pedido kiosko ${poId}`
   );
   revalidatePath('/proveedores');
   revalidatePath('/inventario-kioskos');
-  return { ok: true, purchaseOrderId: poId };
+  return { ok: true, purchaseOrderId: poId, kind: 'kiosk' };
+}
+
+/** @deprecated usar convertApprovedQuoteToPurchaseAction */
+export async function convertApprovedQuoteToKioskPurchaseAction(input: {
+  quoteId: string;
+  quantity: number;
+  model?: string | null;
+}): Promise<SupplierActionResult<{ purchaseOrderId: string }>> {
+  const res = await convertApprovedQuoteToPurchaseAction({
+    quoteId: input.quoteId,
+    target: 'kiosk',
+    quantity: input.quantity,
+    model: input.model,
+  });
+  if (!res.ok) return res;
+  return { ok: true, purchaseOrderId: res.purchaseOrderId };
 }
 
 export async function uploadSupplierQuoteDocumentAction(formData: FormData): Promise<
@@ -397,4 +580,52 @@ export async function getSupplierDocSignedUrlAction(
     return { ok: false, error: 'No se ha podido firmar la URL.' };
   }
   return { ok: true, url: data.signedUrl };
+}
+
+export async function uploadPurchaseDocumentAction(formData: FormData): Promise<
+  SupplierActionResult<{ documentId: string }>
+> {
+  if (!(await hasSuppliersWrite())) {
+    return { ok: false, error: 'Sin permiso.' };
+  }
+  const purchaseOrderId = String(formData.get('purchaseOrderId') ?? '');
+  const docTypeRaw = String(formData.get('docType') ?? 'invoice');
+  const file = formData.get('file');
+  if (!purchaseOrderId || !(file instanceof File)) {
+    return { ok: false, error: 'Faltan pedido o archivo.' };
+  }
+  if (!(SUPPLIER_PO_DOC_TYPES as readonly string[]).includes(docTypeRaw)) {
+    return { ok: false, error: 'Tipo de documento no válido.' };
+  }
+  const docType = docTypeRaw as SupplierPurchaseDocType;
+  const supabase = createClient();
+  const path = `purchases/${purchaseOrderId}/${Date.now()}-${file.name.replace(/[^\w.\-]+/g, '_')}`;
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const { error: upErr } = await supabase.storage
+    .from(SUPPLIER_DOCS_BUCKET)
+    .upload(path, bytes, {
+      contentType: file.type || 'application/octet-stream',
+      upsert: false,
+    });
+  if (upErr) return { ok: false, error: 'No se ha podido subir el documento.' };
+
+  const uid = await actorId();
+  const { data, error } = await supabase
+    .from('platform_supplier_purchase_documents')
+    .insert({
+      purchase_order_id: purchaseOrderId,
+      doc_type: docType,
+      storage_path: path,
+      file_name: file.name,
+      mime_type: file.type || null,
+      byte_size: file.size,
+      uploaded_by: uid,
+    })
+    .select('id')
+    .single();
+  if (error || !data) {
+    return { ok: false, error: 'Metadatos de documento no guardados.' };
+  }
+  revalidateSuppliers();
+  return { ok: true, documentId: String((data as { id: string }).id) };
 }

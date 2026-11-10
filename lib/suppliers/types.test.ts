@@ -5,12 +5,34 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  SUPPLIER_CATEGORIES,
+  SUPPLIER_CATEGORY_LABELS,
   SUPPLIER_QUOTE_STATUS_LABELS,
   SUPPLIER_QUOTE_STATUSES,
+  SUPPLIER_PO_STATUSES,
   SUPPLIER_DOCS_BUCKET,
+  isSupplierCategory,
 } from './types.ts';
 
-describe('supplier quote statuses', () => {
+describe('supplier categories', () => {
+  it('incluye el catálogo comercial aprobado', () => {
+    assert.deepEqual([...SUPPLIER_CATEGORIES], [
+      'merchandising',
+      'papeleria',
+      'imprentas',
+      'marketing',
+      'kioskos',
+      'tecnologia',
+      'servicios',
+      'otros',
+    ]);
+    assert.equal(SUPPLIER_CATEGORY_LABELS.papeleria, 'Papelería');
+    assert.equal(isSupplierCategory('kioskos'), true);
+    assert.equal(isSupplierCategory('starter'), false);
+  });
+});
+
+describe('supplier quote and purchase statuses', () => {
   it('cubre el ciclo comercial acordado', () => {
     assert.deepEqual([...SUPPLIER_QUOTE_STATUSES], [
       'recibido',
@@ -20,6 +42,7 @@ describe('supplier quote statuses', () => {
       'caducado',
     ]);
     assert.equal(SUPPLIER_QUOTE_STATUS_LABELS.en_revision, 'En revisión');
+    assert.ok(SUPPLIER_PO_STATUSES.includes('facturado'));
     assert.equal(SUPPLIER_DOCS_BUCKET, 'supplier-docs');
   });
 });

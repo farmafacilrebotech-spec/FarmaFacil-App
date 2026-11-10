@@ -16,14 +16,19 @@ import {
 import type { KioskPurchaseDocumentMeta } from '@/lib/kiosk-inventory/purchase-types';
 import {
   compareMaterialOffers,
+  listPurchaseDocuments,
+  listQuoteDocuments,
   listSupplierActivity,
   listSupplierContacts,
+  listSupplierPurchaseOrders,
   listSupplierQuotes,
   listSuppliers,
 } from '@/lib/suppliers/queries';
 import type {
   SupplierActivityRow,
   SupplierContactRow,
+  SupplierPurchaseDocumentRow,
+  SupplierQuoteDocumentRow,
 } from '@/lib/suppliers/types';
 
 export const dynamic = 'force-dynamic';
@@ -42,6 +47,7 @@ export default async function ProveedoresPage({
     suppliersRes,
     quotesRes,
     purchasesRes,
+    generalPurchasesRes,
     canWrite,
     canPurchasingWrite,
     canReceive,
@@ -59,6 +65,7 @@ export default async function ProveedoresPage({
     }),
     listSupplierQuotes(),
     listKioskPurchaseOrders(),
+    listSupplierPurchaseOrders(),
     hasSuppliersWrite(),
     hasKioskPurchasingWrite(),
     hasKioskInventoryWrite(),
@@ -69,19 +76,35 @@ export default async function ProveedoresPage({
   ]);
 
   const suppliers = suppliersRes.ok ? suppliersRes.suppliers : [];
+  const quotes = quotesRes.ok ? quotesRes.quotes : [];
+  const generalPurchases = generalPurchasesRes.ok
+    ? generalPurchasesRes.orders
+    : [];
+
   const contactsBySupplier: Record<string, SupplierContactRow[]> = {};
   const activityBySupplier: Record<string, SupplierActivityRow[]> = {};
+  const quoteDocumentsById: Record<string, SupplierQuoteDocumentRow[]> = {};
+  const purchaseDocumentsById: Record<string, SupplierPurchaseDocumentRow[]> =
+    {};
 
-  await Promise.all(
-    suppliers.slice(0, 30).map(async (s) => {
+  await Promise.all([
+    ...suppliers.slice(0, 30).map(async (s) => {
       const [c, a] = await Promise.all([
         listSupplierContacts(s.id),
         listSupplierActivity(s.id, 20),
       ]);
       if (c.ok) contactsBySupplier[s.id] = c.contacts;
       if (a.ok) activityBySupplier[s.id] = a.rows;
-    })
-  );
+    }),
+    ...quotes.slice(0, 40).map(async (q) => {
+      const docs = await listQuoteDocuments(q.id);
+      if (docs.ok) quoteDocumentsById[q.id] = docs.documents;
+    }),
+    ...generalPurchases.slice(0, 40).map(async (o) => {
+      const docs = await listPurchaseDocuments(o.id);
+      if (docs.ok) purchaseDocumentsById[o.id] = docs.documents;
+    }),
+  ]);
 
   const documentsByOrderId: Record<string, KioskPurchaseDocumentMeta[]> = {};
   if (purchasesRes.ok && canSeeFinancial) {
@@ -97,11 +120,14 @@ export default async function ProveedoresPage({
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Proveedores"
-        description="Directorio FarmaFácil, presupuestos de materiales y compras. Solo SuperAdmin autorizado. Documentos en Storage privado."
+        description="Directorio FarmaFácil, presupuestos, pedidos generales y compras de kioskos. Solo SuperAdmin autorizado. Documentos en Storage privado."
       />
       <SuppliersHub
         suppliers={suppliers}
-        quotes={quotesRes.ok ? quotesRes.quotes : []}
+        quotes={quotes}
+        quoteDocumentsById={quoteDocumentsById}
+        generalPurchases={generalPurchases}
+        purchaseDocumentsById={purchaseDocumentsById}
         contactsBySupplier={contactsBySupplier}
         activityBySupplier={activityBySupplier}
         compareOffers={compareRes.ok ? compareRes.offers : []}
@@ -114,6 +140,9 @@ export default async function ProveedoresPage({
         canSeeFinancial={canSeeFinancial}
         loadError={suppliersRes.ok ? null : suppliersRes.error}
         purchasesError={purchasesRes.ok ? null : purchasesRes.error}
+        generalPurchasesError={
+          generalPurchasesRes.ok ? null : generalPurchasesRes.error
+        }
       />
     </div>
   );

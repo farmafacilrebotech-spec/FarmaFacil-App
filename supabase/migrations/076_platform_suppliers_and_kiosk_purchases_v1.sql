@@ -49,7 +49,7 @@ CREATE TABLE IF NOT EXISTS public.platform_suppliers (
   legal_name text NOT NULL,
   trade_name text,
   tax_id text,
-  category text,
+  category text NOT NULL DEFAULT 'otros',
   email text,
   phone text,
   website text,
@@ -65,6 +65,18 @@ CREATE TABLE IF NOT EXISTS public.platform_suppliers (
   CONSTRAINT platform_suppliers_name_chk CHECK (length(btrim(legal_name)) > 0),
   CONSTRAINT platform_suppliers_status_chk CHECK (
     status IN ('active', 'archived')
+  ),
+  CONSTRAINT platform_suppliers_category_chk CHECK (
+    category IN (
+      'merchandising',
+      'papeleria',
+      'imprentas',
+      'marketing',
+      'kioskos',
+      'tecnologia',
+      'servicios',
+      'otros'
+    )
   )
 );
 
@@ -253,6 +265,151 @@ GRANT SELECT, INSERT ON public.platform_supplier_activity TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.platform_supplier_quotes TO authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.platform_supplier_quote_lines TO authenticated;
 GRANT SELECT, INSERT, UPDATE ON public.platform_supplier_quote_documents TO authenticated;
+
+-- -----------------------------------------------------------------------------
+-- Pedidos generales de materiales/servicios (NO sustituye kiosk_purchase_orders)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.platform_supplier_purchase_orders (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  supplier_id uuid NOT NULL
+    REFERENCES public.platform_suppliers (id) ON DELETE RESTRICT,
+  quote_id uuid
+    REFERENCES public.platform_supplier_quotes (id) ON DELETE SET NULL,
+  category text NOT NULL DEFAULT 'otros',
+  title text NOT NULL,
+  order_number text,
+  status text NOT NULL DEFAULT 'borrador',
+  ordered_at date,
+  expected_delivery_at date,
+  actual_delivery_at date,
+  currency text NOT NULL DEFAULT 'EUR',
+  subtotal_cents integer,
+  tax_cents integer,
+  shipping_cents integer,
+  total_cents integer,
+  notes text,
+  created_by uuid REFERENCES public.profiles (id) ON DELETE SET NULL,
+  updated_by uuid REFERENCES public.profiles (id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+  updated_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+  CONSTRAINT platform_spo_title_chk CHECK (length(btrim(title)) > 0),
+  CONSTRAINT platform_spo_category_chk CHECK (
+    category IN (
+      'merchandising',
+      'papeleria',
+      'imprentas',
+      'marketing',
+      'kioskos',
+      'tecnologia',
+      'servicios',
+      'otros'
+    )
+  ),
+  CONSTRAINT platform_spo_status_chk CHECK (
+    status IN (
+      'borrador',
+      'pedido',
+      'parcial',
+      'recibido',
+      'facturado',
+      'cancelado'
+    )
+  ),
+  CONSTRAINT platform_spo_money_chk CHECK (
+    (subtotal_cents IS NULL OR subtotal_cents >= 0)
+    AND (tax_cents IS NULL OR tax_cents >= 0)
+    AND (shipping_cents IS NULL OR shipping_cents >= 0)
+    AND (total_cents IS NULL OR total_cents >= 0)
+  )
+);
+
+CREATE INDEX IF NOT EXISTS platform_spo_supplier_idx
+  ON public.platform_supplier_purchase_orders (supplier_id, status, ordered_at DESC NULLS LAST);
+
+CREATE INDEX IF NOT EXISTS platform_spo_category_idx
+  ON public.platform_supplier_purchase_orders (category, status);
+
+CREATE TABLE IF NOT EXISTS public.platform_supplier_purchase_lines (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  purchase_order_id uuid NOT NULL
+    REFERENCES public.platform_supplier_purchase_orders (id) ON DELETE CASCADE,
+  description text NOT NULL,
+  quantity numeric(12, 3) NOT NULL DEFAULT 1,
+  unit text,
+  unit_price_cents integer NOT NULL DEFAULT 0,
+  vat_bps integer NOT NULL DEFAULT 2100,
+  line_total_cents integer,
+  sort_order integer NOT NULL DEFAULT 0,
+  CONSTRAINT platform_spo_lines_desc_chk CHECK (length(btrim(description)) > 0),
+  CONSTRAINT platform_spo_lines_qty_chk CHECK (quantity > 0),
+  CONSTRAINT platform_spo_lines_price_chk CHECK (unit_price_cents >= 0),
+  CONSTRAINT platform_spo_lines_vat_chk CHECK (vat_bps >= 0 AND vat_bps <= 10000)
+);
+
+CREATE INDEX IF NOT EXISTS platform_spo_lines_po_idx
+  ON public.platform_supplier_purchase_lines (purchase_order_id, sort_order);
+
+CREATE TABLE IF NOT EXISTS public.platform_supplier_purchase_documents (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  purchase_order_id uuid NOT NULL
+    REFERENCES public.platform_supplier_purchase_orders (id) ON DELETE CASCADE,
+  doc_type text NOT NULL,
+  storage_path text NOT NULL,
+  file_name text NOT NULL,
+  mime_type text,
+  byte_size integer,
+  uploaded_by uuid REFERENCES public.profiles (id) ON DELETE SET NULL,
+  created_at timestamptz NOT NULL DEFAULT pg_catalog.now(),
+  CONSTRAINT platform_spo_docs_type_chk CHECK (
+    doc_type IN ('quote', 'order_confirmation', 'invoice', 'receipt', 'other')
+  ),
+  CONSTRAINT platform_spo_docs_path_chk CHECK (length(btrim(storage_path)) > 0),
+  CONSTRAINT platform_spo_docs_name_chk CHECK (length(btrim(file_name)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS platform_spo_docs_po_idx
+  ON public.platform_supplier_purchase_documents (purchase_order_id, doc_type);
+
+ALTER TABLE public.platform_supplier_purchase_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_supplier_purchase_lines ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_supplier_purchase_documents ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS platform_spo_select ON public.platform_supplier_purchase_orders;
+CREATE POLICY platform_spo_select ON public.platform_supplier_purchase_orders
+  FOR SELECT TO authenticated
+  USING (public.ff_has_platform_permission('platform.suppliers.read'));
+
+DROP POLICY IF EXISTS platform_spo_write ON public.platform_supplier_purchase_orders;
+CREATE POLICY platform_spo_write ON public.platform_supplier_purchase_orders
+  FOR ALL TO authenticated
+  USING (public.ff_has_platform_permission('platform.suppliers.write'))
+  WITH CHECK (public.ff_has_platform_permission('platform.suppliers.write'));
+
+DROP POLICY IF EXISTS platform_spo_lines_select ON public.platform_supplier_purchase_lines;
+CREATE POLICY platform_spo_lines_select ON public.platform_supplier_purchase_lines
+  FOR SELECT TO authenticated
+  USING (public.ff_has_platform_permission('platform.suppliers.read'));
+
+DROP POLICY IF EXISTS platform_spo_lines_write ON public.platform_supplier_purchase_lines;
+CREATE POLICY platform_spo_lines_write ON public.platform_supplier_purchase_lines
+  FOR ALL TO authenticated
+  USING (public.ff_has_platform_permission('platform.suppliers.write'))
+  WITH CHECK (public.ff_has_platform_permission('platform.suppliers.write'));
+
+DROP POLICY IF EXISTS platform_spo_docs_select ON public.platform_supplier_purchase_documents;
+CREATE POLICY platform_spo_docs_select ON public.platform_supplier_purchase_documents
+  FOR SELECT TO authenticated
+  USING (public.ff_has_platform_permission('platform.suppliers.read'));
+
+DROP POLICY IF EXISTS platform_spo_docs_write ON public.platform_supplier_purchase_documents;
+CREATE POLICY platform_spo_docs_write ON public.platform_supplier_purchase_documents
+  FOR ALL TO authenticated
+  USING (public.ff_has_platform_permission('platform.suppliers.write'))
+  WITH CHECK (public.ff_has_platform_permission('platform.suppliers.write'));
+
+GRANT SELECT, INSERT, UPDATE ON public.platform_supplier_purchase_orders TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.platform_supplier_purchase_lines TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.platform_supplier_purchase_documents TO authenticated;
 
 -- Bucket privado documentos de presupuestos de proveedor
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

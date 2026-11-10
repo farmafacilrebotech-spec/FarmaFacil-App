@@ -9,6 +9,9 @@ Orden sugerido (staging / local):
 3. `DROP FUNCTION` RPCs `ff_kiosk_purchase_*` / `ff_kiosk_po_*` creadas en 076.
 4. Quitar `kiosk_assets.purchase_order_id` si se añadió solo aquí.
 5. `DROP TABLE` en orden:
+   - `platform_supplier_purchase_documents`
+   - `platform_supplier_purchase_lines`
+   - `platform_supplier_purchase_orders`
    - `platform_supplier_quote_documents`
    - `platform_supplier_quote_lines`
    - `platform_supplier_quotes`
