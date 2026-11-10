@@ -26,6 +26,16 @@ import {
   vatPercentToBps,
   withDefaultPoNoteOnCreate,
 } from '@/lib/suppliers/purchase-math';
+import {
+  cheapestFullQuoteId,
+  cheapestLineOfferId,
+  collectFullQuoteOffers,
+  collectLineOffers,
+  equivalenceWarningsForLines,
+  equivalenceWarningsForQuotes,
+  filterLineOffersByMaterialKey,
+  type QuoteCompareMode,
+} from '@/lib/suppliers/quote-compare';
 import { PurchasesPanel } from '@/components/kiosk-inventory/purchases-panel';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -51,7 +61,6 @@ import {
   SUPPLIER_PO_STATUS_LABELS,
   SUPPLIER_QUOTE_STATUS_LABELS,
   SUPPLIER_QUOTE_UI_STATUSES,
-  type MaterialOfferCompareRow,
   type SupplierActivityRow,
   type SupplierCategory,
   type SupplierContactRow,
@@ -152,7 +161,7 @@ export function SuppliersHub({
   purchaseLinesById,
   contactsBySupplier,
   activityBySupplier,
-  compareOffers,
+  compareOffers: _compareOffers,
   compareKey,
   purchases,
   documentsByOrderId,
@@ -177,7 +186,7 @@ export function SuppliersHub({
   purchaseLinesById: Record<string, SupplierPurchaseLineRow[]>;
   contactsBySupplier: Record<string, SupplierContactRow[]>;
   activityBySupplier: Record<string, SupplierActivityRow[]>;
-  compareOffers: MaterialOfferCompareRow[];
+  compareOffers?: unknown[];
   compareKey: string;
   purchases: Array<KioskPurchaseOrderOperational | KioskPurchaseOrderFinancial>;
   documentsByOrderId: Record<string, KioskPurchaseDocumentMeta[]>;
@@ -267,7 +276,17 @@ export function SuppliersHub({
   const [quoteLinesDraft, setQuoteLinesDraft] = React.useState<QuoteLineDraft[]>(
     [emptyQuoteLine()]
   );
-  const [materialCompare, setMaterialCompare] = React.useState(compareKey || '');
+  const [compareMode, setCompareMode] =
+    React.useState<QuoteCompareMode>('lines');
+  const [compareSelectedIds, setCompareSelectedIds] = React.useState<string[]>(
+    () => (compareKey ? quotes.map((q) => q.id).slice(0, 8) : [])
+  );
+  const [compareMaterialFilter, setCompareMaterialFilter] = React.useState(
+    compareKey || ''
+  );
+  const [acceptQuoteConfirmId, setAcceptQuoteConfirmId] = React.useState<
+    string | null
+  >(null);
 
   const [showPoForm, setShowPoForm] = React.useState(Boolean(initialPoId));
   const [editingPurchaseId, setEditingPurchaseId] = React.useState<
@@ -336,6 +355,65 @@ export function SuppliersHub({
           (poMoney.subtotalCents + poMoney.shippingNetCents) / poTotalQty
         )
       : null;
+
+  const compareLineOffersRaw = collectLineOffers(
+    quotes,
+    quoteLinesById,
+    compareSelectedIds
+  );
+  const compareLineOffers = filterLineOffersByMaterialKey(
+    compareLineOffersRaw,
+    compareMaterialFilter
+  );
+  const compareFullOffers = collectFullQuoteOffers(
+    quotes,
+    quoteLinesById,
+    compareSelectedIds
+  );
+  const compareLineCheapestId = cheapestLineOfferId(compareLineOffers);
+  const compareFullCheapestId = cheapestFullQuoteId(compareFullOffers);
+  const compareWarnings =
+    compareMode === 'lines'
+      ? equivalenceWarningsForLines(compareLineOffers)
+      : equivalenceWarningsForQuotes(compareFullOffers);
+
+  function toggleCompareQuote(quoteId: string) {
+    setCompareSelectedIds((prev) =>
+      prev.includes(quoteId)
+        ? prev.filter((id) => id !== quoteId)
+        : [...prev, quoteId]
+    );
+  }
+
+  async function acceptQuoteFromCompare(quoteId: string) {
+    const q = quotes.find((x) => x.id === quoteId);
+    if (!q) {
+      toast.error('Presupuesto no encontrado');
+      return;
+    }
+    if (!canApprove) {
+      toast.error('Sin permiso para aceptar presupuestos');
+      return;
+    }
+    const res = await upsertSupplierQuoteAction({
+      id: q.id,
+      supplierId: q.supplierId,
+      title: q.title,
+      quoteNumber: q.quoteNumber,
+      status: 'aprobado',
+      shippingCents: q.shippingCents,
+      notes: q.notes,
+    });
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    toast.success(
+      'Oferta aceptada. No se ha generado pedido automáticamente.'
+    );
+    setAcceptQuoteConfirmId(null);
+    router.refresh();
+  }
 
   function applyQuoteToForm(
     quote: SupplierQuoteRow,
@@ -663,7 +741,7 @@ export function SuppliersHub({
             ['presupuestos', 'Presupuestos'],
             ['pedidos', 'Pedidos de compra'],
             ['compras-kioskos', 'Compras de kioskos'],
-            ['comparar', 'Comparar materiales'],
+            ['comparar', 'Comparar presupuestos'],
           ] as const
         ).map(([id, label]) => (
           <Button
@@ -671,7 +749,14 @@ export function SuppliersHub({
             type="button"
             size="sm"
             variant={tab === id ? 'default' : 'outline'}
-            onClick={() => setTab(id)}
+            onClick={() => {
+              setTab(id);
+              syncUrl({
+                tab: id,
+                quote: id === 'presupuestos' ? selectedQuoteId : null,
+                po: id === 'pedidos' ? selectedPurchaseId : null,
+              });
+            }}
           >
             {label}
           </Button>
@@ -2144,71 +2229,410 @@ export function SuppliersHub({
       ) : null}
 
       {tab === 'comparar' ? (
-        <div className="space-y-4">
-          <form
-            className="flex flex-col gap-2 sm:flex-row sm:items-end"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const params = new URLSearchParams(window.location.search);
-              const key = materialCompare.trim().toLowerCase();
-              if (key) params.set('material', key);
-              else params.delete('material');
-              router.push(`/proveedores?${params.toString()}`);
-            }}
-          >
-            <div className="flex-1 space-y-1.5">
-              <Label htmlFor="mat-key">Clave de material</Label>
-              <Input
-                id="mat-key"
-                value={materialCompare}
-                onChange={(e) => setMaterialCompare(e.target.value)}
-                placeholder="Sin valor por defecto"
-              />
+        <div className="space-y-6">
+          <div>
+            <h2 className="text-base font-semibold">Comparar presupuestos</h2>
+            <p className="text-sm text-muted-foreground">
+              Compara ofertas de proveedores para productos, materiales, hardware
+              y servicios. No incluye presupuestos comerciales enviados a
+              farmacias. Aceptar una oferta no genera pedido automáticamente.
+            </p>
+          </div>
+
+          <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+            <div className="space-y-3 rounded-xl border border-border bg-card p-4">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold">Presupuestos</h3>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    setCompareSelectedIds(
+                      compareSelectedIds.length === quotes.length
+                        ? []
+                        : quotes.map((q) => q.id)
+                    )
+                  }
+                >
+                  {compareSelectedIds.length === quotes.length
+                    ? 'Quitar todos'
+                    : 'Seleccionar todos'}
+                </Button>
+              </div>
+              {quotes.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hay presupuestos de proveedores.
+                </p>
+              ) : (
+                <ul className="max-h-[420px] space-y-2 overflow-y-auto text-sm">
+                  {quotes.map((q) => (
+                    <li key={q.id}>
+                      <label className="flex cursor-pointer items-start gap-2">
+                        <input
+                          type="checkbox"
+                          className="mt-1"
+                          checked={compareSelectedIds.includes(q.id)}
+                          onChange={() => toggleCompareQuote(q.id)}
+                        />
+                        <span>
+                          <span className="font-medium">
+                            {q.supplierName ?? 'Proveedor'}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {q.title} ·{' '}
+                            {SUPPLIER_QUOTE_STATUS_LABELS[q.status]}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
-            <Button type="submit">Comparar</Button>
-          </form>
-          <div className="overflow-x-auto rounded-xl border border-border bg-card">
-            <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2">Proveedor</th>
-                  <th className="px-3 py-2">Presupuesto</th>
-                  <th className="px-3 py-2">Precio u.</th>
-                  <th className="px-3 py-2">Plazo</th>
-                  <th className="px-3 py-2">Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                {compareOffers.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="px-3 py-6 text-muted-foreground">
-                      {compareKey
-                        ? `No hay ofertas para «${compareKey}».`
-                        : 'Indica una clave de material para comparar.'}
-                    </td>
-                  </tr>
-                ) : (
-                  compareOffers.map((o) => (
-                    <tr
-                      key={`${o.quoteId}-${o.supplierId}-${o.unitPriceCents}`}
-                      className="border-b border-border/70"
+
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="space-y-1.5">
+                  <Label>Modo</Label>
+                  <Select
+                    value={compareMode}
+                    onValueChange={(v) =>
+                      setCompareMode(v as QuoteCompareMode)
+                    }
+                  >
+                    <SelectTrigger className="w-[220px]">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="lines">
+                        Líneas equivalentes
+                      </SelectItem>
+                      <SelectItem value="quotes">
+                        Presupuestos completos
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="min-w-[200px] flex-1 space-y-1.5">
+                  <Label>
+                    Filtro opcional (clave material / descripción)
+                  </Label>
+                  <Input
+                    value={compareMaterialFilter}
+                    onChange={(e) =>
+                      setCompareMaterialFilter(e.target.value)
+                    }
+                    placeholder="Compatible con claves ya guardadas"
+                  />
+                </div>
+              </div>
+
+              {compareWarnings.length > 0 ? (
+                <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-50">
+                  <p className="font-medium">Atención: ofertas no equivalentes</p>
+                  <ul className="mt-1 list-disc pl-5 text-xs">
+                    {compareWarnings.map((w) => (
+                      <li key={`${w.code}-${w.groupKey ?? ''}`}>
+                        {w.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {compareMode === 'lines' ? (
+                <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                  <table className="w-full min-w-[1100px] text-left text-sm">
+                    <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2">Grupo</th>
+                        <th className="px-3 py-2">Proveedor</th>
+                        <th className="px-3 py-2">Descripción</th>
+                        <th className="px-3 py-2">Cant.</th>
+                        <th className="px-3 py-2">P. unit. s/IVA</th>
+                        <th className="px-3 py-2">Impuestos</th>
+                        <th className="px-3 py-2">Transporte</th>
+                        <th className="px-3 py-2">Coste u. real</th>
+                        <th className="px-3 py-2">Plazo</th>
+                        <th className="px-3 py-2">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compareSelectedIds.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={10}
+                            className="px-3 py-6 text-muted-foreground"
+                          >
+                            Selecciona uno o más presupuestos para comparar.
+                          </td>
+                        </tr>
+                      ) : compareLineOffers.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={10}
+                            className="px-3 py-6 text-muted-foreground"
+                          >
+                            Sin líneas que coincidan con el filtro o la
+                            selección.
+                          </td>
+                        </tr>
+                      ) : (
+                        compareLineOffers.map((o) => {
+                          const rowId = `${o.quoteId}:${o.lineId}`;
+                          const isBest = rowId === compareLineCheapestId;
+                          return (
+                            <tr
+                              key={rowId}
+                              className={`border-b border-border/70 ${
+                                isBest ? 'bg-emerald-500/10' : ''
+                              }`}
+                            >
+                              <td className="px-3 py-2 text-xs">
+                                {o.groupLabel}
+                                {isBest ? (
+                                  <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                    Más económica
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2">{o.supplierName}</td>
+                              <td className="px-3 py-2">
+                                <div>{o.description || '—'}</div>
+                                <div className="text-xs text-muted-foreground">
+                                  {o.quoteTitle}
+                                  {o.materialKey
+                                    ? ` · ${o.materialKey}`
+                                    : ''}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2">{o.quantity}</td>
+                              <td className="px-3 py-2">
+                                {formatCents(o.unitPriceCents)}
+                              </td>
+                              <td className="px-3 py-2">
+                                {formatCents(o.taxCents)}
+                                <span className="block text-[10px] text-muted-foreground">
+                                  {o.vatBps / 100}%
+                                </span>
+                              </td>
+                              <td className="px-3 py-2">
+                                {formatCents(o.shippingCents)}
+                                <span className="block text-[10px] text-muted-foreground">
+                                  cuota {formatCents(o.shippingShareCents)}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 font-medium">
+                                {formatCents(o.unitCostExVatWithShippingCents)}
+                              </td>
+                              <td className="px-3 py-2">
+                                {o.leadDays == null
+                                  ? '—'
+                                  : `${o.leadDays} d`}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-col gap-1">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => void openQuoteById(o.quoteId)}
+                                  >
+                                    Abrir
+                                  </Button>
+                                  {(quoteDocumentsById[o.quoteId] ?? []).map(
+                                    (d) => (
+                                      <button
+                                        key={d.id}
+                                        type="button"
+                                        className="text-left text-xs text-primary underline-offset-2 hover:underline"
+                                        onClick={() =>
+                                          openSigned(d.storagePath)
+                                        }
+                                      >
+                                        {d.fileName}
+                                      </button>
+                                    )
+                                  )}
+                                  {canApprove &&
+                                  o.quoteStatus !== 'aprobado' &&
+                                  o.quoteStatus !== 'archivado' ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        setAcceptQuoteConfirmId(o.quoteId)
+                                      }
+                                    >
+                                      Aceptar oferta
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-border bg-card">
+                  <table className="w-full min-w-[960px] text-left text-sm">
+                    <thead className="border-b border-border bg-muted/40 text-xs uppercase text-muted-foreground">
+                      <tr>
+                        <th className="px-3 py-2">Proveedor</th>
+                        <th className="px-3 py-2">Presupuesto</th>
+                        <th className="px-3 py-2">Líneas</th>
+                        <th className="px-3 py-2">Base s/IVA</th>
+                        <th className="px-3 py-2">Impuestos</th>
+                        <th className="px-3 py-2">Transporte</th>
+                        <th className="px-3 py-2">Total comparable</th>
+                        <th className="px-3 py-2">Coste u. real</th>
+                        <th className="px-3 py-2">Plazo</th>
+                        <th className="px-3 py-2">Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {compareFullOffers.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={10}
+                            className="px-3 py-6 text-muted-foreground"
+                          >
+                            Selecciona presupuestos para comparar.
+                          </td>
+                        </tr>
+                      ) : (
+                        compareFullOffers.map((o) => {
+                          const isBest = o.quoteId === compareFullCheapestId;
+                          return (
+                            <tr
+                              key={o.quoteId}
+                              className={`border-b border-border/70 ${
+                                isBest ? 'bg-emerald-500/10' : ''
+                              }`}
+                            >
+                              <td className="px-3 py-2">
+                                {o.supplierName}
+                                {isBest ? (
+                                  <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                    Más económica
+                                  </span>
+                                ) : null}
+                              </td>
+                              <td className="px-3 py-2">
+                                {o.quoteTitle}
+                                <span className="block text-xs text-muted-foreground">
+                                  {SUPPLIER_QUOTE_STATUS_LABELS[o.quoteStatus]}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2">{o.lineCount}</td>
+                              <td className="px-3 py-2">
+                                {formatCents(o.subtotalCents)}
+                              </td>
+                              <td className="px-3 py-2">
+                                {formatCents(o.taxCents)}
+                              </td>
+                              <td className="px-3 py-2">
+                                {formatCents(o.shippingCents)}
+                              </td>
+                              <td className="px-3 py-2 font-medium">
+                                {formatCents(o.comparableTotalExVatCents)}
+                              </td>
+                              <td className="px-3 py-2">
+                                {formatCents(o.unitCostExVatWithShippingCents)}
+                              </td>
+                              <td className="px-3 py-2">
+                                {o.leadDaysMin == null
+                                  ? '—'
+                                  : o.leadDaysMin === o.leadDaysMax
+                                    ? `${o.leadDaysMin} d`
+                                    : `${o.leadDaysMin}–${o.leadDaysMax} d`}
+                              </td>
+                              <td className="px-3 py-2">
+                                <div className="flex flex-col gap-1">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => void openQuoteById(o.quoteId)}
+                                  >
+                                    Abrir
+                                  </Button>
+                                  {(quoteDocumentsById[o.quoteId] ?? []).map(
+                                    (d) => (
+                                      <button
+                                        key={d.id}
+                                        type="button"
+                                        className="text-left text-xs text-primary underline-offset-2 hover:underline"
+                                        onClick={() =>
+                                          openSigned(d.storagePath)
+                                        }
+                                      >
+                                        {d.fileName}
+                                      </button>
+                                    )
+                                  )}
+                                  {canApprove &&
+                                  o.quoteStatus !== 'aprobado' &&
+                                  o.quoteStatus !== 'archivado' ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="secondary"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        setAcceptQuoteConfirmId(o.quoteId)
+                                      }
+                                    >
+                                      Aceptar oferta
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {acceptQuoteConfirmId ? (
+                <div className="space-y-3 rounded-lg border border-border bg-background p-3">
+                  <p className="text-sm">
+                    ¿Aceptar esta oferta? Se marcará el presupuesto como
+                    Aceptado. No se creará ningún pedido de compra.
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          await acceptQuoteFromCompare(acceptQuoteConfirmId);
+                        })
+                      }
                     >
-                      <td className="px-3 py-2">{o.supplierName}</td>
-                      <td className="px-3 py-2">{o.quoteTitle}</td>
-                      <td className="px-3 py-2">
-                        {formatCents(o.unitPriceCents)}
-                      </td>
-                      <td className="px-3 py-2">
-                        {o.leadDays == null ? '—' : `${o.leadDays} d`}
-                      </td>
-                      <td className="px-3 py-2">
-                        {SUPPLIER_QUOTE_STATUS_LABELS[o.quoteStatus]}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                      Sí, aceptar oferta
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={busy}
+                      onClick={() => setAcceptQuoteConfirmId(null)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}

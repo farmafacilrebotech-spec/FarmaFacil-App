@@ -147,7 +147,7 @@ export default async function ProveedoresPage({
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="Proveedores"
-        description="Directorio FarmaFácil, presupuestos, pedidos generales y compras de kioskos. Solo SuperAdmin autorizado. Documentos en Storage privado."
+        description="Directorio FarmaFácil, presupuestos de proveedores, pedidos de compra, kioskos y comparador de ofertas. Solo SuperAdmin. No incluye presupuestos comerciales a farmacias."
       />
       <SuppliersHub
         suppliers={suppliers}
