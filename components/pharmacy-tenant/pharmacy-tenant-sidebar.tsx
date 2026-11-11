@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { ChevronsLeft, X } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
-import { tenantHref, tenantNavItems } from '@/lib/pharmacies/tenant-nav';
+import { tenantHref, tenantNavItemsForRole } from '@/lib/pharmacies/tenant-nav';
 import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { initials } from '@/lib/format';
@@ -17,6 +17,7 @@ export type TenantShellUser = {
   name: string;
   email: string;
   roleLabel: string;
+  roleKey: string;
 };
 
 export type TenantShellPharmacy = {
@@ -46,6 +47,7 @@ export function PharmacyTenantSidebar({
   const pathname = usePathname();
   const userInitials = initials(user.name || user.email);
   const pharmacyId = pharmacy.id;
+  const navItems = tenantNavItemsForRole(user.roleKey);
 
   return (
     <>
@@ -107,7 +109,7 @@ export function PharmacyTenantSidebar({
 
         <nav className="flex-1 overflow-y-auto px-3 py-2">
           <ul className="space-y-1">
-            {tenantNavItems.map((item) => {
+            {navItems.map((item) => {
               const href = tenantHref(pharmacyId, item.segment);
               const active =
                 pathname === href || pathname.startsWith(`${href}/`);

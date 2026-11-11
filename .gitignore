@@ -55,3 +55,4 @@ android-kiosk/*.aab
 android-kiosk/.idea/
 android-kiosk/captures/
 /.next-perf-prod/
+public/_review_clients_qr/

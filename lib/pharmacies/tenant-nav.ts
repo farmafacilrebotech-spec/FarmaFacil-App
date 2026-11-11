@@ -8,8 +8,11 @@ import {
   Settings,
   UserCog,
   MonitorSmartphone,
+  QrCode,
   type LucideIcon,
 } from 'lucide-react';
+
+import { isTenantNavSegmentVisible } from '@/lib/pharmacies/pharmacy-clients-roles';
 
 export type TenantNavItem = {
   label: string;
@@ -42,7 +45,13 @@ export const tenantNavItems: TenantNavItem[] = [
     label: 'Clientes',
     segment: 'clientes',
     icon: Users,
-    description: 'Base de clientes',
+    description: 'Clientes con pedidos vinculados',
+  },
+  {
+    label: 'QR de mi farmacia',
+    segment: 'qr',
+    icon: QrCode,
+    description: 'Código público y cartel para imprimir',
   },
   {
     label: 'Promociones',
@@ -75,6 +84,12 @@ export const tenantNavItems: TenantNavItem[] = [
     description: 'Ajustes de la farmacia',
   },
 ];
+
+export function tenantNavItemsForRole(roleKey: string): TenantNavItem[] {
+  return tenantNavItems.filter((item) =>
+    isTenantNavSegmentVisible(item.segment, roleKey)
+  );
+}
 
 export function tenantHref(pharmacyId: string, segment: string): string {
   return `/f/${pharmacyId}/${segment}`;

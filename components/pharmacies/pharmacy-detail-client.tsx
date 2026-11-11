@@ -54,6 +54,7 @@ import {
   toneForPharmacyStatus,
 } from '@/components/shared/status-badge';
 import { PharmacyLogo } from '@/components/brand';
+import { PharmacyLogoManager } from '@/components/pharmacies/pharmacy-logo-manager';
 import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
 import { PharmacySubscriptionPanel } from '@/components/pharmacies/pharmacy-subscription-panel';
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
@@ -75,6 +76,7 @@ import type {
 } from '@/lib/kiosk/assistant/entitlement-status';
 import type { PharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 import type { PharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
+import { pharmacyPrintPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import type { PharmacyOrderSummary } from '@/lib/orders/types';
 import type { SaCustomerRow } from '@/lib/platform/sa-customers';
 
@@ -472,6 +474,7 @@ export function PharmacyDetailClient({
           <div className="flex items-start gap-4">
             <PharmacyLogo
               name={pharmacy.name}
+              logoUrl={pharmacy.branding?.logo_url}
               logoColor={color}
               size={64}
               rounded="2xl"
@@ -764,6 +767,7 @@ export function PharmacyDetailClient({
                 <div className="rounded-xl border border-border bg-card p-6 text-center">
                   <PharmacyLogo
                     name={pharmacy.name}
+                    logoUrl={pharmacy.branding?.logo_url}
                     logoColor={color}
                     size={80}
                     rounded="2xl"
@@ -855,6 +859,31 @@ export function PharmacyDetailClient({
                 </Button>
               ) : null}
             </div>
+
+            <PharmacyLogoManager
+              pharmacyId={pharmacy.id}
+              pharmacyName={pharmacy.name}
+              logoUrl={pharmacy.branding?.logo_url ?? null}
+              logoColor={color}
+              canManage
+              onLogoChange={(logoUrl) =>
+                setPharmacy((prev) => ({
+                  ...prev,
+                  branding: {
+                    pharmacy_id: prev.id,
+                    logo_url: logoUrl,
+                    primary_color: prev.branding?.primary_color ?? null,
+                    secondary_color: prev.branding?.secondary_color ?? null,
+                    accent_color: prev.branding?.accent_color ?? null,
+                    font_family: prev.branding?.font_family ?? null,
+                    border_radius: prev.branding?.border_radius ?? null,
+                    kiosk_wallpaper_url:
+                      prev.branding?.kiosk_wallpaper_url ?? null,
+                    welcome_message: prev.branding?.welcome_message ?? null,
+                  },
+                }))
+              }
+            />
 
             {editingPersonalization ? (
               <div className="rounded-xl border border-border bg-card p-5 shadow-soft sm:p-6">
@@ -1045,6 +1074,12 @@ export function PharmacyDetailClient({
                   </h3>
                   <div className="mt-4 space-y-3 text-sm">
                     <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Logo</span>
+                      <span className="font-medium text-foreground">
+                        {pharmacy.branding?.logo_url ? 'Configurado' : 'Sin logo'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
                       <span className="text-muted-foreground">
                         Color primario
                       </span>
@@ -1184,8 +1219,16 @@ export function PharmacyDetailClient({
         {activeTab === 'qr' && (
           <QrTab
             pharmacyName={pharmacy.name}
+            pharmacyLogoUrl={pharmacy.branding?.logo_url ?? null}
+            pharmacyPrimaryColor={pharmacy.branding?.primary_color ?? null}
             entrypoint={homeEntrypoint}
             loadError={homeEntrypointError}
+            publicUrlOverride={
+              homeEntrypoint?.publicId
+                ? pharmacyPrintPublicUrl(homeEntrypoint.publicId)
+                : null
+            }
+            showPdfPoster
           />
         )}
 
