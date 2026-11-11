@@ -24,6 +24,8 @@ import {
 import {
   buildPharmacyQrPosterPdf,
   downloadBlob,
+  isPharmacyQrPosterTemplateReady,
+  PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE,
 } from '@/lib/pharmacies/pharmacy-qr-poster';
 import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import { ScannableQr } from '@/components/kiosk/scannable-qr';
@@ -104,6 +106,10 @@ export function QrTab({
       );
       return;
     }
+    if (!isPharmacyQrPosterTemplateReady()) {
+      toast.error(PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE);
+      return;
+    }
     setBusy('pdf');
     try {
       const blob = await buildPharmacyQrPosterPdf({
@@ -116,8 +122,12 @@ export function QrTab({
         'farmacia';
       downloadBlob(`farmafacil-cartel-qr-${safe}.pdf`, blob);
       toast.success('Cartel PDF descargado');
-    } catch {
-      toast.error('No se ha podido generar el cartel PDF');
+    } catch (err) {
+      const msg =
+        err instanceof Error && err.message.trim()
+          ? err.message
+          : 'No se ha podido generar el cartel PDF';
+      toast.error(msg);
     } finally {
       setBusy(null);
     }
@@ -238,6 +248,12 @@ export function QrTab({
               </Button>
             ) : null}
           </div>
+          {showPdfPoster && !isPharmacyQrPosterTemplateReady() ? (
+            <p className="text-xs text-muted-foreground">
+              El cartel PDF usará la plantilla Canva cuando esté configurada.
+              PNG y SVG del QR ya están disponibles.
+            </p>
+          ) : null}
           <p className="flex items-start gap-2 text-xs text-muted-foreground">
             <Download className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             Ideal para pegatinas, escaparate e impresión. El contenido del QR no

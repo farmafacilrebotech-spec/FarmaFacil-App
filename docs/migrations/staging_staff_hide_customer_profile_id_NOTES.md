@@ -17,3 +17,7 @@ Con `orders.view`, STAFF puede `SELECT` todas las columnas de `pharmacy_orders`,
 3. App Clientes consume las RPC (fallback a SELECT directo si faltan).
 
 Pedidos de STAFF no seleccionan `customer_profile_id` → no se rompen.
+
+## Cierre del bloque
+Ver resumen funcional + seguridad + estado del cartel Canva en
+`docs/pharmacy-clients-and-qr.md`.
