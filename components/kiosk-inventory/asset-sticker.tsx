@@ -8,9 +8,8 @@ import { ScannableQr } from '@/components/kiosk/scannable-qr';
 import { Button } from '@/components/ui/button';
 
 /**
- * Pegatina física: logo circular oficial + KSK + QR + serie.
- * B/N para impresión; sin color de estado del inventario.
- * El QR no autentica; la ficha sigue protegida por permisos.
+ * Pegatina física: mismo logo circular B/N de tickets (`ff_ticket_logo`)
+ * + KSK + QR + serie. Sin color de estado. No altera la impresión de tickets.
  */
 export function AssetSticker({
   assetCode,
@@ -31,24 +30,31 @@ export function AssetSticker({
       </div>
 
       <div
-        className="mx-auto flex w-[72mm] flex-col items-center gap-3 border border-black bg-white p-4 text-black print:w-[72mm] print:shadow-none"
+        className="mx-auto flex w-[72mm] flex-col items-center gap-3 border border-black bg-white p-4 text-black print:w-[72mm] print:border print:shadow-none"
         style={{ minHeight: '95mm' }}
       >
+        {/*
+          Recurso idéntico al drawable Android de tickets:
+          android-kiosk/.../drawable-nodpi/ff_ticket_logo.png
+        */}
         <span
-          className="inline-flex shrink-0 overflow-hidden rounded-full print:grayscale"
+          className="inline-flex shrink-0 overflow-hidden rounded-full"
           style={{ width: 56, height: 56 }}
         >
           <Image
-            src="/images/logos/farmafacil-logo-512.png"
+            src="/images/logos/ff_ticket_logo.png"
             alt="FarmaFácil"
             width={56}
             height={56}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
             priority
+            unoptimized
           />
         </span>
 
-        <p className="text-center text-3xl font-bold tracking-tight">{assetCode}</p>
+        <p className="text-center text-3xl font-bold tracking-tight text-black">
+          {assetCode}
+        </p>
 
         <ScannableQr value={qrUrl} size={168} label={`QR ${assetCode}`} />
 
@@ -58,7 +64,7 @@ export function AssetSticker({
             : 'Serie pendiente'}
         </p>
 
-        <p className="text-center text-[9px] leading-snug text-neutral-600">
+        <p className="text-center text-[9px] leading-snug text-neutral-700">
           Inventario interno FarmaFácil. Escanear abre la ficha solo con acceso
           autorizado.
         </p>
