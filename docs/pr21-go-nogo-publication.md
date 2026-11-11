@@ -1,153 +1,253 @@
-# PR #21 — Informe de publicación (validación previa)
+# PR #21 — Informe de publicación (actualizado)
 
-Fecha: 2026-11-10 · Branch `feature/sa-proveedores-kiosk` · **Sin merge / sin deploy**.
+Fecha: **2026-11-11** · Branch `feature/sa-proveedores-kiosk` · PR [#21](https://github.com/farmafacilrebotech-spec/FarmaFacil-App/pull/21)  
+**Sin merge / sin deploy / sin migraciones en producción en esta sesión.**
+
+Reutiliza la auditoría previa (2026-11-10) y la amplía con 081–082, preflight prod live y smokes staging del 11-nov.
+
+---
 
 ## Veredicto
 
-### **NO-GO para publicar en producción ahora**
+### **GO CONDICIONAL — preparado para publicación tras autorización expresa**
 
-Motivos principales:
+Bloqueantes técnicos del informe anterior están cerrados a nivel de código + staging.  
+**Sigue prohibido** merge/deploy/aplicar SQL en prod hasta que Pilar autorice expresamente.
 
-1. **Producción no tiene 076–080** (módulo Proveedores / pedidos / numeración / extensión kiosk).
-2. Publicar el código de la PR sin esas migraciones rompería `/proveedores` y las RPCs nuevas.
-3. Hace falta un plan de despliegue **staging-green → backup prod → migraciones 076→080 → smoke** con ventana y autorización explícita.
+| Ámbito | Estado |
+|--------|--------|
+| Alcance funcional Proveedores + Inventario | **Completo** (staging green) |
+| Merge con `origin/main` | **Limpio** (0 detrás, 20 commits delante) |
+| Tests unitarios módulo | **43/43 PASS** |
+| Smoke staging proveedores | **ALL PASSED** |
+| Smoke staging inventario/exhibition | **OK** |
+| Migraciones prod 076–082 | **Pendientes de aplicar** (preflight confirmado) |
+| `079_STAGING_REMEDIATE_*` | **Excluida** (no aplicar) |
+| PR #22 / #23 | **Fuera de alcance** (no mezclar) |
+| `OPENAI_API_KEY` | **No configurar** (IA PDF desactivada) |
+| Datos DEMO staging → prod | **Prohibido** |
 
-### **GO condicional de staging (circuito recepción)**
+### Bloqueantes pendientes (solo proceso / autorización)
 
-Staging ha quedado validado para el circuito completo de recepción DEMO tras aplicar **065**.
+1. **Autorización explícita** de Pilar para: backup → SQL 076–082 → merge → deploy.
+2. **Backup verificable** de producción antes del SQL (aún no ejecutado).
+3. Confirmar en Vercel Production que **no** existe `OPENAI_API_KEY` (ni al publicar).
 
----
-
-## 1. Estado de migraciones
-
-| Migración | Staging `dazfdcjscnpfvhcyjddt` | Producción `gsnohwsvjxpjfcsstnfd` |
-|-----------|--------------------------------|-----------------------------------|
-| **065** inventario físico (`kiosk_assets`) | **Aplicada 2026-11-10** (esta validación) | **Presente** |
-| **076** proveedores + compras kiosk | Presente | **Ausente** |
-| **077** workflow quote/PO + `client_request_id` | Presente | **Ausente** |
-| **078** `shipping_includes_vat` | Presente | **Ausente** |
-| **079** unificación extensión 1:1 | Presente | **Ausente** |
-| **080** numeración anual + confirm RPC | Presente | **Ausente** |
-
-### Dependencias / orden
-
-**Staging (hecho):** 076–080 primero (histórico) → **065 después** → enlace `kiosk_assets.purchase_order_id` (bloque condicional de 076).
-
-**Producción (futuro, no ejecutado):**
-
-1. Backup DB producción.
-2. **076 → 077 → 078 → 079 → 080** (065 ya existe).
-3. Verificar que el bloque condicional de 076 añade `purchase_order_id` (065 ya está).
-4. Smoke SuperAdmin: directorio → presupuesto → pedido → confirmación número → extensión kiosk → recepción.
-5. **No** llevar seeds DEMO.
+No hay conflictos de merge ni huecos de esquema descubiertos que impidan la ventana.
 
 ---
 
-## 2. Backup y rollback (staging 065)
+## 1. Estado PR #21 vs `origin/main`
 
-- Metadatos pre-apply: `/tmp/ff-staging-065-prebackup.json` (conteos; no dump completo).
-- Notas: `supabase/migrations/065_STAGING_APPLY_NOTES.md`
-- Rollback: `supabase/migrations/065_STAGING_ROLLBACK.md`  
-  **No ejecutar** si se quieren conservar los 10 activos DEMO `KSK-0001…0010`.
+| Campo | Valor |
+|-------|--------|
+| Título | feat(superadmin): módulo Proveedores (076, reutiliza WIP 068) |
+| Base / head | `main` ← `feature/sa-proveedores-kiosk` |
+| Draft | **No** (OPEN) |
+| Ahead / behind | **20 / 0** |
+| Merge dry-run | **OK** (sin conflictos reales) |
+| Checks | Vercel Preview + `farmafacil-app` + `kiosk-physical-inventory` **SUCCESS** |
+| Diff | ~67 files, +15.7k / −375 |
 
-Rollback 080: `supabase/migrations/080_ROLLBACK.md` (no borra números ya asignados).
+### Fuera de este release
 
----
-
-## 3. Prueba DEMO recepción (staging) — RESULTADO OK
-
-Flujo ejecutado solo con datos `[DEMO]` / `DEMO-PR21-*`:
-
-| Paso | Resultado |
-|------|-----------|
-| Presupuesto 10 kioskos | OK (`[DEMO] Compra 10 kioskos recepción`) |
-| Aceptar presupuesto | OK (`aprobado`) |
-| Pedido único categoría kioskos | OK |
-| Confirmar + número | **`2026/00000003`** |
-| Extensión «Compras de kioskos» mismo nº | OK |
-| Recepción 10 uds | OK → **10 activos** `KSK-0001`…`KSK-0010` |
-| Reintento recepción | `exceeds_remaining` · **sigue en 10** (sin duplicar) |
-| Estado extensión | `recibido` 10/10 |
-| Asignación a farmacias | **0** (ninguna) |
-| Receipts | 1 |
-
-IDs de referencia (staging): ver `/tmp/ff-demo-kiosk-recv.json`.
+- **PR #22** `feature/sa-subscription-ui-redesign` — Gestionar suscripción / planes.
+- **PR #23** `feature/pharmacy-clients-and-qr` — Clientes + QR (draft).
 
 ---
 
-## 4. Pedidos históricos en «Pedido» con número «—»
+## 2. Alcance funcional (confirmado)
 
-En staging (tras 080):
-
-- `pedido` con número: **1+** (p. ej. DEMO confirmados).
-- `pedido` **sin** número: **2** filas legacy (creadas el 2026-11-10 antes de la confirmación RPC), títulos aprox. «Nueva línea» / «El pedido completo».
-
-### Tratamiento seguro propuesto (sin inventar historia)
-
-1. **No auto-renumerar** en silencio.
-2. UI: mostrar «Sin número (legacy)» + UUID interno.
-3. Acción opcional SuperAdmin «Asignar número correlativo» que llame a `ff_supplier_po_confirm_v1` **una sola vez** (la RPC ya permite legacy `pedido` sin número y es idempotente si ya tiene número).
-4. Usar `ordered_at` existente o `created_at::date` como fecha de numeración.
-5. Documentar cada asignación en `platform_supplier_activity` / audit.
-6. **Producción:** al desplegar 080, los pedidos nuevos nacerán bien; no habrá backfill automático.
-
----
-
-## 5. Riesgos permisos / RLS
-
-- Proveedores: `platform.suppliers.read/write` (+ approve en flujo).
-- Inventario: `platform.kiosk_inventory.read/write` (065).
-- Purchasing: `platform.kiosk_purchasing.*` (076).
-- Recepción: inventory.write **o** purchasing.write.
-- Storage privado `supplier-docs` / `kiosk-purchase-docs`.
-- SECURITY DEFINER RPCs con `auth.uid()` + `ff_has_platform_permission`.
-
-En prod, hasta aplicar 076, las tablas/permisos de proveedores **no existen**.
+| Capacidad | Estado |
+|-----------|--------|
+| Menú SA Proveedores | Sí |
+| Directorio proveedores (alta/edición/archivo, contactos, actividad) | Sí |
+| Presupuestos + líneas + adjuntos signed URL | Sí |
+| Comparador de ofertas / coste real | Sí |
+| Presupuesto aceptado → pedido (sin auto-confirmar) | Sí |
+| Pedidos generales + IVA/transporte | Sí |
+| Numeración anual `YYYY/########` al confirmar (080) | Sí |
+| Extensión 1:1 compras de kioskos (079) | Sí |
+| Recepción → activos KSK (sin farmacia) | Sí |
+| Inventario: Pedido / Recibido / Asignado / **En exposición** / Reparación / Retirado | Sí (081) |
+| Historial estados + notas append (082) | Sí |
+| Pegatina oficial KSK | Sí |
+| Extracción PDF con IA | Código presente; **inactivo sin `OPENAI_API_KEY`** |
 
 ---
 
-## 6. Datos DEMO
+## 3. Preflight producción (`gsnohwsvjxpjfcsstnfd`) — solo lectura 2026-11-11
 
-- Identificados: `tax_id DEMO-PR21-*`, títulos `[DEMO]…`, notas `DEMO-PR21-COMPARE`.
-- **No se incluyen en migraciones** ni en el código de deploy.
-- Limpieza: `docs/pr21-demo-quote-compare-cleanup.md` (+ borrar activos DEMO / pedidos DEMO bajo autorización).
-- **Confirmado:** no trasladar DEMO a producción.
+| Objeto | Prod |
+|--------|------|
+| `kiosk_assets` (065) | **Presente** |
+| `platform_suppliers` / quotes / SPO / `kiosk_purchase_orders` | **Ausentes** |
+| `kiosk_asset_status_events` / counters 080 | **Ausentes** |
+| `ff_kiosk_asset_next_code` / `ff_kiosk_inventory_set_status_v1` | Presentes (065) |
+| `ff_supplier_po_confirm_v1` / `ff_kiosk_purchase_receive_v1` | **Ausentes** |
+| Permisos `platform.suppliers.*` / `platform.kiosk_purchasing.*` | **0** |
+| Buckets `supplier-docs` / `kiosk-purchase-docs` | **No** |
+| Activos | **1** → **`KSK-0001`** |
+| `KSK-0001` | `warehouse`, serial `00000000000589e1c8`, sin farmacia, modelo Android K2101, vendor OKOM |
+| `kiosk_asset_code_seq` | `last_value=1` → próximo **`KSK-0002`** |
+| CHECK status | sin `exhibition` (081 pendiente) |
+| Columna `purchase_order_id` en assets | **No** (076 la añade nullable) |
+
+### Impacto en `KSK-0001`
+
+Las migraciones 076–082 **no** renumeran, no borran y no cambian el `asset_code` existente.  
+081 solo amplía el CHECK de status (incluye `warehouse` actual) y crea historial.  
+082 solo cambia el append de notas en `set_status`.  
+076 añade `purchase_order_id` nullable si falta.
 
 ---
 
-## 7. Pruebas
+## 4. Migraciones exactas a aplicar en producción
 
-### Automáticas (repo)
+**Orden obligatorio:**
 
-- `purchase-math`, `po-number`, `quote-compare`, `unify-purchase`, workflow/types: OK en CI local previa.
+1. `076_platform_suppliers_and_kiosk_purchases_v1.sql`
+2. `077_supplier_quote_po_workflow_v1.sql`
+3. `078_supplier_po_shipping_vat_flag_v1.sql`
+4. `079_unify_supplier_purchase_kiosk_extension_v1.sql`
+5. `080_supplier_po_annual_numbering_v1.sql`
+6. `081_kiosk_inventory_ui_statuses_v1.sql`
+7. `082_kiosk_status_notes_append_v1.sql`
 
-### Manuales staging pendientes / recomendadas antes de GO prod
+### Excluir expresamente
 
-- [ ] UI recepción desde panel (además del RPC SQL ya OK).
-- [ ] Doble clic confirmar pedido en UI.
-- [ ] Comparador con ofertas DEMO merchandising.
-- [ ] Pedido no-kiosk con número + edición sin cambiar número.
-- [ ] Verificar pedidos legacy «—» en UI.
-- [ ] Smoke post-076 en **staging clon/prod-like** si se quiere ensayo del orden prod.
+- `079_STAGING_REMEDIATE_chino_duplicates.sql` — **solo staging**, UUIDs de staging, **NO producción**.
+- Cualquier seed DEMO (`staging-seed-demo-quote-compare.mjs`, filas `[DEMO]`).
+- Scripts de smoke que escriben en staging.
 
-### Smoke post-despliegue producción (cuando se autorice)
+### Dependencia previa
+
+- **065** ya está en producción (confirmado). El bloque condicional de 076 añadirá `kiosk_assets.purchase_order_id`.
+
+### Staging (referencia)
+
+076–082 + exhibition + append notes: **presentes**. Smokes 2026-11-11 OK.
+
+---
+
+## 5. Tests ejecutados en esta preparación
+
+### Automáticos (worktree)
+
+```text
+node --experimental-strip-types --test lib/suppliers/*.test.ts lib/kiosk-inventory/purchase-types.test.ts
+→ 43 pass / 0 fail
+```
+
+Incluye: `purchase-math`, `po-number`, `quote-compare`, `quote-pdf-extract`, `unify-purchase`, `workflow`, `types`, `purchase-types`.
+
+### Staging (escritura solo staging, guardrail anti-prod)
+
+| Script | Resultado |
+|--------|-----------|
+| `staging-suppliers-smoke.mjs` | ALL PASSED (CRUD SA, RLS deny, storage policies) |
+| `staging-kiosk-inventory-status-smoke.mjs` | OK (pendientes → recepción → exhibition → auditoría) |
+
+### Pendientes manuales UI (recomendados en ventana post-deploy)
+
+Ver checklist §7.
+
+---
+
+## 6. Secuencia de publicación (cuando se autorice)
+
+### A. Backup verificable (antes de cualquier SQL)
+
+1. Snapshot/backup del proyecto Supabase producción `gsnohwsvjxpjfcsstnfd` (panel).
+2. Dump dirigido mínimo:
+   - `public.kiosk_assets` (fila `KSK-0001`)
+   - `public.kiosk_asset_code_seq`
+   - defs: `ff_kiosk_inventory_set_status_v1`, `ff_kiosk_asset_next_code`
+3. Guardar en `supabase/diagnostics/pre_076_prod_<timestamp>/` con:
+   - conteos pre
+   - `SELECT * FROM kiosk_assets WHERE asset_code='KSK-0001'`
+   - hash/nombre del snapshot
+4. Anotar **deployment Vercel Production** actual (commit `main`) para rollback web.
+
+### B. SQL producción (orden §4)
+
+1. Aplicar **076** → verify tablas/permisos/buckets.
+2. **077** → verify.
+3. **078** → verify.
+4. **079** → verify (sin STAGING_REMEDIATE).
+5. **080** → verify counters + RPC confirm.
+6. **081** → verify CHECK incluye `exhibition` + `kiosk_asset_status_events`; **`KSK-0001` sigue igual**.
+7. **082** → verify `set_status` append notes.
+8. Re-check: `KSK-0001` intacto; seq ≥ 1; sin filas DEMO.
+
+> Preferido: **migraciones antes del merge**. El `main` actual no usa esas tablas; el SQL queda inerte hasta el deploy.
+
+### C. Merge + deploy
+
+1. Merge **solo** PR #21 → `main` (squash o merge commit según política).
+2. **No** incluir #22 ni #23.
+3. Esperar deploy Vercel `farmafacil-app` (y preview inventario si aplica).
+4. Verificar env Production: **sin** `OPENAI_API_KEY`.
+
+### D. Smoke post-despliegue producción
 
 1. Login SuperAdmin.
-2. `/proveedores` carga.
-3. Alta borrador → confirmar → ver `YYYY/########`.
-4. Categoría kioskos → aparece extensión con mismo número.
-5. Recepción 1 ud DEMO/laboratorio → 1 `KSK-…` (sin farmacia).
-6. Comparador abre sin error.
-7. Sin regresión pairing / `pharmacy_devices`.
+2. `/proveedores` carga; soporte no ve el ítem.
+3. Alta proveedor borrador + presupuesto manual (sin IA).
+4. Confirmar pedido → número `2026/00000001` (o año vigente).
+5. Pedido categoría kioskos → extensión con mismo número.
+6. **No** recibir sobre `KSK-0001`; si se prueba recepción, 1 ud laboratorio → debe crear **`KSK-0002`**.
+7. Inventario: ver `KSK-0001` warehouse; cambiar a **En exposición** y volver; notas se anexan.
+8. Pegatina de `KSK-0001` genera sin error.
+9. Intento lectura PDF IA → mensaje “falta OPENAI_API_KEY” / cumplimentar a mano.
+10. Sin regresión pairing / farmacias / pedidos QR.
+
+### E. Recuperación ante errores
+
+| Fallo | Acción |
+|-------|--------|
+| Build/deploy web | Rollback Vercel al deployment anotado en §A.4 |
+| SQL a medias (p. ej. falla 080) | No continuar; aplicar `080_ROLLBACK.md`… hacia atrás según lo aplicado; restaurar snapshot si el estado es dudoso |
+| 081/082 mal | `082_ROLLBACK.md` / `081_ROLLBACK.md` — **no borran KSK**; si hay filas `exhibition`, pasarlas a `warehouse` antes de quitar el CHECK |
+| 076 completo a revertir | `076_ROLLBACK.md` (DROP tablas nuevas) — solo si no hay datos de negocio que conservar |
+| UI rota con SQL OK | Rollback Vercel; dejar SQL (tablas inocuas) o revertir SQL si se decide abortar el módulo |
+| Recepción duplicada | RPC ya protege `exceeds_remaining` / unique serial |
 
 ---
 
-## 8. Recomendación
+## 7. Checklist de pruebas
 
-| Ámbito | Decisión |
-|--------|----------|
-| Cerrar trabajo funcional PR #21 en staging | **GO** (comparador, pedidos, numeración, recepción DEMO OK, inventario estados 081 DEMO OK) |
-| Merge a `main` / deploy producción | **NO-GO** hasta plan de migraciones 076–080 en prod + backup + smoke |
-| Aplicar más SQL en producción ahora | **NO** |
+### Pre-merge (hecho / staging)
 
-Siguiente paso cuando se autorice publicación: checklist de migraciones prod (076→080), ventana, backup, smoke; opcional backfill controlado de pedidos legacy sin número **solo tras decisión explícita**.
+- [x] Unit tests módulo proveedores/inventario
+- [x] Smoke RLS + CRUD proveedores staging
+- [x] Smoke recepción + exhibition staging
+- [x] Preflight prod: 065 sí / 076–082 no / `KSK-0001` intacto
+- [x] Confirmado exclusión STAGING_REMEDIATE y DEMO
+- [x] Confirmado no mezclar #22/#23
+- [x] IA PDF gated por ausencia de `OPENAI_API_KEY`
+
+### Post-deploy producción (pendiente autorización)
+
+- [ ] Backup verificado
+- [ ] 076→082 aplicadas y verified
+- [ ] `KSK-0001` sin cambios de código/serial/status indebido
+- [ ] Menú SA Proveedores OK
+- [ ] Flujo presupuesto → pedido → número
+- [ ] Extensión kiosk + (opcional) recepción → `KSK-0002`
+- [ ] Estado En exposición + historial/notas
+- [ ] Pegatina
+- [ ] IA PDF sigue desactivada
+- [ ] Sin datos DEMO en prod
+
+---
+
+## 8. Recomendación final
+
+| Pregunta | Respuesta |
+|----------|-----------|
+| ¿Se puede publicar ya sin más desarrollo? | **Sí, con ventana controlada** |
+| ¿Ejecutar merge/SQL/deploy ahora? | **NO** — esperar autorización expresa |
+| ¿Qué autorizar exactamente? | Backup → SQL 076–082 (sin REMEDIATE) → merge PR #21 → smoke → sin OPENAI |
+
+Siguiente mensaje esperado del operador: **«Autorizo publicación PR #21»** (o equivalente), tras revisar este informe.
