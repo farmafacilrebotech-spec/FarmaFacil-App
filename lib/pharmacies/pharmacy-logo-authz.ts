@@ -1,21 +1,20 @@
 /**
  * Autorización para gestionar el logo de farmacia.
- * SuperAdmin (platform.pharmacies.write) o branding.update (Owner/Admin).
+ * Exclusivo SuperAdmin (`platform.pharmacies.write`).
+ * Owner / Admin / Farmacéutico / STAFF: denegado (solicitud escrita → SA).
  */
 
-import { createClient } from '@/lib/supabase/server';
 import {
   getCurrentProfile,
   hasPlatformPermission,
   type CurrentProfile,
 } from '@/lib/auth/platform';
-import { requireActivePharmacyMembership } from '@/lib/auth/access';
 
 export type PharmacyLogoAuthzResult =
   | {
       ok: true;
       profile: CurrentProfile;
-      via: 'platform' | 'membership';
+      via: 'platform';
       actorId: string;
     }
   | { ok: false; error: string };
@@ -29,56 +28,23 @@ export async function requirePharmacyLogoManageAccess(
   }
 
   const write = await hasPlatformPermission('platform.pharmacies.write');
-  if (write.ok) {
-    const { profile, authenticated } = await getCurrentProfile();
-    if (!authenticated || !profile) {
-      return { ok: false, error: 'Debes iniciar sesión.' };
-    }
-    return {
-      ok: true,
-      profile,
-      via: 'platform',
-      actorId: profile.id,
-    };
-  }
-
-  const membership = await requireActivePharmacyMembership(id);
-  if (!membership.ok) {
-    return {
-      ok: false,
-      error: 'No tienes acceso activo a esta farmacia.',
-    };
-  }
-
-  const supabase = createClient();
-  const { data: hasPerm, error } = await supabase.rpc(
-    'ff_has_pharmacy_permission',
-    {
-      p_pharmacy_id: id,
-      p_permission_key: 'branding.update',
-    }
-  );
-
-  if (error) {
-    console.error('[pharmacy-logo-authz]', error.code, error.message);
-    return {
-      ok: false,
-      error: 'No se ha podido verificar el permiso de branding.',
-    };
-  }
-
-  if (!hasPerm) {
+  if (!write.ok) {
     return {
       ok: false,
       error:
-        'Solo el propietario o el administrador pueden gestionar el logo de la farmacia.',
+        'Solo SuperAdmin puede cambiar el logo. El titular debe solicitarlo por escrito a FarmaFácil.',
     };
+  }
+
+  const { profile, authenticated } = await getCurrentProfile();
+  if (!authenticated || !profile) {
+    return { ok: false, error: 'Debes iniciar sesión.' };
   }
 
   return {
     ok: true,
-    profile: membership.profile,
-    via: 'membership',
-    actorId: membership.profile.id,
+    profile,
+    via: 'platform',
+    actorId: profile.id,
   };
 }

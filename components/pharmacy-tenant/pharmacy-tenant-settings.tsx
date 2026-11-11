@@ -2,10 +2,8 @@ import { displayNameFromIdentity } from '@/lib/format';
 import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
 import type { PharmacyTenantContext } from '@/lib/pharmacies/tenant';
 import type { TenantSubscriptionSummary } from '@/lib/pharmacies/tenant-subscription-summary';
-import { roleCanManagePharmacyLogo } from '@/lib/pharmacies/pharmacy-logo-file';
 import { PageHeader } from '@/components/shared/page-header';
 import { PharmacyLogo } from '@/components/brand';
-import { PharmacyLogoManager } from '@/components/pharmacies/pharmacy-logo-manager';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { PharmacyTenantSubscriptionCard } from '@/components/pharmacy-tenant/pharmacy-tenant-subscription-card';
@@ -23,9 +21,6 @@ export function PharmacyTenantSettings({
     context.profile.email
   );
   const roleLabel = pharmacyRoleLabel(context.membership.roleKey);
-  const canManageLogo = roleCanManagePharmacyLogo(
-    context.membership.roleKey
-  );
   const logoColor = context.pharmacy.logoColor || '#0d9488';
 
   return (
@@ -39,13 +34,29 @@ export function PharmacyTenantSettings({
         <PharmacyTenantSubscriptionCard summary={subscriptionSummary} />
       ) : null}
 
-      <PharmacyLogoManager
-        pharmacyId={context.pharmacy.id}
-        pharmacyName={context.pharmacy.name}
-        logoUrl={context.pharmacy.logoUrl}
-        logoColor={logoColor}
-        canManage={canManageLogo}
-      />
+      <Card className="overflow-hidden">
+        <div className="border-b border-border bg-muted/30 px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">Logo</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Solo FarmaFácil (SuperAdmin) puede cambiar el logo, previa solicitud
+            escrita del titular.
+          </p>
+        </div>
+        <div className="flex items-center gap-4 p-6">
+          <PharmacyLogo
+            name={context.pharmacy.name}
+            logoUrl={context.pharmacy.logoUrl}
+            logoColor={logoColor}
+            size={64}
+            rounded="2xl"
+          />
+          <p className="text-sm text-muted-foreground">
+            {context.pharmacy.logoUrl
+              ? 'Logo configurado por FarmaFácil.'
+              : 'Sin logo configurado.'}
+          </p>
+        </div>
+      </Card>
 
       <Card className="overflow-hidden">
         <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">

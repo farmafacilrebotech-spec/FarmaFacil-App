@@ -60,9 +60,9 @@ describe('probePharmacyLogoBuffer', () => {
 });
 
 describe('roleCanManagePharmacyLogo', () => {
-  it('solo owner y admin', () => {
-    assert.equal(roleCanManagePharmacyLogo('PHARMACY_OWNER'), true);
-    assert.equal(roleCanManagePharmacyLogo('PHARMACY_ADMIN'), true);
+  it('ningún rol tenant puede gestionar logo (solo SuperAdmin)', () => {
+    assert.equal(roleCanManagePharmacyLogo('PHARMACY_OWNER'), false);
+    assert.equal(roleCanManagePharmacyLogo('PHARMACY_ADMIN'), false);
     assert.equal(roleCanManagePharmacyLogo('PHARMACIST'), false);
     assert.equal(roleCanManagePharmacyLogo('STAFF'), false);
   });

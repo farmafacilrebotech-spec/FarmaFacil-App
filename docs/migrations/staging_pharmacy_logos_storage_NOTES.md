@@ -1,35 +1,47 @@
 # Staging — Storage logos de farmacia (`pharmacy-logos`)
 
-## Hallazgo (auditoría PR #23)
+## Estado staging (`dazfdcjscnpfvhcyjddt`) — pre-apply
 
 | Pieza | Estado |
 |-------|--------|
-| Columna `pharmacy_branding.logo_url` | **Existe** (009) + CHECK anti `javascript:`/`data:` |
-| RLS `branding.update` | **Existe** (Owner/Admin vía permisos; SuperAdmin `platform.pharmacies.write`) |
-| Acción update branding | **Existe** pero **no** escribe `logo_url` |
-| UI Personalización → Logo | **Stub** (iniciales + botón sin acción) |
-| Bucket Storage + policies | **No existe** en migraciones del repo |
-| Upload en app | **No existe** |
+| Columna `pharmacy_branding.logo_url` | Existe |
+| Bucket `pharmacy-logos` | **Ausente** (confirmado 2026-11-11) |
+| Policies Storage | **Ausentes** |
 
-## Cambio propuesto (staging first)
+## SQL a aplicar (solo tras autorización)
 
-Draft SQL: `staging_pharmacy_logos_storage_v1.sql`
+Archivo: `staging_pharmacy_logos_storage_v1.sql`
 
-- Bucket público `pharmacy-logos` (lectura para cartel PDF / UI).
-- Path obligatorio: `{pharmacy_id}/logo.{png|jpg|webp}`.
-- Policies: SELECT público del bucket; INSERT/UPDATE/DELETE solo SuperAdmin write **o** `branding.update` sobre el `pharmacy_id` del primer segmento del path.
-- Límite 2 MB; MIME `image/png`, `image/jpeg`, `image/webp`.
-- **Sin SVG** (no hay sanitizador seguro en app).
+### Objetos que se CREAN / MODIFICAN
 
-## Compatibilidad producción
+| Objeto | Acción |
+|--------|--------|
+| `storage.buckets` fila `id=pharmacy-logos` | **INSERT** o **UPDATE** (público, 2 MB, png/jpeg/webp) |
+| Policy `pharmacy_logos_public_read` | DROP IF EXISTS + **CREATE** (SELECT TO public) |
+| Policy `pharmacy_logos_insert` | DROP IF EXISTS + **CREATE** (INSERT, solo `platform.pharmacies.write`) |
+| Policy `pharmacy_logos_update` | DROP IF EXISTS + **CREATE** (UPDATE, solo SA write) |
+| Policy `pharmacy_logos_delete` | DROP IF EXISTS + **CREATE** (DELETE, solo SA write) |
 
-- **No aplicar en producción** desde este PR.
-- No rompe schema de `pharmacy_branding` (solo Storage).
-- App: si el bucket no existe, las actions de logo fallan con mensaje claro; colores/settings siguen OK.
-- Tras validar en staging: promover el SQL a migración numerada del kernel y aplicar en prod con runbook propio.
+### Qué NO toca
 
-## App (este PR)
+- Tablas `pharmacies` / `pharmacy_branding` / pedidos / clientes
+- Producción `gsnohwsvjxpjfcsstnfd`
+- Datos existentes (no DELETE de filas de negocio)
+- PR #21
 
-- Reutiliza `logo_url` + RLS existentes.
-- Actions: subir / reemplazar / eliminar.
-- Cartel QR ya consume `pharmacy_branding.logo_url` (sin FarmaFácil de fallback).
+### Seguridad de escritura
+
+Solo SuperAdmin con `platform.pharmacies.write`.  
+**No** Owner / Admin / Farmacéutico / STAFF vía `branding.update`.
+
+Path: `{pharmacy_id}/logo.{png|jpg|webp}`.
+
+## Rollback
+
+`staging_pharmacy_logos_storage_DOWN.sql` (borra policies + bucket; no borra objetos del bucket automáticamente).
+
+## App
+
+- Actions: `app/(app)/farmacias/logo-actions.ts` (gate SuperAdmin).
+- UI gestión: ficha SuperAdmin Personalización.
+- Panel tenant: solo lectura del logo (sin subir/borrar).

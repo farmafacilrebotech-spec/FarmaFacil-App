@@ -243,8 +243,10 @@ export function pharmacyLogoObjectPath(
   return `${id}/logo.${extension}`;
 }
 
-/** Predicado de rol tenant (UI). SuperAdmin se gestiona por permiso de plataforma. */
-export function roleCanManagePharmacyLogo(roleKey: string): boolean {
-  const k = String(roleKey);
-  return k === 'PHARMACY_OWNER' || k === 'PHARMACY_ADMIN';
+/**
+ * Predicado de rol tenant (UI): nadie del panel farmacia gestiona logos.
+ * Solo SuperAdmin vía `platform.pharmacies.write` (actions + Storage).
+ */
+export function roleCanManagePharmacyLogo(_roleKey: string): boolean {
+  return false;
 }

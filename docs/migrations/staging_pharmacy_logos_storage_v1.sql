@@ -1,6 +1,8 @@
 -- =============================================================================
--- STAGING ONLY — bucket Storage para logos de farmacia
--- NO aplicar en producción desde PR #23 sin runbook / aprobación.
+-- STAGING ONLY — bucket Storage para logos de farmacia (SuperAdmin only)
+-- Proyecto: dazfdcjscnpfvhcyjddt
+-- NO aplicar en producción desde PR #23.
+-- Idempotente: ON CONFLICT + DROP POLICY IF EXISTS.
 -- Ver staging_pharmacy_logos_storage_NOTES.md
 -- =============================================================================
 
@@ -26,7 +28,8 @@ CREATE POLICY pharmacy_logos_public_read
   TO public
   USING (bucket_id = 'pharmacy-logos');
 
--- Escritura: SuperAdmin write o branding.update de ESA farmacia
+-- Escritura: SOLO SuperAdmin (platform.pharmacies.write).
+-- Path obligatorio: {pharmacy_id}/logo.{ext}
 DROP POLICY IF EXISTS pharmacy_logos_insert ON storage.objects;
 CREATE POLICY pharmacy_logos_insert
   ON storage.objects
@@ -35,13 +38,7 @@ CREATE POLICY pharmacy_logos_insert
   WITH CHECK (
     bucket_id = 'pharmacy-logos'
     AND (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
-    AND (
-      public.ff_has_platform_permission('platform.pharmacies.write')
-      OR public.ff_has_pharmacy_permission(
-        ((storage.foldername(name))[1])::uuid,
-        'branding.update'
-      )
-    )
+    AND public.ff_has_platform_permission('platform.pharmacies.write')
   );
 
 DROP POLICY IF EXISTS pharmacy_logos_update ON storage.objects;
@@ -52,24 +49,12 @@ CREATE POLICY pharmacy_logos_update
   USING (
     bucket_id = 'pharmacy-logos'
     AND (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
-    AND (
-      public.ff_has_platform_permission('platform.pharmacies.write')
-      OR public.ff_has_pharmacy_permission(
-        ((storage.foldername(name))[1])::uuid,
-        'branding.update'
-      )
-    )
+    AND public.ff_has_platform_permission('platform.pharmacies.write')
   )
   WITH CHECK (
     bucket_id = 'pharmacy-logos'
     AND (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
-    AND (
-      public.ff_has_platform_permission('platform.pharmacies.write')
-      OR public.ff_has_pharmacy_permission(
-        ((storage.foldername(name))[1])::uuid,
-        'branding.update'
-      )
-    )
+    AND public.ff_has_platform_permission('platform.pharmacies.write')
   );
 
 DROP POLICY IF EXISTS pharmacy_logos_delete ON storage.objects;
@@ -80,18 +65,5 @@ CREATE POLICY pharmacy_logos_delete
   USING (
     bucket_id = 'pharmacy-logos'
     AND (storage.foldername(name))[1] ~* '^[0-9a-f-]{36}$'
-    AND (
-      public.ff_has_platform_permission('platform.pharmacies.write')
-      OR public.ff_has_pharmacy_permission(
-        ((storage.foldername(name))[1])::uuid,
-        'branding.update'
-      )
-    )
+    AND public.ff_has_platform_permission('platform.pharmacies.write')
   );
-
--- Opcional si existe el log de staging local:
--- INSERT INTO public._ff_staging_recovery_log (label, detail)
--- VALUES (
---   'pharmacy_logos_storage_v1',
---   jsonb_build_object('bucket', 'pharmacy-logos')
--- );
