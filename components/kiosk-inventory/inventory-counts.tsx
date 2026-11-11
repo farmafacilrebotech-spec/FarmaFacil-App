@@ -2,55 +2,26 @@ import type { KioskInventoryCounts } from '@/lib/kiosk-inventory/types';
 import {
   INVENTORY_UI_STATUS_COLORS,
   INVENTORY_UI_STATUS_LABELS,
+  INVENTORY_UI_STATUS_ORDER,
 } from '@/lib/kiosk-inventory/types';
 
 export function InventoryCounts({ counts }: { counts: KioskInventoryCounts }) {
-  const items = [
-    {
-      key: 'ordered',
-      label: 'Pendientes de recibir',
-      value: counts.ordered,
-      ui: 'ordered' as const,
-    },
-    {
-      key: 'received',
-      label: 'Recibidos disponibles',
-      value: counts.received,
-      ui: 'received' as const,
-    },
-    {
-      key: 'assigned',
-      label: INVENTORY_UI_STATUS_LABELS.assigned,
-      value: counts.assigned,
-      ui: 'assigned' as const,
-    },
-    {
-      key: 'exhibition',
-      label: INVENTORY_UI_STATUS_LABELS.exhibition,
-      value: counts.exhibition,
-      ui: 'exhibition' as const,
-    },
-    {
-      key: 'repair',
-      label: INVENTORY_UI_STATUS_LABELS.repair,
-      value: counts.repair,
-      ui: 'repair' as const,
-    },
-    {
-      key: 'retired',
-      label: INVENTORY_UI_STATUS_LABELS.retired,
-      value: counts.retired,
-      ui: 'retired' as const,
-    },
-  ] as const;
+  const valueByUi = {
+    ordered: counts.ordered,
+    assigned: counts.assigned,
+    exhibition: counts.exhibition,
+    received: counts.received,
+    repair: counts.repair,
+    retired: counts.retired,
+  } as const;
 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {items.map((item) => {
-        const colors = INVENTORY_UI_STATUS_COLORS[item.ui];
+      {INVENTORY_UI_STATUS_ORDER.map((ui) => {
+        const colors = INVENTORY_UI_STATUS_COLORS[ui];
         return (
           <div
-            key={item.key}
+            key={ui}
             className="rounded-2xl border px-4 py-3 shadow-soft"
             style={{
               backgroundColor: colors.bg,
@@ -61,13 +32,13 @@ export function InventoryCounts({ counts }: { counts: KioskInventoryCounts }) {
               className="text-[10px] font-medium uppercase tracking-wide"
               style={{ color: colors.text }}
             >
-              {item.label}
+              {INVENTORY_UI_STATUS_LABELS[ui]}
             </p>
             <p
               className="mt-1 text-2xl font-semibold"
               style={{ color: colors.text }}
             >
-              {item.value}
+              {valueByUi[ui]}
             </p>
           </div>
         );
