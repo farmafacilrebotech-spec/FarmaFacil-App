@@ -179,7 +179,15 @@ export function isPharmacyQrPosterTemplateReady(
 export function isPharmacyQrPosterDownloadEnabled(
   layout: PharmacyQrPosterLayout = PHARMACY_QR_POSTER_LAYOUT
 ): boolean {
-  return layout.pdfDownloadEnabled && isPharmacyQrPosterTemplateReady(layout);
+  // Override solo local/prueba: NEXT_PUBLIC_FF_POSTER_PDF_LOCAL=1
+  // No activa descarga en producción salvo que el flag esté en el build.
+  const localTest =
+    typeof process !== 'undefined' &&
+    process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL === '1';
+  return (
+    (layout.pdfDownloadEnabled || localTest) &&
+    isPharmacyQrPosterTemplateReady(layout)
+  );
 }
 
 export const PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE =
