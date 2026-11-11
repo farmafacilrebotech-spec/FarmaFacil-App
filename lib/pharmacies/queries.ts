@@ -48,11 +48,12 @@ function mapPlan(row: PlanRow | PlanRow[] | null): PlanSummary | null {
 
 export async function listActivePlans(): Promise<PlanSummary[]> {
   const supabase = createClient();
+  // Fuente técnica real: todas las filas activas. La UI comercial filtra/
+  // etiqueta General/Personalizado/IA vs legacy (no inventar productos).
   const { data, error } = await supabase
     .from('plans')
     .select('id, key, name, description, is_active, sort_order')
     .eq('is_active', true)
-    .in('key', ['starter', 'pro', 'business', 'enterprise'])
     .order('sort_order', { ascending: true });
 
   if (error) {
