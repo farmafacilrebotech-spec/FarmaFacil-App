@@ -1217,8 +1217,11 @@ export function PharmacyDetailClient({
         {activeTab === 'qr' && (
           <QrTab
             pharmacyName={pharmacy.name}
+            pharmacyLogoUrl={pharmacy.branding?.logo_url ?? null}
+            pharmacyPrimaryColor={pharmacy.branding?.primary_color ?? null}
             entrypoint={homeEntrypoint}
             loadError={homeEntrypointError}
+            showPdfPoster
           />
         )}
 
