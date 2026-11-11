@@ -1,12 +1,14 @@
 # Staging — Storage logos de farmacia (`pharmacy-logos`)
 
-## Estado staging (`dazfdcjscnpfvhcyjddt`) — pre-apply
+## Estado staging (`dazfdcjscnpfvhcyjddt`) — post-apply (2026-11-11)
 
 | Pieza | Estado |
 |-------|--------|
 | Columna `pharmacy_branding.logo_url` | Existe |
-| Bucket `pharmacy-logos` | **Ausente** (confirmado 2026-11-11) |
-| Policies Storage | **Ausentes** |
+| Bucket `pharmacy-logos` | **Creado** (public, 2 MB, png/jpeg/webp) |
+| Policies Storage | **SA-only write** + public read — aplicadas |
+| Hallazgo | Owner/Admin aún pueden `UPDATE pharmacy_branding.logo_url` vía RLS `branding.update`. Pendiente autorizar `staging_pharmacy_branding_logo_sa_only_v1.sql`. |
+| Hallazgo 2 | Owner/Admin/Farmacéutico pueden `UPDATE pharmacies` (nombre/identidad) vía RLS `settings.update`. Actions de app ya SA-only; falta endurecer RLS. |
 
 ## SQL a aplicar (solo tras autorización)
 
