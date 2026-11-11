@@ -9,6 +9,8 @@ const nextConfig = {
   experimental: {
     // Necesario en Next 13.5 para 'use server' (logout / actions).
     serverActions: true,
+    // pdf-parse v2 (pdfjs) no debe empaquetarse en el bundle de server actions.
+    serverComponentsExternalPackages: ['pdf-parse'],
   },
 };
 

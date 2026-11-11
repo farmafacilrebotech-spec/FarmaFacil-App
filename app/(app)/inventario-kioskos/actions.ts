@@ -142,7 +142,12 @@ export async function assignKioskAssetAction(input: {
 export async function unassignKioskAssetAction(input: {
   assetId: string;
   endReason?: string;
-  nextStatus?: 'warehouse' | 'pending_identification' | 'repair' | 'retired';
+  nextStatus?:
+    | 'warehouse'
+    | 'pending_identification'
+    | 'exhibition'
+    | 'repair'
+    | 'retired';
 }): Promise<InventoryActionResult> {
   if (!(await hasKioskInventoryWrite())) {
     return { ok: false, error: 'Sin permiso de escritura en inventario.' };
@@ -171,6 +176,7 @@ export async function setKioskAssetStatusAction(input: {
     | 'pending_identification'
     | 'warehouse'
     | 'assigned'
+    | 'exhibition'
     | 'repair'
     | 'retired';
   notes?: string;
