@@ -6,6 +6,7 @@ import {
   listPharmacyMembers,
   listPharmacyRoles,
 } from '@/lib/pharmacies/queries';
+import { getLaunch2027SeatsSummary } from '@/lib/pharmacies/launch-seats';
 import { listPharmacyProducts } from '@/lib/pharmacies/products';
 import {
   getPharmacyCatalogMode,
@@ -37,6 +38,7 @@ export default async function PharmacyDetailPage({
   const [
     pharmacy,
     plans,
+    launchSeats,
     members,
     roles,
     catalog,
@@ -53,6 +55,7 @@ export default async function PharmacyDetailPage({
   ] = await Promise.all([
     getPharmacyById(pharmacyId),
     listActivePlans(),
+    getLaunch2027SeatsSummary(pharmacyId),
     listPharmacyMembers(pharmacyId),
     listPharmacyRoles(),
     listPharmacyProducts(pharmacyId, { status: 'all' }),
@@ -103,6 +106,7 @@ export default async function PharmacyDetailPage({
     <PharmacyDetailClient
       pharmacy={pharmacy}
       plans={plans}
+      launchSeats={launchSeats}
       members={members}
       roles={roles}
       usersCapabilities={usersCapabilities}

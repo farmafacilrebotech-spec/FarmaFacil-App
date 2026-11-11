@@ -74,8 +74,9 @@ export function KioskEntitlementAdminPanel({
           Gestión comercial (SuperAdmin)
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          El Kiosko es un add-on independiente del plan. Estas acciones no
-          registran cobros ni pagos.
+          El Kiosko es un servicio add-on independiente del plan SaaS. Estas
+          acciones activan o suspenden el módulo; no firman el contrato
+          comercial ni registran cobros.
         </p>
       </div>
 
@@ -112,7 +113,7 @@ export function KioskEntitlementAdminPanel({
           {busy === 'activate_trial' ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
           ) : null}
-          Activar prueba
+          Iniciar prueba gratuita
         </Button>
         <Button
           type="button"
@@ -124,7 +125,7 @@ export function KioskEntitlementAdminPanel({
           {busy === 'activate_addon' ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
           ) : null}
-          Activar add-on
+          Activar servicio Kiosko
         </Button>
         <Button
           type="button"
@@ -136,7 +137,7 @@ export function KioskEntitlementAdminPanel({
           {busy === 'suspend' ? (
             <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
           ) : null}
-          Suspender
+          Suspender servicio
         </Button>
         <Button
           type="button"

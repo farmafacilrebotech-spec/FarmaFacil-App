@@ -1,6 +1,6 @@
 /**
  * Fuente única de planes comerciales vigentes (UI).
- * No inventa precios de asignación ni crea filas en `plans`.
+ * No inventa filas en `plans`. Precios lista/promo separados del plan técnico.
  */
 import {
   APPROVED_COMMERCIAL_PLAN_LABELS,
@@ -9,10 +9,18 @@ import {
 } from '@/lib/commercial/commercial-plan-labels';
 import { PLAN_CATALOG_EXPECTATIONS } from '@/lib/commercial/plan-catalog-mode';
 import type { PlanSummary } from '@/lib/pharmacies/types';
+import {
+  LAUNCH_2027_PROMO_MONTHLY_CENTS,
+  LIST_MONTHLY_CENTS,
+  annualPrepaidCents,
+  formatEurFromCents,
+  plansKeyToPaidSku,
+  type PaidCommercialSku,
+} from '@/lib/pharmacies/commercial-assign-pricing';
 
 export { commercialPlanLabel };
 
-/** Claves comerciales aprobadas (producto FarmaFácil). */
+/** Claves comerciales aprobadas (producto FarmaFácil / plans.key). */
 export const COMMERCIAL_PLAN_KEYS = [
   'general',
   'personalizado',
@@ -21,7 +29,6 @@ export const COMMERCIAL_PLAN_KEYS = [
 
 export type CommercialPlanKey = (typeof COMMERCIAL_PLAN_KEYS)[number];
 
-/** Alias técnicos posibles en DB / simulador. */
 const COMMERCIAL_KEY_ALIASES: Record<string, CommercialPlanKey> = {
   general: 'general',
   personalizado: 'personalizado',
@@ -52,23 +59,18 @@ export function isLegacyKernelPlanKey(key: string | null | undefined): boolean {
 }
 
 export type SelectablePlanOption = {
-  /** Clave a enviar al RPC si es asignable. */
   assignKey: string;
   label: string;
   description: string;
   kind: 'commercial' | 'legacy' | 'other';
-  /** True si existe fila activa en `plans` y se puede intentar el cambio. */
   assignable: boolean;
   planId: string | null;
+  sku?: PaidCommercialSku;
+  listMonthlyLabel?: string;
+  promoMonthlyLabel?: string;
+  annualListLabel?: string;
 };
 
-/**
- * Construye opciones de cambio de plan desde:
- * 1) catálogo comercial vigente (configuración)
- * 2) planes activos reales en DB
- *
- * No inventa precios. Planes comerciales sin fila DB aparecen no asignables.
- */
 export function buildChangePlanOptions(
   dbPlans: PlanSummary[]
 ): SelectablePlanOption[] {
@@ -88,18 +90,30 @@ export function buildChangePlanOptions(
       aliases.map((a) => byKey.get(a)).find(Boolean) ??
       byKey.get(commercialKey) ??
       null;
+    const sku = plansKeyToPaidSku(match?.key ?? commercialKey);
+    const listCents = sku ? LIST_MONTHLY_CENTS[sku] : null;
+    const promoCents = sku ? LAUNCH_2027_PROMO_MONTHLY_CENTS[sku] : null;
 
     options.push({
       assignKey: match?.key ?? commercialKey,
-      label: expectation.label === 'Asistente IA personalizado'
-        ? APPROVED_COMMERCIAL_PLAN_LABELS.asistente_ia_personalizado
-        : expectation.label,
+      label:
+        expectation.label === 'Asistente IA personalizado'
+          ? APPROVED_COMMERCIAL_PLAN_LABELS.asistente_ia_personalizado
+          : expectation.label,
       description: match
         ? match.description || expectation.notes
         : `${expectation.notes} · Pendiente de fila técnica en catálogo (no se puede asignar aún).`,
       kind: 'commercial',
       assignable: Boolean(match?.is_active),
       planId: match?.id ?? null,
+      sku: sku ?? undefined,
+      listMonthlyLabel: listCents != null ? formatEurFromCents(listCents) : undefined,
+      promoMonthlyLabel:
+        promoCents != null ? formatEurFromCents(promoCents) : undefined,
+      annualListLabel:
+        listCents != null
+          ? formatEurFromCents(annualPrepaidCents(listCents))
+          : undefined,
     });
   }
 

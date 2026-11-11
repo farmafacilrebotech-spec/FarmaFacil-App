@@ -58,18 +58,18 @@ export function expectedCatalogModeForPlan(
 }
 
 /**
- * Operaciones de contratación/cambio de plan aún NO existen como RPC única.
- * Documentado en supabase/drafts/056_commercial_plan_assign_catalog_mode_v1.sql
+ * Asignación comercial: RPC canónica post-083_00/084.
  */
 export const PLAN_ASSIGN_RPC_STATUS = {
-  exists: false as const,
-  draftMigration: 'supabase/drafts/056_commercial_plan_assign_catalog_mode_v1.sql',
+  exists: true as const,
+  draftMigration: 'supabase/migrations/083_00_ff_assign_commercial_plan_from_056_v1.sql',
   draftRpc: 'ff_assign_commercial_plan_v1' as const,
+  guardMigration: 'supabase/migrations/084_commercial_assign_guard_launch_seats_v1.sql',
   interimRpcs: [
     'ff_attach_master_catalog_v1',
     'ff_set_pharmacy_catalog_mode_v1',
     'ff_sync_master_catalog_v1',
   ] as const,
   note:
-    'Borrador 056 listo (NO aplicado). Hasta autorizar apply, la UI alinea solo catalog_mode vía RPCs interim.',
+    'UI SuperAdmin debe usar ff_assign_commercial_plan_v1. 017 rechaza keys comerciales.',
 };

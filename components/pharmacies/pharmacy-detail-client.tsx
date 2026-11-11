@@ -198,6 +198,7 @@ type PersonalizationForm = {
 export function PharmacyDetailClient({
   pharmacy: initialPharmacy,
   plans,
+  launchSeats,
   members,
   roles,
   usersCapabilities,
@@ -224,6 +225,13 @@ export function PharmacyDetailClient({
 }: {
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
+  launchSeats?: {
+    cohortKey: 'launch_2027';
+    maxSlots: number;
+    usedSlots: number;
+    remaining: number;
+    pharmacyHasActiveSeat: boolean;
+  };
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
   usersCapabilities: PharmacyUsersCapabilities;
@@ -1279,6 +1287,7 @@ export function PharmacyDetailClient({
         pharmacyId={pharmacy.id}
         currentPlan={pharmacy.plan}
         plans={plans}
+        launchSeats={launchSeats}
         onSuccess={(plan) => {
           setPharmacy((prev) => ({
             ...prev,
