@@ -2,18 +2,18 @@
 
 ## Asset
 `public/images/posters/pharmacy-qr-a4.png`  
-Export Canva (724×1024 px en la entrega actual). El diseño fijo no se redibuja en código.
+Export Canva alta resolución (**4419×6250** px). El diseño fijo no se redibuja en código.
 
 ## Zonas dinámicas (px sobre plantilla → fracción 0..1)
 
-Medidas sobre la cabecera blanca entre líneas turquesa (y≈22..139) y la caja QR blanca.
+Medidas en fracciones relativas (mismas que el export 724×1024); píxeles equivalentes sobre 4419×6250:
 
-| Zona | Píxeles (x, y, w×h) | Notas |
+| Zona | Píxeles HD (x, y, w×h) | Notas |
 |------|---------------------|--------|
-| Logo | `90, 28, 544×52` | contain, centrado; sin logo → no se dibuja |
-| Nombre (con logo) | `50, 84, 624×48` | 1–2 líneas, auto-tamaño 18→9 pt |
-| Nombre (sin logo) | `50, 32, 624×100` | aprovecha cabecera |
-| QR | `455, 762, 225×228` | interior de la caja blanca (pad ~10 px del borde turquesa) + quiet zone 4 % |
+| Logo | `549, 171, 3320×317` | contain, centrado; sin logo → no se dibuja |
+| Nombre (con logo) | `305, 513, 3809×293` | 1–2 líneas, auto-tamaño 18→9 pt |
+| Nombre (sin logo) | `305, 195, 3809×610` | aprovecha cabecera |
+| QR | `2777, 4651, 1373×1392` | interior de la caja blanca + quiet zone 4 % |
 
 Config: `lib/pharmacies/pharmacy-qr-poster-layout.ts`  
 `pdfDownloadEnabled: **false**` hasta aprobación visual.
@@ -31,4 +31,4 @@ Salida gitignored: `public/_review_clients_qr/` (+ copia en `~/Desktop/farmafaci
 ## Checklist post-aprobación
 - [ ] OK visual de Pilar
 - [ ] `pdfDownloadEnabled: true`
-- [ ] (Opcional) sustituir PNG por export ≥ 2480×3508 si se quiere más nitidez de impresión
+- [x] PNG alta resolución 4419×6250 integrado

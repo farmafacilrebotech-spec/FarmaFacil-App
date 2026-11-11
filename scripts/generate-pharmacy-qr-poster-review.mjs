@@ -21,7 +21,7 @@ const TEMPLATE = path.join(ROOT, 'public/images/posters/pharmacy-qr-a4.png');
 const OUT = path.join(ROOT, 'public/_review_clients_qr');
 const DESKTOP = path.join(os.homedir(), 'Desktop', 'farmafacil-cartel-review');
 
-const TEMPLATE_PX = { width: 724, height: 1024 };
+const TEMPLATE_PX = { width: 4419, height: 6250 };
 const PAGE = { widthMm: 210, heightMm: 297 };
 
 function px(x, y, w, h) {
@@ -34,10 +34,10 @@ function px(x, y, w, h) {
 }
 
 const LAYOUT = {
-  logo: px(90, 28, 544, 52),
-  name: px(50, 84, 624, 48),
-  nameNoLogo: px(50, 32, 624, 100),
-  qr: px(455, 762, 225, 228),
+  logo: px(549, 171, 3320, 317),
+  name: px(305, 513, 3809, 293),
+  nameNoLogo: px(305, 195, 3809, 610),
+  qr: px(2777, 4651, 1373, 1392),
   quietZoneRatio: 0.04,
   nameStyle: {
     maxFontSizePt: 18,
@@ -326,10 +326,11 @@ async function main() {
     publicId: PUBLIC_ID,
     template: TEMPLATE,
     layoutPx: {
-      logo: '90,28 544×52',
-      name: '50,84 624×48',
-      nameNoLogo: '50,32 624×100',
-      qrInner: '455,762 225×228',
+      logo: '549,171 3320×317',
+      name: '305,513 3809×293',
+      nameNoLogo: '305,195 3809×610',
+      qrInner: '2777,4651 1373×1392',
+      templatePx: '4419×6250',
     },
     pdfDownloadEnabled: false,
     variants: summary,

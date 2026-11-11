@@ -28,12 +28,12 @@ describe('PHARMACY_QR_POSTER_LAYOUT', () => {
     assert.equal(isPharmacyQrPosterDownloadEnabled(), false);
   });
 
-  it('A4 210×297 mm y template 724×1024', () => {
+  it('A4 210×297 mm y template 4419×6250', () => {
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.page.widthMm, 210);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.page.heightMm, 297);
     assert.deepEqual(PHARMACY_QR_POSTER_LAYOUT.templatePx, {
-      width: 724,
-      height: 1024,
+      width: 4419,
+      height: 6250,
     });
   });
 

@@ -120,11 +120,11 @@ export function qrInnerRectMm(
 }
 
 /**
- * Medido sobre pharmacy-qr-a4.png (724×1024):
- * - Cabecera blanca entre líneas turquesa y≈22..139
- * - Caja QR blanca (interior, sin borde turquesa) ≈ 445,752 → 689,999
+ * Medido sobre pharmacy-qr-a4.png (4419×6250; mismas fracciones relativas que 724×1024):
+ * - Cabecera blanca entre líneas turquesa y≈134..848
+ * - Caja QR blanca (interior, sin borde turquesa) ≈ 2716,4590 → 4206,6099
  */
-const TEMPLATE_PX = { width: 724, height: 1024 } as const;
+const TEMPLATE_PX = { width: 4419, height: 6250 } as const;
 
 function px(
   x: number,
@@ -142,14 +142,14 @@ export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
   logo: {
     configured: true,
     // Franja superior de cabecera (bajo 1ª línea turquesa)
-    rect: px(90, 28, 544, 52),
+    rect: px(549, 171, 3320, 317),
   },
   name: {
     configured: true,
     // Bajo el logo, aún sobre la 2ª línea turquesa (y≈140)
-    rect: px(50, 84, 624, 48),
+    rect: px(305, 513, 3809, 293),
     // Sin logo: usa casi toda la cabecera
-    rectWithoutLogo: px(50, 32, 624, 100),
+    rectWithoutLogo: px(305, 195, 3809, 610),
     maxFontSizePt: 18,
     minFontSizePt: 9,
     maxLines: 2,
@@ -160,7 +160,7 @@ export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
   qr: {
     configured: true,
     // Interior de la caja blanca (pad ~10px respecto al borde turquesa)
-    rect: px(455, 762, 225, 228),
+    rect: px(2777, 4651, 1373, 1392),
     quietZoneRatio: 0.04,
   },
   // Pendiente de aprobación visual de los PDFs de ejemplo
