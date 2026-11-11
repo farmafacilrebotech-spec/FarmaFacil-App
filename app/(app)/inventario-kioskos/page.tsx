@@ -12,48 +12,76 @@ import {
   getKioskInventoryCounts,
   listKioskAssets,
 } from '@/lib/kiosk-inventory/queries';
-import type { KioskAssetStatus } from '@/lib/kiosk-inventory/types';
+import type { InventoryUiStatus, KioskAssetStatus } from '@/lib/kiosk-inventory/types';
+import { INVENTORY_UI_STATUS_LABELS } from '@/lib/kiosk-inventory/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 export const dynamic = 'force-dynamic';
 
+type StatusFilter =
+  | KioskAssetStatus
+  | InventoryUiStatus
+  | 'all'
+  | 'needs_serial'
+  | 'ordered'
+  | 'received';
+
+function parseStatus(raw: string | undefined): StatusFilter {
+  if (
+    raw === 'ordered' ||
+    raw === 'received' ||
+    raw === 'assigned' ||
+    raw === 'exhibition' ||
+    raw === 'repair' ||
+    raw === 'retired' ||
+    raw === 'needs_serial' ||
+    raw === 'warehouse' ||
+    raw === 'pending_identification'
+  ) {
+    return raw;
+  }
+  return 'all';
+}
+
 export default async function KioskInventoryPage({
   searchParams,
 }: {
-  searchParams?: { q?: string; status?: string };
+  searchParams?: { q?: string; status?: string; vendor?: string };
 }) {
   if (!(await hasKioskInventoryRead())) {
     redirect('/access-denied');
   }
 
-  const statusParam = searchParams?.status;
-  const status: KioskAssetStatus | 'all' | 'needs_serial' =
-    statusParam === 'pending_identification' ||
-    statusParam === 'warehouse' ||
-    statusParam === 'assigned' ||
-    statusParam === 'repair' ||
-    statusParam === 'retired' ||
-    statusParam === 'needs_serial'
-      ? statusParam
-      : 'all';
+  const status = parseStatus(searchParams?.status);
   const q = searchParams?.q ?? '';
+  const vendor = searchParams?.vendor ?? '';
 
   const [counts, assets, canWrite] = await Promise.all([
     getKioskInventoryCounts(),
-    listKioskAssets({ query: q, status }),
+    listKioskAssets({ query: q, status, vendor }),
     hasKioskInventoryWrite(),
   ]);
 
   const filters: { key: string; label: string }[] = [
     { key: 'all', label: 'Todos' },
-    { key: 'pending_identification', label: 'Pend. identificar' },
-    { key: 'needs_serial', label: 'Sin serie conjunto' },
-    { key: 'warehouse', label: 'Almacén' },
-    { key: 'assigned', label: 'Asignados' },
-    { key: 'repair', label: 'Reparación' },
-    { key: 'retired', label: 'Retirados' },
+    { key: 'ordered', label: INVENTORY_UI_STATUS_LABELS.ordered },
+    { key: 'received', label: INVENTORY_UI_STATUS_LABELS.received },
+    { key: 'assigned', label: INVENTORY_UI_STATUS_LABELS.assigned },
+    { key: 'exhibition', label: INVENTORY_UI_STATUS_LABELS.exhibition },
+    { key: 'repair', label: INVENTORY_UI_STATUS_LABELS.repair },
+    { key: 'retired', label: INVENTORY_UI_STATUS_LABELS.retired },
+    { key: 'needs_serial', label: 'Sin serie' },
   ];
+
+  function filterHref(key: string) {
+    const params = new URLSearchParams();
+    if (key !== 'all') params.set('status', key);
+    if (q) params.set('q', q);
+    if (vendor) params.set('vendor', vendor);
+    const qs = params.toString();
+    return qs ? `/inventario-kioskos?${qs}` : '/inventario-kioskos';
+  }
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -62,13 +90,8 @@ export default async function KioskInventoryPage({
           Inventario de kioskos
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Activos físicos con identificador permanente (KSK-…). Independiente
-          del emparejamiento runtime y del aprovisionamiento previsto del
-          simulador comercial.
-        </p>
-        <p className="mt-2 text-xs text-amber-800">
-          El simulador en Tarifas usa hipótesis de inventario inicial / lote /
-          plazo: no crea ni modifica estos activos.
+          Unidades previstas (pedido) y activos físicos con código KSK. Las
+          unidades blancas no tienen KSK hasta la recepción.
         </p>
         <p className="mt-2 text-sm">
           Compras y presupuestos de proveedor:{' '}
@@ -93,11 +116,25 @@ export default async function KioskInventoryPage({
             id="inv-q"
             name="q"
             defaultValue={q}
-            placeholder="Código, serie, farmacia, póliza…"
+            placeholder="Código, serie, farmacia, pedido…"
           />
         </div>
-        {statusParam ? (
-          <input type="hidden" name="status" value={statusParam} />
+        <div className="w-full space-y-1.5 sm:w-56">
+          <label
+            htmlFor="inv-vendor"
+            className="text-xs font-medium text-muted-foreground"
+          >
+            Proveedor
+          </label>
+          <Input
+            id="inv-vendor"
+            name="vendor"
+            defaultValue={vendor}
+            placeholder="Filtrar proveedor…"
+          />
+        </div>
+        {status !== 'all' ? (
+          <input type="hidden" name="status" value={status} />
         ) : null}
         <Button type="submit" variant="secondary">
           Filtrar
@@ -106,15 +143,9 @@ export default async function KioskInventoryPage({
 
       <div className="flex flex-wrap gap-2">
         {filters.map((f) => {
-          const href =
-            f.key === 'all'
-              ? q
-                ? `/inventario-kioskos?q=${encodeURIComponent(q)}`
-                : '/inventario-kioskos'
-              : `/inventario-kioskos?status=${f.key}${
-                  q ? `&q=${encodeURIComponent(q)}` : ''
-                }`;
-          const active = (statusParam ?? 'all') === f.key || (!statusParam && f.key === 'all');
+          const active =
+            (searchParams?.status ?? 'all') === f.key ||
+            (!searchParams?.status && f.key === 'all');
           return (
             <Button
               key={f.key}
@@ -122,7 +153,7 @@ export default async function KioskInventoryPage({
               size="sm"
               variant={active ? 'default' : 'outline'}
             >
-              <Link href={href}>{f.label}</Link>
+              <Link href={filterHref(f.key)}>{f.label}</Link>
             </Button>
           );
         })}

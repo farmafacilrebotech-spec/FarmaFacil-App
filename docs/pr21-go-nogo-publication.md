@@ -146,7 +146,7 @@ En prod, hasta aplicar 076, las tablas/permisos de proveedores **no existen**.
 
 | Ámbito | Decisión |
 |--------|----------|
-| Cerrar trabajo funcional PR #21 en staging | **GO** (comparador, pedidos, numeración, recepción DEMO OK) |
+| Cerrar trabajo funcional PR #21 en staging | **GO** (comparador, pedidos, numeración, recepción DEMO OK, inventario estados 081 DEMO OK) |
 | Merge a `main` / deploy producción | **NO-GO** hasta plan de migraciones 076–080 en prod + backup + smoke |
 | Aplicar más SQL en producción ahora | **NO** |
 

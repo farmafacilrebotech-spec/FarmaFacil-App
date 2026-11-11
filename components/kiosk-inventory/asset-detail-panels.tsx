@@ -14,8 +14,12 @@ import {
   updateKioskAssetMetaAction,
 } from '@/app/(app)/inventario-kioskos/actions';
 import { EquipmentSerialHelp } from '@/components/kiosk-inventory/equipment-serial-help';
+import { InventoryStatusBadge } from '@/components/kiosk-inventory/inventory-status-badge';
 import type { KioskAssetDetail } from '@/lib/kiosk-inventory/types';
-import { KIOSK_ASSET_STATUS_LABELS } from '@/lib/kiosk-inventory/types';
+import {
+  INVENTORY_UI_STATUS_LABELS,
+  assetStatusToUi,
+} from '@/lib/kiosk-inventory/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -56,6 +60,12 @@ export function AssetDetailPanels({
   const [coverageStart, setCoverageStart] = React.useState(
     () => new Date().toISOString().slice(0, 10)
   );
+  const [statusReason, setStatusReason] = React.useState('');
+
+  const warehouseStatus = asset.equipmentSerial
+    ? ('warehouse' as const)
+    : ('pending_identification' as const);
+  const uiStatus = asset.uiStatus ?? assetStatusToUi(asset.status);
 
   async function run(
     fn: () => Promise<{ ok: boolean; error?: string; message?: string }>
@@ -103,9 +113,11 @@ export function AssetDetailPanels({
         <h2 className="text-sm font-semibold">
           Número de serie del conjunto FarmaFácil
         </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Código permanente: <strong>{asset.assetCode}</strong> · Estado:{' '}
-          {KIOSK_ASSET_STATUS_LABELS[asset.status]}
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span>
+            Código permanente: <strong>{asset.assetCode}</strong>
+          </span>
+          <InventoryStatusBadge uiStatus={uiStatus} />
         </p>
         <div className="mt-4 space-y-1.5">
           <Label>N.º de serie (Serial USB ICOD)</Label>
@@ -227,10 +239,10 @@ export function AssetDetailPanels({
 
       {canWrite ? (
         <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h2 className="text-sm font-semibold">Envío / asignación a farmacia</h2>
+          <h2 className="text-sm font-semibold">Estado y ubicación</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            La farmacia puede cambiar; el código KSK y el historial se
-            conservan. No hace falta tener la serie para enviar.
+            Estado actual: {INVENTORY_UI_STATUS_LABELS[uiStatus]}. El código
+            KSK, el pedido y el historial se conservan.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -239,7 +251,7 @@ export function AssetDetailPanels({
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                 value={pharmacyId}
                 onChange={(e) => setPharmacyId(e.target.value)}
-                disabled={busy}
+                disabled={busy || asset.status === 'retired'}
               >
                 {pharmacies.map((p) => (
                   <option key={p.id} value={p.id}>
@@ -254,7 +266,7 @@ export function AssetDetailPanels({
                 type="date"
                 value={shippedAt}
                 onChange={(e) => setShippedAt(e.target.value)}
-                disabled={busy}
+                disabled={busy || asset.status === 'retired'}
               />
             </div>
             <div className="space-y-1.5">
@@ -263,13 +275,22 @@ export function AssetDetailPanels({
                 type="date"
                 value={installedAt}
                 onChange={(e) => setInstalledAt(e.target.value)}
+                disabled={busy || asset.status === 'retired'}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Motivo (opc.)</Label>
+              <Input
+                value={statusReason}
+                onChange={(e) => setStatusReason(e.target.value)}
                 disabled={busy}
+                placeholder="Motivo del cambio de estado"
               />
             </div>
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button
-              disabled={busy || !pharmacyId}
+              disabled={busy || !pharmacyId || asset.status === 'retired'}
               onClick={() =>
                 void run(() =>
                   assignKioskAssetAction({
@@ -277,55 +298,87 @@ export function AssetDetailPanels({
                     pharmacyId,
                     shippedAt,
                     installedAt: installedAt || null,
+                    notes: statusReason || undefined,
                   })
                 )
               }
             >
-              Asignar / enviar
+              Asignar a farmacia
             </Button>
             <Button
               variant="outline"
-              disabled={busy}
+              disabled={busy || asset.status !== 'assigned'}
               onClick={() =>
                 void run(() =>
                   unassignKioskAssetAction({
                     assetId: asset.id,
-                    nextStatus: asset.equipmentSerial
-                      ? 'warehouse'
-                      : 'pending_identification',
+                    endReason: statusReason || 'return_warehouse',
+                    nextStatus: warehouseStatus,
                   })
                 )
               }
             >
-              Desvincular
+              Devolver al almacén
             </Button>
             <Button
               variant="outline"
-              disabled={busy}
+              disabled={busy || asset.status === 'retired'}
+              onClick={() =>
+                void run(() =>
+                  setKioskAssetStatusAction({
+                    assetId: asset.id,
+                    status: 'exhibition',
+                    notes: statusReason || 'Destinado a exposición',
+                  })
+                )
+              }
+            >
+              Destinar a exposición
+            </Button>
+            <Button
+              variant="outline"
+              disabled={busy || asset.status === 'retired'}
               onClick={() =>
                 void run(() =>
                   setKioskAssetStatusAction({
                     assetId: asset.id,
                     status: 'repair',
+                    notes: statusReason || 'Enviado a reparación',
                   })
                 )
               }
             >
-              En reparación
+              Enviar a reparación
             </Button>
             <Button
               variant="outline"
-              disabled={busy}
+              disabled={busy || asset.status !== 'repair'}
+              onClick={() =>
+                void run(() =>
+                  setKioskAssetStatusAction({
+                    assetId: asset.id,
+                    status: warehouseStatus,
+                    notes: statusReason || 'Recuperado de reparación → almacén',
+                  })
+                )
+              }
+            >
+              Recuperar de reparación
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={busy || asset.status === 'retired'}
               onClick={() =>
                 void run(() =>
                   setKioskAssetStatusAction({
                     assetId: asset.id,
                     status: 'retired',
+                    notes: statusReason || 'Retirado definitivamente',
                   })
                 )
               }
             >
-              Retirar
+              Retirar definitivamente
             </Button>
           </div>
         </section>
@@ -379,6 +432,35 @@ export function AssetDetailPanels({
           </Button>
         </section>
       ) : null}
+
+      <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+        <h2 className="text-sm font-semibold">Historial de estados</h2>
+        {!asset.statusEvents || asset.statusEvents.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">
+            Sin cambios de estado registrados.
+          </p>
+        ) : (
+          <ul className="mt-3 space-y-2 text-sm">
+            {asset.statusEvents.map((e) => (
+              <li
+                key={e.id}
+                className="rounded-xl border border-border px-3 py-2"
+              >
+                <p className="font-medium">
+                  {e.fromStatus
+                    ? `${e.fromStatus} → ${e.toStatus}`
+                    : e.toStatus}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(e.createdAt).toLocaleString('es-ES')}
+                  {e.reason ? ` · ${e.reason}` : ''}
+                  {e.createdBy ? ` · ${e.createdBy.slice(0, 8)}…` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
         <h2 className="text-sm font-semibold">Historial de asignaciones</h2>

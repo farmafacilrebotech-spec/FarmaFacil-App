@@ -1,10 +1,12 @@
 # PR #21 — Dependencias de recepción de kioskos
 
-## Staging (`dazfdcjscnpfvhcyjddt`) — actualizado 2026-11-10
+## Staging (`dazfdcjscnpfvhcyjddt`) — actualizado 2026-11-11
 
 - **065 aplicada**: existen `kiosk_assets`, `ff_kiosk_asset_next_code`, permisos inventario.
 - Enlace `kiosk_assets.purchase_order_id` → `kiosk_purchase_orders` añadido post-065.
 - Recepción DEMO validada: pedido `2026/00000003` → 10 activos `KSK-0001`…`KSK-0010`, reintento sin duplicar.
+- **081 aplicada** (exhibition + `kiosk_asset_status_events` + RPC receive/set_status/assign/unassign).
+- Smoke INV081: pedido `DEMO-INV081-74766869` → 10 pendientes → recv 6/4 → 10 KSK (`KSK-0023`…) → reintento OK → estados/auditoría OK. Ver `pr21-kiosk-inventory-statuses.md`.
 
 ## Producción (`gsnohwsvjxpjfcsstnfd`)
 
