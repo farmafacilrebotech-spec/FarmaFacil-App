@@ -16,7 +16,7 @@ import {
 } from './pharmacy-qr-poster-layout.ts';
 
 describe('PHARMACY_QR_POSTER_LAYOUT', () => {
-  it('tiene plantilla Canva y zonas logo/nombre independientes; descarga off', () => {
+  it('tiene plantilla Canva y zonas logo/nombre independientes; descarga on', () => {
     assert.equal(
       PHARMACY_QR_POSTER_LAYOUT.backgroundSrc,
       '/images/posters/pharmacy-qr-a4.png'
@@ -24,13 +24,12 @@ describe('PHARMACY_QR_POSTER_LAYOUT', () => {
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.logo.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.name.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.qr.configured, true);
-    assert.equal(PHARMACY_QR_POSTER_LAYOUT.pdfDownloadEnabled, false);
+    assert.equal(PHARMACY_QR_POSTER_LAYOUT.pdfDownloadEnabled, true);
     assert.equal(isPharmacyQrPosterTemplateReady(), true);
-    // Con NEXT_PUBLIC_FF_POSTER_PDF_LOCAL=1 (local) la descarga se habilita;
-    // sin el flag permanece desactivada (pdfDownloadEnabled=false).
+    // Descarga definitiva activa tras aprobación visual.
     const prev = process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL;
     delete process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL;
-    assert.equal(isPharmacyQrPosterDownloadEnabled(), false);
+    assert.equal(isPharmacyQrPosterDownloadEnabled(), true);
     process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL = '1';
     assert.equal(isPharmacyQrPosterDownloadEnabled(), true);
     if (prev === undefined) delete process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL;

@@ -3,7 +3,7 @@
  *
  * Zonas ROJA (logo) y VERDE (nombre) son rectángulos INDEPENDIENTES
  * medidos sobre la referencia marcada (escala 724×1024 → 4419×6250).
- * pdfDownloadEnabled=false hasta OK visual.
+ * pdfDownloadEnabled=true tras aprobación visual definitiva (PR #23).
  */
 
 export type PosterRectNorm = {
@@ -161,7 +161,7 @@ export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
     rect: px(2777, 4651, 1373, 1392),
     quietZoneRatio: 0.04,
   },
-  pdfDownloadEnabled: false,
+  pdfDownloadEnabled: true,
 };
 
 export function isPharmacyQrPosterTemplateReady(

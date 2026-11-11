@@ -2,6 +2,7 @@
 
 BEGIN;
 
+DROP FUNCTION IF EXISTS public.ff_list_my_customer_orders_v1(integer);
 DROP FUNCTION IF EXISTS public.ff_get_pharmacy_linked_client_v1(uuid, uuid);
 DROP FUNCTION IF EXISTS public.ff_list_pharmacy_linked_clients_v1(uuid, integer);
 DROP FUNCTION IF EXISTS public.ff_pharmacy_can_view_linked_clients(uuid);

@@ -10,11 +10,16 @@ Con `orders.view`, STAFF puede `SELECT` todas las columnas de `pharmacy_orders`,
 
 **No accesible:** fichas `profiles` de clientes (RLS `ff_can_view_profile`), tablas `customer_addresses` / `customer_saved_pharmacies` (ausentes en staging), pedidos de otras farmacias.
 
+## Estado staging
+
+**APLICADO** 2026-11-11 (v1 + v1b + v1c). Ver `staging_staff_hide_customer_profile_id_RESULTS.md`.
+
 ## Corrección (staging)
 
 1. `staging_staff_hide_customer_profile_id_v1.sql` — RPCs + helper de rol.
 2. `staging_staff_hide_customer_profile_id_v1b.sql` — `REVOKE SELECT` de tabla + `GRANT SELECT` por columnas **sin** `customer_profile_id` (un `REVOKE` solo de columna no basta si existe grant de tabla).
-3. App Clientes consume las RPC (fallback a SELECT directo si faltan).
+3. `staging_staff_hide_customer_profile_id_v1c.sql` — RPC `ff_list_my_customer_orders_v1` (área cliente; PostgREST ya no puede filtrar por `customer_profile_id`).
+4. App Clientes / área cliente consume las RPC.
 
 Pedidos de STAFF no seleccionan `customer_profile_id` → no se rompen.
 
