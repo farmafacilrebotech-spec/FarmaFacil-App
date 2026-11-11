@@ -24,7 +24,9 @@ import {
 import {
   buildPharmacyQrPosterPdf,
   downloadBlob,
+  isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
+  PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE,
   PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE,
 } from '@/lib/pharmacies/pharmacy-qr-poster';
 import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
@@ -38,14 +40,17 @@ import { Input } from '@/components/ui/input';
  */
 export function QrTab({
   pharmacyName,
+  /** logo_url de pharmacy_branding; null = sin logo (no sustituir por FarmaFácil). */
+  pharmacyLogoUrl = null,
   entrypoint,
   loadError,
   /** Sustituye entrypoint.publicUrl (p. ej. URL canónica de producción para impresión). */
   publicUrlOverride,
-  /** Muestra descarga de cartel PDF A4. */
+  /** Muestra el control de cartel PDF A4 (sigue gated por aprobación). */
   showPdfPoster = false,
 }: {
   pharmacyName: string;
+  pharmacyLogoUrl?: string | null;
   entrypoint: PharmacyHomeEntrypoint | null;
   loadError?: string | null;
   publicUrlOverride?: string | null;
@@ -110,18 +115,27 @@ export function QrTab({
       toast.error(PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE);
       return;
     }
+    if (!isPharmacyQrPosterDownloadEnabled()) {
+      toast.error(PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE);
+      return;
+    }
     setBusy('pdf');
     try {
-      const blob = await buildPharmacyQrPosterPdf({
+      const { blob, nameWarning } = await buildPharmacyQrPosterPdf({
         pharmacyName,
         publicUrl,
         publicId: entrypoint.publicId,
+        logoUrl: pharmacyLogoUrl,
       });
       const safe =
         entrypoint.publicId.replace(/[^a-z0-9-]/gi, '').toLowerCase() ||
         'farmacia';
       downloadBlob(`farmafacil-cartel-qr-${safe}.pdf`, blob);
-      toast.success('Cartel PDF descargado');
+      if (nameWarning) {
+        toast.warning(nameWarning);
+      } else {
+        toast.success('Cartel PDF descargado');
+      }
     } catch (err) {
       const msg =
         err instanceof Error && err.message.trim()
@@ -236,7 +250,7 @@ export function QrTab({
               <Button
                 variant="outline"
                 className="gap-2 sm:col-span-2"
-                disabled={busy !== null}
+                disabled={busy !== null || !isPharmacyQrPosterDownloadEnabled()}
                 onClick={() => void downloadPdf()}
               >
                 {busy === 'pdf' ? (
@@ -248,9 +262,11 @@ export function QrTab({
               </Button>
             ) : null}
           </div>
-          {showPdfPoster && !isPharmacyQrPosterTemplateReady() ? (
+          {showPdfPoster && !isPharmacyQrPosterDownloadEnabled() ? (
             <p className="text-xs text-muted-foreground">
-              El cartel PDF usará la plantilla Canva cuando esté configurada.
+              {!isPharmacyQrPosterTemplateReady()
+                ? 'El cartel PDF usará la plantilla Canva (logo, nombre y QR dinámicos) cuando esté configurada y aprobada visualmente.'
+                : PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE}{' '}
               PNG y SVG del QR ya están disponibles.
             </p>
           ) : null}

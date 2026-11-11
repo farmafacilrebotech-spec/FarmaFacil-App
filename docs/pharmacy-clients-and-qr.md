@@ -49,14 +49,16 @@ Pedidos de STAFF siguen operativos (no seleccionan esa columna).
 
 ### Pendiente (Canva)
 - PDF A4 = PNG de fondo (export Canva) + superposición dinámica de:
-  1. Nombre real de la farmacia
-  2. QR real de la URL pública canónica
+  1. Logo de la farmacia (`pharmacy_branding.logo_url`, contain; sin logo → no marcador)
+  2. Nombre real de la farmacia (auto-tamaño, 1–2 líneas)
+  3. QR real de la URL pública canónica
 - Código preparado en:
-  - `lib/pharmacies/pharmacy-qr-poster-layout.ts` (zonas mm + `configured`)
-  - `lib/pharmacies/pharmacy-qr-poster.ts` (composición)
-- Hasta entregar PNG + coordenadas: `isPharmacyQrPosterTemplateReady() === false` y la descarga PDF informa que la plantilla está pendiente.
-- **No** inventar ni regenerar plantillas comerciales en código.
-- Instrucciones de integración: `docs/pharmacy-qr-poster-canva.md`.
+  - `lib/pharmacies/pharmacy-qr-poster-layout.ts` (zonas relativas 0..1 + `pdfDownloadEnabled`)
+  - `lib/pharmacies/pharmacy-qr-poster-fit.ts` / `pharmacy-qr-poster.ts`
+- **PNG Canva no recibido aún** → zonas `configured: false`.
+- Descarga PDF del panel **desactivada** hasta aprobación visual (`pdfDownloadEnabled: false`).
+- **No** inventar plantilla ni coordenadas a ciegas.
+- Instrucciones: `docs/pharmacy-qr-poster-canva.md`.
 
 ## Fuera de alcance de este PR
 - Merge / deploy / migraciones en producción.

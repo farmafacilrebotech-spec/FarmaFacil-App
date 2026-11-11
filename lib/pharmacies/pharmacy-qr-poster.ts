@@ -1,29 +1,45 @@
 /**
- * Cartel PDF A4: plantilla Canva (fondo) + nombre + QR dinámicos.
- * No dibuja composición comercial en código.
+ * Cartel PDF A4: plantilla Canva (fondo) + logo + nombre + QR dinámicos.
+ * No redibuja la composición comercial de Canva.
  */
 
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 
 import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
+import { fitPharmacyNameInZone, ptToMm } from '@/lib/pharmacies/pharmacy-qr-poster-fit';
 import {
+  containRect,
+  isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
+  PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE,
   PHARMACY_QR_POSTER_LAYOUT,
   PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE,
+  qrInnerRectMm,
+  rectNormToMm,
   type PharmacyQrPosterLayout,
   type PosterRectMm,
 } from '@/lib/pharmacies/pharmacy-qr-poster-layout';
 
 export {
+  isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
+  PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE,
   PHARMACY_QR_POSTER_LAYOUT,
   PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE,
 } from '@/lib/pharmacies/pharmacy-qr-poster-layout';
 
+export type PharmacyQrPosterBuildResult = {
+  blob: Blob;
+  nameWarning: string | null;
+  usedLogo: boolean;
+};
+
 async function loadImageAsDataUrl(src: string): Promise<string> {
   const absolute =
-    src.startsWith('http://') || src.startsWith('https://') || src.startsWith('data:')
+    src.startsWith('http://') ||
+    src.startsWith('https://') ||
+    src.startsWith('data:')
       ? src
       : typeof window !== 'undefined'
         ? `${window.location.origin}${src.startsWith('/') ? src : `/${src}`}`
@@ -31,14 +47,23 @@ async function loadImageAsDataUrl(src: string): Promise<string> {
 
   const res = await fetch(absolute);
   if (!res.ok) {
-    throw new Error('No se ha podido cargar la plantilla del cartel');
+    throw new Error('No se ha podido cargar la imagen del cartel');
   }
   const blob = await res.blob();
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Plantilla del cartel ilegible'));
+    reader.onerror = () => reject(new Error('Imagen del cartel ilegible'));
     reader.readAsDataURL(blob);
+  });
+}
+
+function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se ha podido decodificar la imagen'));
+    img.src = dataUrl;
   });
 }
 
@@ -58,51 +83,103 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
 }
 
-function drawNameInZone(
+function resolveNameZoneMm(
+  layout: PharmacyQrPosterLayout,
+  hasLogo: boolean
+): PosterRectMm {
+  const norm =
+    !hasLogo && layout.name.rectWithoutLogo
+      ? layout.name.rectWithoutLogo
+      : layout.name.rect;
+  return rectNormToMm(norm, layout.page);
+}
+
+function drawFittedName(
   doc: jsPDF,
   pharmacyName: string,
-  layout: PharmacyQrPosterLayout
-): void {
-  const { rect, fontSizePt, color, align, fontStyle } = layout.name;
-  const rgb = hexToRgb(color);
-  doc.setFont('helvetica', fontStyle);
-  doc.setFontSize(fontSizePt);
+  layout: PharmacyQrPosterLayout,
+  hasLogo: boolean
+): string | null {
+  const zoneMm = resolveNameZoneMm(layout, hasLogo);
+  const fit = fitPharmacyNameInZone(doc, pharmacyName, zoneMm, layout.name);
+  const rgb = hexToRgb(layout.name.color);
+
+  doc.setFont('helvetica', layout.name.fontStyle);
+  doc.setFontSize(fit.fontSizePt);
   doc.setTextColor(rgb.r, rgb.g, rgb.b);
 
-  const text = pharmacyName.trim() || 'Farmacia';
-  const lines = doc.splitTextToSize(text, Math.max(rect.w, 1));
-  const lineH = fontSizePt * 0.4; // mm approx from pt
-  const blockH = lines.length * lineH;
-  const startY = rect.y + Math.max((rect.h - blockH) / 2, 0) + lineH * 0.85;
+  const lineH = ptToMm(fit.fontSizePt) * 1.2;
+  const blockH = fit.lines.length * lineH;
+  const startY = zoneMm.y + Math.max((zoneMm.h - blockH) / 2, 0) + lineH * 0.8;
 
-  let x = rect.x;
-  if (align === 'center') x = rect.x + rect.w / 2;
-  if (align === 'right') x = rect.x + rect.w;
+  let x = zoneMm.x;
+  if (layout.name.align === 'center') x = zoneMm.x + zoneMm.w / 2;
+  if (layout.name.align === 'right') x = zoneMm.x + zoneMm.w;
 
-  doc.text(lines, x, startY, { align, maxWidth: rect.w });
+  doc.text(fit.lines, x, startY, {
+    align: layout.name.align,
+    maxWidth: zoneMm.w,
+  });
+
+  return fit.warning;
+}
+
+async function drawLogoContain(
+  doc: jsPDF,
+  logoDataUrl: string,
+  box: PosterRectMm
+): Promise<boolean> {
+  try {
+    const img = await loadHtmlImage(logoDataUrl);
+    const fitted = containRect(img.naturalWidth, img.naturalHeight, box);
+    if (fitted.w <= 0 || fitted.h <= 0) return false;
+    const format = logoDataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG';
+    doc.addImage(
+      logoDataUrl,
+      format,
+      fitted.x,
+      fitted.y,
+      fitted.w,
+      fitted.h,
+      undefined,
+      'FAST'
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function drawQrInZone(
   doc: jsPDF,
   qrDataUrl: string,
-  rect: PosterRectMm
+  layout: PharmacyQrPosterLayout
 ): void {
-  const size = Math.min(rect.w, rect.h);
-  const x = rect.x + (rect.w - size) / 2;
-  const y = rect.y + (rect.h - size) / 2;
-  doc.addImage(qrDataUrl, 'PNG', x, y, size, size, undefined, 'FAST');
+  const zone = rectNormToMm(layout.qr.rect, layout.page);
+  const inner = qrInnerRectMm(zone, layout.qr.quietZoneRatio);
+  doc.addImage(
+    qrDataUrl,
+    'PNG',
+    inner.x,
+    inner.y,
+    inner.w,
+    inner.h,
+    undefined,
+    'FAST'
+  );
 }
 
-/** Compone el PDF: fondo Canva + nombre + QR. */
-export function drawPharmacyQrPosterFromTemplate(
+/** Compone el PDF sobre la plantilla Canva. */
+export async function drawPharmacyQrPosterFromTemplate(
   doc: jsPDF,
   input: {
     pharmacyName: string;
     backgroundDataUrl: string;
     qrDataUrl: string;
+    logoDataUrl?: string | null;
     layout?: PharmacyQrPosterLayout;
   }
-): void {
+): Promise<{ nameWarning: string | null; usedLogo: boolean }> {
   const layout = input.layout ?? PHARMACY_QR_POSTER_LAYOUT;
   const { widthMm, heightMm } = layout.page;
 
@@ -116,19 +193,39 @@ export function drawPharmacyQrPosterFromTemplate(
     undefined,
     'FAST'
   );
-  drawNameInZone(doc, input.pharmacyName, layout);
-  drawQrInZone(doc, input.qrDataUrl, layout.qr.rect);
+
+  let usedLogo = false;
+  if (input.logoDataUrl?.trim() && layout.logo.configured) {
+    const logoBox = rectNormToMm(layout.logo.rect, layout.page);
+    usedLogo = await drawLogoContain(doc, input.logoDataUrl, logoBox);
+  }
+
+  const nameWarning = drawFittedName(
+    doc,
+    input.pharmacyName,
+    layout,
+    usedLogo
+  );
+  drawQrInZone(doc, input.qrDataUrl, layout);
+
+  return { nameWarning, usedLogo };
 }
 
 export async function buildPharmacyQrPosterPdf(input: {
   pharmacyName: string;
   publicUrl: string;
   publicId: string;
-  /** Override de layout (tests). */
+  /** logo_url de pharmacy_branding (nunca FarmaFácil de sustituto). */
+  logoUrl?: string | null;
   layout?: PharmacyQrPosterLayout;
-  /** Data URL de plantilla ya cargada (tests / scripts). */
   backgroundDataUrl?: string;
-}): Promise<Blob> {
+  logoDataUrl?: string | null;
+  /**
+   * Si true, permite generar aunque pdfDownloadEnabled=false
+   * (solo scripts de revisión / aprobación visual).
+   */
+  allowUnapprovedReview?: boolean;
+}): Promise<PharmacyQrPosterBuildResult> {
   if (!isPrintSafePharmacyPublicUrl(input.publicUrl)) {
     throw new Error(
       'La URL del QR no es la de producción. No se genera el cartel.'
@@ -139,18 +236,29 @@ export async function buildPharmacyQrPosterPdf(input: {
   if (!isPharmacyQrPosterTemplateReady(layout)) {
     throw new Error(PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE);
   }
+  if (
+    !input.allowUnapprovedReview &&
+    !isPharmacyQrPosterDownloadEnabled(layout)
+  ) {
+    throw new Error(PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE);
+  }
 
   const backgroundSrc = layout.backgroundSrc!;
-  const [backgroundDataUrl, qrDataUrl] = await Promise.all([
+  const logoSrc = input.logoDataUrl ?? input.logoUrl ?? null;
+
+  const [backgroundDataUrl, qrDataUrl, logoDataUrl] = await Promise.all([
     input.backgroundDataUrl
       ? Promise.resolve(input.backgroundDataUrl)
       : loadImageAsDataUrl(backgroundSrc),
     QRCode.toDataURL(input.publicUrl, {
-      width: 960,
+      width: 1200,
       margin: 2,
       errorCorrectionLevel: 'M',
       color: { dark: '#0B0B0B', light: '#ffffff' },
     }),
+    logoSrc
+      ? loadImageAsDataUrl(logoSrc).catch(() => null)
+      : Promise.resolve(null),
   ]);
 
   const doc = new jsPDF({
@@ -159,14 +267,19 @@ export async function buildPharmacyQrPosterPdf(input: {
     format: 'a4',
   });
 
-  drawPharmacyQrPosterFromTemplate(doc, {
+  const { nameWarning, usedLogo } = await drawPharmacyQrPosterFromTemplate(doc, {
     pharmacyName: input.pharmacyName,
     backgroundDataUrl,
     qrDataUrl,
+    logoDataUrl,
     layout,
   });
 
-  return doc.output('blob');
+  return {
+    blob: doc.output('blob'),
+    nameWarning,
+    usedLogo,
+  };
 }
 
 export function downloadBlob(filename: string, blob: Blob): void {
