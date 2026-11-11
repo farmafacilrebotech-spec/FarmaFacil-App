@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache';
 import { createClient } from '@/lib/supabase/server';
+import { hasPlatformPermission } from '@/lib/auth/platform';
 import { mapCommercialRpcError } from '@/lib/commercial/rpc-errors';
 import {
   COMMERCIAL_PREP_RPC,
@@ -14,6 +15,21 @@ import type {
   UpdatePharmacyGeneralInput,
   UpdatePharmacySettingsInput,
 } from '@/lib/pharmacies/types';
+
+/** Datos identificativos / branding visibles: solo SuperAdmin. */
+async function requireSuperAdminPharmacyWrite(): Promise<
+  { ok: true } | { ok: false; error: string }
+> {
+  const write = await hasPlatformPermission('platform.pharmacies.write');
+  if (!write.ok) {
+    return {
+      ok: false,
+      error:
+        'Solo SuperAdmin puede modificar datos identificativos de la farmacia. El titular debe solicitarlo por escrito a FarmaFácil.',
+    };
+  }
+  return { ok: true };
+}
 
 export type CreatePharmacyResult =
   | {
@@ -202,6 +218,9 @@ export async function updatePharmacyGeneralAction(
     return { ok: false, error: 'Farmacia no válida.' };
   }
 
+  const gate = await requireSuperAdminPharmacyWrite();
+  if (!gate.ok) return gate;
+
   const name = input.name?.trim() ?? '';
   if (!name) {
     return { ok: false, error: 'El nombre de la farmacia es obligatorio.' };
@@ -275,6 +294,9 @@ export async function updatePharmacyPersonalizationAction(
   if (!pharmacyId) {
     return { ok: false, error: 'Farmacia no válida.' };
   }
+
+  const gate = await requireSuperAdminPharmacyWrite();
+  if (!gate.ok) return gate;
 
   const primary = emptyToNull(branding.primary_color);
   const secondary = emptyToNull(branding.secondary_color);

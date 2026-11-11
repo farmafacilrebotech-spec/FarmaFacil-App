@@ -13,6 +13,7 @@ import type {
 import {
   assetStatusToUi,
   inventorySortRank,
+  parseExhibitionLocation,
 } from '@/lib/kiosk-inventory/types';
 
 function mapStatus(raw: string | null | undefined): KioskAssetStatus {
@@ -31,10 +32,13 @@ function mapStatus(raw: string | null | undefined): KioskAssetStatus {
 
 function locationFor(
   status: KioskAssetStatus,
-  pharmacyName: string | null
+  pharmacyName: string | null,
+  notes: string | null
 ): string {
   if (status === 'assigned') return pharmacyName ?? 'Farmacia';
-  if (status === 'exhibition') return 'Exposición / demo';
+  if (status === 'exhibition') {
+    return parseExhibitionLocation(notes) ?? 'Exposición';
+  }
   if (status === 'repair') return 'Reparación';
   if (status === 'retired') return 'Retirado';
   if (status === 'warehouse' || status === 'pending_identification') {
@@ -51,6 +55,9 @@ function mapAsset(
   const equipmentSerial = (row.equipment_serial as string | null) ?? null;
   const status = mapStatus(row.status as string);
   const uiStatus = assetStatusToUi(status);
+  const notes = (row.notes as string | null) ?? null;
+  const exhibitionLocation =
+    status === 'exhibition' ? parseExhibitionLocation(notes) : null;
   return {
     id: String(row.id),
     assetCode: String(row.asset_code),
@@ -65,13 +72,14 @@ function mapAsset(
     currentPharmacyId: (row.current_pharmacy_id as string | null) ?? null,
     currentPharmacyName: pharmacyName,
     pairedDeviceId: (row.paired_device_id as string | null) ?? null,
-    notes: (row.notes as string | null) ?? null,
+    notes,
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
     activePolicyRef,
     needsIdentification: !equipmentSerial,
     isPendingSlot: false,
-    locationLabel: locationFor(status, pharmacyName),
+    locationLabel: locationFor(status, pharmacyName, notes),
+    exhibitionLocation,
   };
 }
 
@@ -148,6 +156,7 @@ async function listPendingOrderSlots(input?: {
         pendingSlotIndex: i,
         remainingOnOrder: remaining,
         locationLabel: 'Pendiente de recepción',
+        exhibitionLocation: null,
       });
     }
   }
@@ -299,11 +308,13 @@ export async function listKioskAssets(input?: {
     const ra = inventorySortRank(a.uiStatus);
     const rb = inventorySortRank(b.uiStatus);
     if (ra !== rb) return ra - rb;
+    // Dentro de cada estado: más reciente primero.
+    const ta = Date.parse(a.updatedAt || a.receivedAt || a.createdAt || '') || 0;
+    const tb = Date.parse(b.updatedAt || b.receivedAt || b.createdAt || '') || 0;
+    if (ta !== tb) return tb - ta;
     if (a.isPendingSlot && b.isPendingSlot) {
       return (a.purchaseOrderRef ?? '').localeCompare(b.purchaseOrderRef ?? '');
     }
-    if (a.isPendingSlot) return -1;
-    if (b.isPendingSlot) return 1;
     return a.assetCode.localeCompare(b.assetCode);
   });
 

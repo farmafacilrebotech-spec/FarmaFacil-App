@@ -18,6 +18,7 @@ import { InventoryStatusBadge } from '@/components/kiosk-inventory/inventory-sta
 import type { KioskAssetDetail } from '@/lib/kiosk-inventory/types';
 import {
   INVENTORY_UI_STATUS_LABELS,
+  appendAssetNote,
   assetStatusToUi,
 } from '@/lib/kiosk-inventory/types';
 import { Button } from '@/components/ui/button';
@@ -61,11 +62,19 @@ export function AssetDetailPanels({
     () => new Date().toISOString().slice(0, 10)
   );
   const [statusReason, setStatusReason] = React.useState('');
+  const [exhibitionLocation, setExhibitionLocation] = React.useState(
+    asset.exhibitionLocation ?? ''
+  );
 
   const warehouseStatus = asset.equipmentSerial
     ? ('warehouse' as const)
     : ('pending_identification' as const);
   const uiStatus = asset.uiStatus ?? assetStatusToUi(asset.status);
+  const statusLabel =
+    INVENTORY_UI_STATUS_LABELS[uiStatus] ??
+    asset.status ??
+    'Sin estado';
+  const retired = asset.status === 'retired';
 
   async function run(
     fn: () => Promise<{ ok: boolean; error?: string; message?: string }>
@@ -100,24 +109,44 @@ export function AssetDetailPanels({
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
       {message ? <p className="text-sm text-emerald-700">{message}</p> : null}
 
-      <div className="flex flex-wrap gap-2">
-        <Button asChild variant="outline">
-          <Link href={`/inventario-kioskos/${asset.id}/pegatina`}>
-            <Printer className="mr-2 h-4 w-4" />
-            Pegatina KSK + QR
-          </Link>
-        </Button>
-      </div>
+      <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">
+              Código permanente
+            </p>
+            <p className="mt-1 text-2xl font-semibold text-foreground">
+              {asset.assetCode}
+            </p>
+          </div>
+          <div className="flex flex-col items-start gap-1 sm:items-end">
+            <p className="text-xs text-muted-foreground">Estado operativo</p>
+            <InventoryStatusBadge uiStatus={uiStatus} />
+            <p className="text-xs font-medium text-foreground">{statusLabel}</p>
+          </div>
+        </div>
+        <p className="mt-3 text-xs text-muted-foreground">
+          Ubicación: {asset.locationLabel ?? '—'}
+          {asset.needsIdentification
+            ? ' · Indicador secundario: sin serie (no bloquea asignación/exposición)'
+            : ''}
+        </p>
+        <div className="mt-4">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`/inventario-kioskos/${asset.id}/pegatina`}>
+              <Printer className="mr-2 h-4 w-4" />
+              Pegatina KSK + QR
+            </Link>
+          </Button>
+        </div>
+      </section>
 
       <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
         <h2 className="text-sm font-semibold">
           Número de serie del conjunto FarmaFácil
         </h2>
-        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>
-            Código permanente: <strong>{asset.assetCode}</strong>
-          </span>
-          <InventoryStatusBadge uiStatus={uiStatus} />
+        <p className="mt-1 text-xs text-muted-foreground">
+          Dato técnico independiente del estado operativo.
         </p>
         <div className="mt-4 space-y-1.5">
           <Label>N.º de serie (Serial USB ICOD)</Label>
@@ -238,47 +267,144 @@ export function AssetDetailPanels({
       </section>
 
       {canWrite ? (
-        <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-          <h2 className="text-sm font-semibold">Estado y ubicación</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Estado actual: {INVENTORY_UI_STATUS_LABELS[uiStatus]}. El código
-            KSK, el pedido y el historial se conservan.
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label>Farmacia destino</Label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={pharmacyId}
-                onChange={(e) => setPharmacyId(e.target.value)}
-                disabled={busy || asset.status === 'retired'}
+        <section className="space-y-4">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+            <h2 className="text-sm font-semibold">Asignar / enviar</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Asigna el activo a una farmacia real. No requiere serie. No usa
+              farmacias ficticias para exposición.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Farmacia destino</Label>
+                <select
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={pharmacyId}
+                  onChange={(e) => setPharmacyId(e.target.value)}
+                  disabled={busy || retired}
+                >
+                  {pharmacies.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Fecha de envío</Label>
+                <Input
+                  type="date"
+                  value={shippedAt}
+                  onChange={(e) => setShippedAt(e.target.value)}
+                  disabled={busy || retired}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Fecha instalación / recepción (opc.)</Label>
+                <Input
+                  type="date"
+                  value={installedAt}
+                  onChange={(e) => setInstalledAt(e.target.value)}
+                  disabled={busy || retired}
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                disabled={busy || !pharmacyId || retired}
+                onClick={() =>
+                  void run(() =>
+                    assignKioskAssetAction({
+                      assetId: asset.id,
+                      pharmacyId,
+                      shippedAt,
+                      installedAt: installedAt || null,
+                      notes: statusReason || undefined,
+                    })
+                  )
+                }
               >
-                {pharmacies.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
+                Asignar / enviar
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy || asset.status !== 'assigned'}
+                onClick={() =>
+                  void run(() =>
+                    unassignKioskAssetAction({
+                      assetId: asset.id,
+                      endReason: statusReason || 'return_warehouse',
+                      nextStatus: warehouseStatus,
+                    })
+                  )
+                }
+              >
+                Devolver a disponible
+              </Button>
             </div>
-            <div className="space-y-1.5">
-              <Label>Fecha de envío</Label>
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+            <h2 className="text-sm font-semibold">En exposición</h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Marca el kiosko como exposición sin asignarlo a una farmacia. La
+              ubicación se añade a notas sin borrar el historial previo.
+            </p>
+            <div className="mt-3 space-y-1.5">
+              <Label>Ubicación de exposición</Label>
               <Input
-                type="date"
-                value={shippedAt}
-                onChange={(e) => setShippedAt(e.target.value)}
-                disabled={busy || asset.status === 'retired'}
+                value={exhibitionLocation}
+                onChange={(e) => setExhibitionLocation(e.target.value)}
+                disabled={busy || retired}
+                placeholder="Oficina, showroom, feria…"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Fecha instalación / recepción (opc.)</Label>
-              <Input
-                type="date"
-                value={installedAt}
-                onChange={(e) => setInstalledAt(e.target.value)}
-                disabled={busy || asset.status === 'retired'}
-              />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                disabled={busy || retired || !exhibitionLocation.trim()}
+                onClick={() => {
+                  const loc = exhibitionLocation.trim();
+                  const stamp = new Date().toLocaleString('es-ES');
+                  const line = `Exposición: ${loc} (${stamp})`;
+                  void run(async () => {
+                    const res = await setKioskAssetStatusAction({
+                      assetId: asset.id,
+                      status: 'exhibition',
+                      notes: line,
+                    });
+                    if (res.ok) {
+                      setNotes(appendAssetNote(asset.notes, line));
+                    }
+                    return res;
+                  });
+                }}
+              >
+                En exposición
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy || asset.status !== 'exhibition'}
+                onClick={() => {
+                  const line = `Vuelta a disponible desde exposición (${new Date().toLocaleString('es-ES')})`;
+                  void run(async () => {
+                    const res = await setKioskAssetStatusAction({
+                      assetId: asset.id,
+                      status: warehouseStatus,
+                      notes: line,
+                    });
+                    if (res.ok) setNotes(appendAssetNote(asset.notes, line));
+                    return res;
+                  });
+                }}
+              >
+                Volver a disponible
+              </Button>
             </div>
-            <div className="space-y-1.5">
+          </div>
+
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+            <h2 className="text-sm font-semibold">Reparación y retirada</h2>
+            <div className="mt-3 space-y-1.5">
               <Label>Motivo (opc.)</Label>
               <Input
                 value={statusReason}
@@ -287,102 +413,73 @@ export function AssetDetailPanels({
                 placeholder="Motivo del cambio de estado"
               />
             </div>
-          </div>
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button
-              disabled={busy || !pharmacyId || asset.status === 'retired'}
-              onClick={() =>
-                void run(() =>
-                  assignKioskAssetAction({
-                    assetId: asset.id,
-                    pharmacyId,
-                    shippedAt,
-                    installedAt: installedAt || null,
-                    notes: statusReason || undefined,
-                  })
-                )
-              }
-            >
-              Asignar a farmacia
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy || asset.status !== 'assigned'}
-              onClick={() =>
-                void run(() =>
-                  unassignKioskAssetAction({
-                    assetId: asset.id,
-                    endReason: statusReason || 'return_warehouse',
-                    nextStatus: warehouseStatus,
-                  })
-                )
-              }
-            >
-              Devolver al almacén
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy || asset.status === 'retired'}
-              onClick={() =>
-                void run(() =>
-                  setKioskAssetStatusAction({
-                    assetId: asset.id,
-                    status: 'exhibition',
-                    notes: statusReason || 'Destinado a exposición',
-                  })
-                )
-              }
-            >
-              Destinar a exposición
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy || asset.status === 'retired'}
-              onClick={() =>
-                void run(() =>
-                  setKioskAssetStatusAction({
-                    assetId: asset.id,
-                    status: 'repair',
-                    notes: statusReason || 'Enviado a reparación',
-                  })
-                )
-              }
-            >
-              Enviar a reparación
-            </Button>
-            <Button
-              variant="outline"
-              disabled={busy || asset.status !== 'repair'}
-              onClick={() =>
-                void run(() =>
-                  setKioskAssetStatusAction({
-                    assetId: asset.id,
-                    status: warehouseStatus,
-                    notes: statusReason || 'Recuperado de reparación → almacén',
-                  })
-                )
-              }
-            >
-              Recuperar de reparación
-            </Button>
-            <Button
-              variant="destructive"
-              disabled={busy || asset.status === 'retired'}
-              onClick={() =>
-                void run(() =>
-                  setKioskAssetStatusAction({
-                    assetId: asset.id,
-                    status: 'retired',
-                    notes: statusReason || 'Retirado definitivamente',
-                  })
-                )
-              }
-            >
-              Retirar definitivamente
-            </Button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                disabled={busy || retired}
+                onClick={() =>
+                  void run(() =>
+                    setKioskAssetStatusAction({
+                      assetId: asset.id,
+                      status: 'repair',
+                      notes:
+                        statusReason.trim() ||
+                        `Enviado a reparación (${new Date().toLocaleString('es-ES')})`,
+                    })
+                  )
+                }
+              >
+                Enviar a reparación
+              </Button>
+              <Button
+                variant="outline"
+                disabled={busy || asset.status !== 'repair'}
+                onClick={() =>
+                  void run(() =>
+                    setKioskAssetStatusAction({
+                      assetId: asset.id,
+                      status: warehouseStatus,
+                      notes:
+                        statusReason.trim() ||
+                        `Recuperado de reparación → disponible (${new Date().toLocaleString('es-ES')})`,
+                    })
+                  )
+                }
+              >
+                Recuperar de reparación
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={busy || retired}
+                onClick={() =>
+                  void run(() =>
+                    setKioskAssetStatusAction({
+                      assetId: asset.id,
+                      status: 'retired',
+                      notes:
+                        statusReason.trim() ||
+                        `Retirado definitivamente (${new Date().toLocaleString('es-ES')})`,
+                    })
+                  )
+                }
+              >
+                Retirar definitivamente
+              </Button>
+            </div>
           </div>
         </section>
-      ) : null}
+      ) : (
+        <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+          <h2 className="text-sm font-semibold">Estado operativo</h2>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <InventoryStatusBadge uiStatus={uiStatus} />
+            <span className="text-sm font-medium">{statusLabel}</span>
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Ubicación: {asset.locationLabel ?? '—'}
+          </p>
+        </section>
+      )}
 
       {canWrite ? (
         <section className="rounded-2xl border border-border bg-card p-5 shadow-soft">

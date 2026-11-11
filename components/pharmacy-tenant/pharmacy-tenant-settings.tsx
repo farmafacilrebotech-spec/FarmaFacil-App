@@ -21,6 +21,7 @@ export function PharmacyTenantSettings({
     context.profile.email
   );
   const roleLabel = pharmacyRoleLabel(context.membership.roleKey);
+  const logoColor = context.pharmacy.logoColor || '#0d9488';
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -34,11 +35,35 @@ export function PharmacyTenantSettings({
       ) : null}
 
       <Card className="overflow-hidden">
+        <div className="border-b border-border bg-muted/30 px-6 py-4">
+          <h2 className="text-sm font-semibold text-foreground">Logo</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Solo FarmaFácil (SuperAdmin) puede cambiar el logo, previa solicitud
+            escrita del titular.
+          </p>
+        </div>
+        <div className="flex items-center gap-4 p-6">
+          <PharmacyLogo
+            name={context.pharmacy.name}
+            logoUrl={context.pharmacy.logoUrl}
+            logoColor={logoColor}
+            size={64}
+            rounded="2xl"
+          />
+          <p className="text-sm text-muted-foreground">
+            {context.pharmacy.logoUrl
+              ? 'Logo configurado por FarmaFácil.'
+              : 'Sin logo configurado.'}
+          </p>
+        </div>
+      </Card>
+
+      <Card className="overflow-hidden">
         <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
           <PharmacyLogo
             name={context.pharmacy.name}
             logoUrl={context.pharmacy.logoUrl}
-            logoColor={context.pharmacy.logoColor || '#0d9488'}
+            logoColor={logoColor}
             size={56}
             rounded="2xl"
           />
@@ -88,8 +113,8 @@ export function PharmacyTenantSettings({
         </dl>
 
         <p className="border-t border-border px-6 py-4 text-xs text-muted-foreground">
-          La edición de branding, datos de contacto y otros ajustes se
-          habilitará en una fase posterior.
+          El logo se usa automáticamente en el cartel QR. La edición ampliada
+          de colores y contacto se habilitará en una fase posterior.
         </p>
       </Card>
     </div>

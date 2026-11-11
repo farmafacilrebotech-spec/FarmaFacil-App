@@ -63,9 +63,17 @@ export function InventoryTable({
               style={
                 a.uiStatus === 'ordered'
                   ? { backgroundColor: '#FFFFFF' }
-                  : a.uiStatus === 'received'
-                    ? { backgroundColor: '#FEF9C3' }
-                    : undefined
+                  : a.uiStatus === 'assigned'
+                    ? { backgroundColor: '#E6F9F8' }
+                    : a.uiStatus === 'exhibition'
+                      ? { backgroundColor: '#ECFDF5' }
+                      : a.uiStatus === 'received'
+                        ? { backgroundColor: '#FEF9C3' }
+                        : a.uiStatus === 'repair'
+                          ? { backgroundColor: '#FFF7ED' }
+                          : a.uiStatus === 'retired'
+                            ? { backgroundColor: '#FEF2F2' }
+                            : undefined
               }
               onDoubleClick={() => onOpen?.(a)}
             >

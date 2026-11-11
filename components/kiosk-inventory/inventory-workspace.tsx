@@ -13,16 +13,19 @@ import type {
   KioskAssetSummary,
   KioskInventoryCounts,
 } from '@/lib/kiosk-inventory/types';
-import { INVENTORY_UI_STATUS_LABELS } from '@/lib/kiosk-inventory/types';
+import {
+  INVENTORY_UI_STATUS_LABELS,
+  INVENTORY_UI_STATUS_ORDER,
+} from '@/lib/kiosk-inventory/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 type StatusFilterKey =
   | 'all'
   | 'ordered'
-  | 'received'
   | 'assigned'
   | 'exhibition'
+  | 'received'
   | 'repair'
   | 'retired'
   | 'needs_serial';
@@ -47,12 +50,10 @@ export function InventoryWorkspace({
 
   const filters: { key: StatusFilterKey; label: string }[] = [
     { key: 'all', label: 'Todos' },
-    { key: 'ordered', label: INVENTORY_UI_STATUS_LABELS.ordered },
-    { key: 'received', label: INVENTORY_UI_STATUS_LABELS.received },
-    { key: 'assigned', label: INVENTORY_UI_STATUS_LABELS.assigned },
-    { key: 'exhibition', label: INVENTORY_UI_STATUS_LABELS.exhibition },
-    { key: 'repair', label: INVENTORY_UI_STATUS_LABELS.repair },
-    { key: 'retired', label: INVENTORY_UI_STATUS_LABELS.retired },
+    ...INVENTORY_UI_STATUS_ORDER.map((key) => ({
+      key,
+      label: INVENTORY_UI_STATUS_LABELS[key],
+    })),
     { key: 'needs_serial', label: 'Sin serie (identificar)' },
   ];
 

@@ -28,6 +28,7 @@ export function PharmacyTenantShell({
     ),
     email: context.profile.email,
     roleLabel: pharmacyRoleLabel(context.membership.roleKey),
+    roleKey: String(context.membership.roleKey),
   };
 
   const pharmacy = {

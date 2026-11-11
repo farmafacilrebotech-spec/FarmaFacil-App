@@ -26,6 +26,14 @@ import {
   upsertSupplierContactAction,
   upsertSupplierQuoteAction,
 } from '@/app/(app)/proveedores/actions';
+import { extractSupplierQuotePdfAction } from '@/app/(app)/proveedores/quote-pdf-actions';
+import {
+  compareMoneyField,
+  compareTextField,
+  detectIdentityMismatch,
+  type FieldDiff,
+  type QuotePdfExtract,
+} from '@/lib/suppliers/quote-pdf-extract';
 import {
   DEFAULT_PO_UNIT_PRICE_NOTE,
   DEFAULT_VAT_BPS,
@@ -231,17 +239,19 @@ function SortTh<K extends string>({
   k,
   sort,
   onSort,
+  className,
 }: {
   label: string;
   k: K;
   sort: { key: K; dir: SortDir };
   onSort: (k: K) => void;
+  className?: string;
 }) {
   const active = sort.key === k;
   const Icon = !active ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown;
   return (
     <th
-      className="px-3 py-2"
+      className={cn('px-3 py-2', className)}
       aria-sort={
         active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'
       }
@@ -259,6 +269,75 @@ function SortTh<K extends string>({
       </button>
     </th>
   );
+}
+
+const DIR_STICKY_TH =
+  'sticky left-0 z-30 min-w-[220px] max-w-[280px] border-r border-border bg-muted shadow-[2px_0_6px_-2px_rgba(0,0,0,0.12)]';
+const DIR_STICKY_TD =
+  'sticky left-0 z-20 min-w-[220px] max-w-[280px] border-r border-border bg-card shadow-[2px_0_6px_-2px_rgba(0,0,0,0.08)] group-hover:bg-muted/80';
+
+const PENDING_PDF_MAX_BYTES = 12 * 1024 * 1024;
+
+type PendingQuotePdf = {
+  file: File;
+  status: 'idle' | 'reading' | 'ready' | 'error';
+  error: string | null;
+  extract: QuotePdfExtract | null;
+  model: string | null;
+  estimatedCostCents: number | null;
+};
+
+function PdfFieldHint({
+  diff,
+  sourced,
+  canAccept,
+  onAccept,
+}: {
+  diff?: FieldDiff;
+  sourced?: boolean;
+  canAccept?: boolean;
+  onAccept?: () => void;
+}) {
+  if (sourced && (!diff || diff.kind === 'match')) {
+    return (
+      <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
+        (desde PDF)
+      </p>
+    );
+  }
+  if (!diff) return null;
+  if (diff.kind === 'missing_in_pdf') {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        (PDF: No encontrado en PDF)
+      </p>
+    );
+  }
+  if (diff.kind === 'format_only') {
+    return (
+      <p className="text-[11px] text-muted-foreground">
+        (PDF: mismo valor, formato distinto
+        {diff.pdf ? ` — ${diff.pdf}` : ''})
+      </p>
+    );
+  }
+  if (diff.kind === 'real_diff') {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-red-600 dark:text-red-400">
+        <span>(PDF: {diff.pdf ?? '—'})</span>
+        {canAccept && onAccept ? (
+          <button
+            type="button"
+            className="underline underline-offset-2"
+            onClick={onAccept}
+          >
+            Aceptar PDF
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  return null;
 }
 
 function MaterialChips({ items }: { items: string[] }) {
@@ -481,6 +560,18 @@ export function SuppliersHub({
   const [quoteLinesDraft, setQuoteLinesDraft] = React.useState<QuoteLineDraft[]>(
     [emptyQuoteLine()]
   );
+  const [pendingQuotePdf, setPendingQuotePdf] =
+    React.useState<PendingQuotePdf | null>(null);
+  const [pdfSourcedFields, setPdfSourcedFields] = React.useState<Set<string>>(
+    () => new Set()
+  );
+  const [pdfFieldDiffs, setPdfFieldDiffs] = React.useState<
+    Record<string, FieldDiff>
+  >({});
+  const [pdfIdentityWarnings, setPdfIdentityWarnings] = React.useState<
+    string[]
+  >([]);
+  const [pdfAutoBlocked, setPdfAutoBlocked] = React.useState(false);
   const [compareMode, setCompareMode] =
     React.useState<QuoteCompareMode>('lines');
   const [compareSelectedIds, setCompareSelectedIds] = React.useState<string[]>(
@@ -567,6 +658,12 @@ export function SuppliersHub({
         l.unitPrice,
         l.leadDays,
       ]),
+      pendingQuotePdf?.file.name ?? null,
+      pendingQuotePdf?.file.size ?? null,
+      Array.from(pdfSourcedFields).sort(),
+      Object.keys(pdfFieldDiffs)
+        .sort()
+        .map((k) => [k, pdfFieldDiffs[k]?.kind, pdfFieldDiffs[k]?.pdf]),
     ])
   );
   const { dirty: poDirty, markClean: markPoClean } = useFormBaseline(
@@ -831,6 +928,14 @@ export function SuppliersHub({
     router.refresh();
   }
 
+  function clearPendingQuotePdf() {
+    setPendingQuotePdf(null);
+    setPdfSourcedFields(new Set());
+    setPdfFieldDiffs({});
+    setPdfIdentityWarnings([]);
+    setPdfAutoBlocked(false);
+  }
+
   function applyQuoteToForm(
     quote: SupplierQuoteRow,
     lines: SupplierQuoteLineRow[]
@@ -857,6 +962,7 @@ export function SuppliersHub({
         }))
       );
     }
+    clearPendingQuotePdf();
     markQuoteClean();
   }
 
@@ -870,8 +976,275 @@ export function SuppliersHub({
     setShipping('');
     setQuoteLinesDraft([emptyQuoteLine()]);
     setQuoteSupplierId(suppliers[0]?.id ?? '');
+    clearPendingQuotePdf();
     markQuoteClean();
     if (!opts?.skipUrl) syncUrl({ tab: 'presupuestos', quote: null });
+  }
+
+  function buildPdfDiffs(
+    extract: QuotePdfExtract,
+    draft: {
+      title: string;
+      quoteNumber: string;
+      notes: string;
+      shipping: string;
+      lines: QuoteLineDraft[];
+    }
+  ): Record<string, FieldDiff> {
+    const diffs: Record<string, FieldDiff> = {
+      title: compareTextField('title', draft.title, extract.title),
+      quoteNumber: compareTextField(
+        'quoteNumber',
+        draft.quoteNumber,
+        extract.quoteNumber
+      ),
+      notes: compareTextField('notes', draft.notes, extract.notes),
+      shipping: compareMoneyField(
+        'shipping',
+        draft.shipping ? eurosToCents(draft.shipping) : null,
+        extract.shippingCents
+      ),
+    };
+    const pdfLines = extract.lines;
+    const max = Math.max(draft.lines.length, pdfLines.length);
+    for (let i = 0; i < max; i++) {
+      const cur = draft.lines[i];
+      const pdf = pdfLines[i];
+      diffs[`line.${i}.materialKey`] = compareTextField(
+        `line.${i}.materialKey`,
+        cur?.materialKey,
+        pdf?.materialKey
+      );
+      diffs[`line.${i}.description`] = compareTextField(
+        `line.${i}.description`,
+        cur?.description,
+        pdf?.description
+      );
+      diffs[`line.${i}.quantity`] = compareTextField(
+        `line.${i}.quantity`,
+        cur?.quantity,
+        pdf?.quantity != null ? String(pdf.quantity) : null
+      );
+      diffs[`line.${i}.unitPrice`] = compareMoneyField(
+        `line.${i}.unitPrice`,
+        cur?.unitPrice ? eurosToCents(cur.unitPrice) : null,
+        pdf?.unitPriceCents ?? null
+      );
+      diffs[`line.${i}.leadDays`] = compareTextField(
+        `line.${i}.leadDays`,
+        cur?.leadDays,
+        pdf?.leadDays != null ? String(pdf.leadDays) : null
+      );
+    }
+    return diffs;
+  }
+
+  function autofillEmptyFromExtract(extract: QuotePdfExtract) {
+    const sourced = new Set<string>();
+    if (!quoteTitle.trim() && extract.title) {
+      setQuoteTitle(extract.title);
+      sourced.add('title');
+    }
+    if (!quoteNumber.trim() && extract.quoteNumber) {
+      setQuoteNumber(extract.quoteNumber);
+      sourced.add('quoteNumber');
+    }
+    if (!quoteNotes.trim() && extract.notes) {
+      setQuoteNotes(extract.notes);
+      sourced.add('notes');
+    }
+    if (!shipping.trim() && extract.shippingCents != null) {
+      setShipping(centsToEurosInput(extract.shippingCents));
+      sourced.add('shipping');
+    }
+    if (extract.supplierTaxId || extract.supplierName) {
+      const match = suppliers.find((s) => {
+        if (
+          extract.supplierTaxId &&
+          s.taxId &&
+          s.taxId.replace(/[\s.\-_/]/g, '').toUpperCase() ===
+            extract.supplierTaxId.replace(/[\s.\-_/]/g, '').toUpperCase()
+        ) {
+          return true;
+        }
+        if (
+          extract.supplierName &&
+          s.legalName.trim().toLowerCase() ===
+            extract.supplierName.trim().toLowerCase()
+        ) {
+          return true;
+        }
+        return false;
+      });
+      if (match && !selectedQuoteId) {
+        setQuoteSupplierId(match.id);
+        sourced.add('supplierId');
+      }
+    }
+    const usefulLines = extract.lines.filter(
+      (l) => l.description || l.materialKey || l.unitPriceCents != null
+    );
+    const draftEmpty =
+      quoteLinesDraft.length === 0 ||
+      quoteLinesDraft.every(
+        (l) =>
+          !l.materialKey.trim() &&
+          !l.description.trim() &&
+          !l.unitPrice.trim()
+      );
+    if (draftEmpty && usefulLines.length > 0) {
+      setQuoteLinesDraft(
+        usefulLines.map((l) => ({
+          key: newLineKey(),
+          materialKey: l.materialKey ?? '',
+          description: l.description ?? l.materialKey ?? '',
+          quantity: l.quantity != null ? String(l.quantity) : '1',
+          unitPrice:
+            l.unitPriceCents != null ? centsToEurosInput(l.unitPriceCents) : '',
+          leadDays: l.leadDays != null ? String(l.leadDays) : '',
+        }))
+      );
+      sourced.add('lines');
+    }
+    setPdfSourcedFields(sourced);
+  }
+
+  async function attachPendingQuotePdf(file: File) {
+    const name = file.name || 'documento.pdf';
+    const mime = (file.type || '').toLowerCase();
+    const isPdf =
+      mime === 'application/pdf' || name.toLowerCase().endsWith('.pdf');
+    if (!isPdf) {
+      toast.error('Solo PDF para la lectura inteligente del proveedor.');
+      return;
+    }
+    if (file.size <= 0 || file.size > PENDING_PDF_MAX_BYTES) {
+      toast.error('El PDF supera el máximo permitido (12 MB).');
+      return;
+    }
+    setPendingQuotePdf({
+      file,
+      status: 'reading',
+      error: null,
+      extract: null,
+      model: null,
+      estimatedCostCents: null,
+    });
+    setPdfSourcedFields(new Set());
+    setPdfFieldDiffs({});
+    setPdfIdentityWarnings([]);
+    setPdfAutoBlocked(false);
+
+    const fd = new FormData();
+    fd.set('file', file);
+    const res = await extractSupplierQuotePdfAction(fd);
+    if (!res.ok) {
+      setPendingQuotePdf({
+        file,
+        status: 'error',
+        error: res.error,
+        extract: null,
+        model: null,
+        estimatedCostCents: null,
+      });
+      if (res.code !== 'ai_unavailable') {
+        toast.error(res.error);
+      } else {
+        toast.message(res.error);
+      }
+      return;
+    }
+
+    const extract = res.extract;
+    const supplier = suppliers.find((s) => s.id === quoteSupplierId);
+    const identity = detectIdentityMismatch({
+      currentSupplierName: supplier?.legalName ?? null,
+      currentSupplierTaxId: supplier?.taxId ?? null,
+      currentQuoteNumber: selectedQuoteId ? quoteNumber : null,
+      extract,
+    });
+    setPdfIdentityWarnings(identity.messages);
+    setPdfAutoBlocked(identity.mismatch);
+
+    const nextDraft = {
+      title: quoteTitle,
+      quoteNumber,
+      notes: quoteNotes,
+      shipping,
+      lines: quoteLinesDraft,
+    };
+
+    if (selectedQuoteId) {
+      // Presupuesto existente: comparar sin sobrescribir.
+      setPdfFieldDiffs(buildPdfDiffs(extract, nextDraft));
+      setPdfSourcedFields(new Set());
+    } else if (!identity.mismatch) {
+      autofillEmptyFromExtract(extract);
+      // Diffs tras autofill se recalculan en el siguiente render vía efecto ligero:
+      setPdfFieldDiffs(
+        buildPdfDiffs(extract, {
+          title: !quoteTitle.trim() && extract.title ? extract.title : quoteTitle,
+          quoteNumber:
+            !quoteNumber.trim() && extract.quoteNumber
+              ? extract.quoteNumber
+              : quoteNumber,
+          notes: !quoteNotes.trim() && extract.notes ? extract.notes : quoteNotes,
+          shipping:
+            !shipping.trim() && extract.shippingCents != null
+              ? centsToEurosInput(extract.shippingCents) ?? ''
+              : shipping,
+          lines: quoteLinesDraft,
+        })
+      );
+    } else {
+      setPdfFieldDiffs(buildPdfDiffs(extract, nextDraft));
+    }
+
+    setPendingQuotePdf({
+      file,
+      status: 'ready',
+      error: null,
+      extract,
+      model: res.meta.model,
+      estimatedCostCents: res.meta.estimatedCostCents,
+    });
+    toast.success('PDF leído. Revisa los campos antes de guardar.');
+  }
+
+  function acceptPdfField(field: string) {
+    const extract = pendingQuotePdf?.extract;
+    if (!extract || pdfAutoBlocked) return;
+    const d = pdfFieldDiffs[field];
+    if (!d || d.kind !== 'real_diff' || d.pdf == null) return;
+
+    if (field === 'title') setQuoteTitle(d.pdf);
+    else if (field === 'quoteNumber') setQuoteNumber(d.pdf);
+    else if (field === 'notes') setQuoteNotes(d.pdf);
+    else if (field === 'shipping') setShipping(d.pdf.replace('.', ','));
+    else if (field.startsWith('line.')) {
+      const m = /^line\.(\d+)\.(.+)$/.exec(field);
+      if (m) {
+        const idx = Number(m[1]);
+        const key = m[2] as keyof QuoteLineDraft;
+        setQuoteLinesDraft((prev) => {
+          const next = [...prev];
+          while (next.length <= idx) next.push(emptyQuoteLine());
+          const row = { ...next[idx]! };
+          if (key === 'unitPrice') {
+            row.unitPrice = d.pdf!.includes(',') ? d.pdf! : d.pdf!.replace('.', ',');
+          } else if (key === 'materialKey' || key === 'description' || key === 'quantity' || key === 'leadDays') {
+            row[key] = d.pdf!;
+          }
+          next[idx] = row;
+          return next;
+        });
+      }
+    }
+    setPdfFieldDiffs((prev) => ({
+      ...prev,
+      [field]: { ...d, kind: 'match', current: d.pdf },
+    }));
+    setPdfSourcedFields((prev) => new Set(prev).add(field));
   }
 
   function startNewQuote() {
@@ -1226,6 +1599,7 @@ export function SuppliersHub({
           leadDays: l.leadDays ? Number(l.leadDays) : null,
         };
       });
+    const pendingFile = pendingQuotePdf?.file ?? null;
     const res = await upsertSupplierQuoteAction({
       id: selectedQuoteId,
       supplierId: quoteSupplierId,
@@ -1243,11 +1617,30 @@ export function SuppliersHub({
       toast.error(res.error);
       return;
     }
-    toast.success(
-      selectedQuoteId
-        ? 'Cambios guardados en el presupuesto'
-        : 'Presupuesto registrado'
-    );
+    // Vincular PDF pendiente solo tras upsert OK (evita huérfanos / alta sin confirmación).
+    if (pendingFile) {
+      const fd = new FormData();
+      fd.set('quoteId', res.id);
+      fd.set('file', pendingFile);
+      const up = await uploadSupplierQuoteDocumentAction(fd);
+      if (!up.ok) {
+        toast.error(
+          `Presupuesto guardado, pero el PDF no se ha vinculado: ${up.error}`
+        );
+      } else {
+        toast.success(
+          selectedQuoteId
+            ? 'Cambios y PDF guardados'
+            : 'Presupuesto registrado con PDF'
+        );
+      }
+    } else {
+      toast.success(
+        selectedQuoteId
+          ? 'Cambios guardados en el presupuesto'
+          : 'Presupuesto registrado'
+      );
+    }
     setSelectedQuoteId(res.id);
     syncUrl({ tab: 'presupuestos', quote: res.id });
     // Recargar ficha completa desde servidor (mismo ID).
@@ -1255,6 +1648,7 @@ export function SuppliersHub({
     if (detail.ok) {
       applyQuoteToForm(detail.quote, detail.lines);
     } else {
+      clearPendingQuotePdf();
       markQuoteClean();
     }
     router.refresh();
@@ -1407,13 +1801,14 @@ export function SuppliersHub({
 
           <div className="overflow-x-auto rounded-xl border border-border bg-card">
             <table className="w-full min-w-[1100px] text-left text-sm">
-              <thead className="border-b border-border bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <thead className="border-b border-border bg-muted text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <SortTh
                     label="Razón social / nombre comercial"
                     k="name"
                     sort={dirSort}
                     onSort={toggleDirSort}
+                    className={DIR_STICKY_TH}
                   />
                   <SortTh
                     label="Categoría"
@@ -1440,7 +1835,9 @@ export function SuppliersHub({
                     sort={dirSort}
                     onSort={toggleDirSort}
                   />
-                  <th className="px-3 py-2">Estado / acciones</th>
+                  <th className="sticky right-0 z-30 bg-muted px-3 py-2 shadow-[-2px_0_6px_-2px_rgba(0,0,0,0.08)]">
+                    Estado / acciones
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1456,11 +1853,11 @@ export function SuppliersHub({
                   dirRows.map((s) => (
                     <tr
                       key={s.id}
-                      className="cursor-pointer border-b border-border/70 align-top hover:bg-muted/30"
+                      className="group cursor-pointer border-b border-border/70 align-top hover:bg-muted/30"
                       onDoubleClick={() => openSupplier(s)}
                       title="Doble clic para abrir la ficha"
                     >
-                      <td className="px-3 py-2">
+                      <td className={cn('px-3 py-2', DIR_STICKY_TD)}>
                         <div className="font-medium">{s.legalName}</div>
                         {s.tradeName ? (
                           <div className="text-xs text-muted-foreground">
@@ -1480,7 +1877,7 @@ export function SuppliersHub({
                       <td className="px-3 py-2">{s.email || '—'}</td>
                       <td className="px-3 py-2">{s.phone || '—'}</td>
                       <td
-                        className="px-3 py-2"
+                        className="sticky right-0 z-20 bg-card px-3 py-2 shadow-[-2px_0_6px_-2px_rgba(0,0,0,0.08)] group-hover:bg-muted/80"
                         onClick={(e) => e.stopPropagation()}
                         onDoubleClick={(e) => e.stopPropagation()}
                       >
@@ -2653,6 +3050,17 @@ export function SuppliersHub({
                   <Input
                     value={quoteNumber}
                     onChange={(e) => setQuoteNumber(e.target.value)}
+                    className={
+                      pdfFieldDiffs.quoteNumber?.kind === 'real_diff'
+                        ? 'border-red-500 focus-visible:ring-red-500'
+                        : undefined
+                    }
+                  />
+                  <PdfFieldHint
+                    diff={pdfFieldDiffs.quoteNumber}
+                    sourced={pdfSourcedFields.has('quoteNumber')}
+                    canAccept={canWrite && !pdfAutoBlocked}
+                    onAccept={() => acceptPdfField('quoteNumber')}
                   />
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
@@ -2660,6 +3068,17 @@ export function SuppliersHub({
                   <Input
                     value={quoteTitle}
                     onChange={(e) => setQuoteTitle(e.target.value)}
+                    className={
+                      pdfFieldDiffs.title?.kind === 'real_diff'
+                        ? 'border-red-500 focus-visible:ring-red-500'
+                        : undefined
+                    }
+                  />
+                  <PdfFieldHint
+                    diff={pdfFieldDiffs.title}
+                    sourced={pdfSourcedFields.has('title')}
+                    canAccept={canWrite && !pdfAutoBlocked}
+                    onAccept={() => acceptPdfField('title')}
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -2667,7 +3086,26 @@ export function SuppliersHub({
                   <Input
                     value={shipping}
                     onChange={(e) => setShipping(e.target.value)}
+                    className={
+                      pdfFieldDiffs.shipping?.kind === 'real_diff'
+                        ? 'border-red-500 focus-visible:ring-red-500'
+                        : undefined
+                    }
                   />
+                  <PdfFieldHint
+                    diff={pdfFieldDiffs.shipping}
+                    sourced={pdfSourcedFields.has('shipping')}
+                    canAccept={canWrite && !pdfAutoBlocked}
+                    onAccept={() => acceptPdfField('shipping')}
+                  />
+                  {pendingQuotePdf?.extract?.shippingIncludesVat != null ? (
+                    <p className="text-[11px] text-muted-foreground">
+                      PDF: transporte{' '}
+                      {pendingQuotePdf.extract.shippingIncludesVat
+                        ? 'con impuestos incluidos'
+                        : 'sin impuestos / base'}
+                    </p>
+                  ) : null}
                 </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label>Notas / condiciones</Label>
@@ -2675,6 +3113,17 @@ export function SuppliersHub({
                     value={quoteNotes}
                     onChange={(e) => setQuoteNotes(e.target.value)}
                     rows={2}
+                    className={
+                      pdfFieldDiffs.notes?.kind === 'real_diff'
+                        ? 'border-red-500 focus-visible:ring-red-500'
+                        : undefined
+                    }
+                  />
+                  <PdfFieldHint
+                    diff={pdfFieldDiffs.notes}
+                    sourced={pdfSourcedFields.has('notes')}
+                    canAccept={canWrite && !pdfAutoBlocked}
+                    onAccept={() => acceptPdfField('notes')}
                   />
                 </div>
                 {quoteStatus === 'rechazado' ? (
@@ -2723,6 +3172,23 @@ export function SuppliersHub({
                           )
                         }
                         placeholder="ej. flyer-a5"
+                        className={
+                          pdfFieldDiffs[`line.${idx}.materialKey`]?.kind ===
+                          'real_diff'
+                            ? 'border-red-500 focus-visible:ring-red-500'
+                            : undefined
+                        }
+                      />
+                      <PdfFieldHint
+                        diff={pdfFieldDiffs[`line.${idx}.materialKey`]}
+                        sourced={
+                          pdfSourcedFields.has('lines') ||
+                          pdfSourcedFields.has(`line.${idx}.materialKey`)
+                        }
+                        canAccept={canWrite && !pdfAutoBlocked}
+                        onAccept={() =>
+                          acceptPdfField(`line.${idx}.materialKey`)
+                        }
                       />
                     </div>
                     <div className="space-y-1 sm:col-span-2">
@@ -2737,6 +3203,23 @@ export function SuppliersHub({
                                 : l
                             )
                           )
+                        }
+                        className={
+                          pdfFieldDiffs[`line.${idx}.description`]?.kind ===
+                          'real_diff'
+                            ? 'border-red-500 focus-visible:ring-red-500'
+                            : undefined
+                        }
+                      />
+                      <PdfFieldHint
+                        diff={pdfFieldDiffs[`line.${idx}.description`]}
+                        sourced={
+                          pdfSourcedFields.has('lines') ||
+                          pdfSourcedFields.has(`line.${idx}.description`)
+                        }
+                        canAccept={canWrite && !pdfAutoBlocked}
+                        onAccept={() =>
+                          acceptPdfField(`line.${idx}.description`)
                         }
                       />
                     </div>
@@ -2753,6 +3236,18 @@ export function SuppliersHub({
                             )
                           )
                         }
+                        className={
+                          pdfFieldDiffs[`line.${idx}.quantity`]?.kind ===
+                          'real_diff'
+                            ? 'border-red-500 focus-visible:ring-red-500'
+                            : undefined
+                        }
+                      />
+                      <PdfFieldHint
+                        diff={pdfFieldDiffs[`line.${idx}.quantity`]}
+                        sourced={pdfSourcedFields.has(`line.${idx}.quantity`)}
+                        canAccept={canWrite && !pdfAutoBlocked}
+                        onAccept={() => acceptPdfField(`line.${idx}.quantity`)}
                       />
                     </div>
                     <div className="space-y-1">
@@ -2767,6 +3262,20 @@ export function SuppliersHub({
                                 : l
                             )
                           )
+                        }
+                        className={
+                          pdfFieldDiffs[`line.${idx}.unitPrice`]?.kind ===
+                          'real_diff'
+                            ? 'border-red-500 focus-visible:ring-red-500'
+                            : undefined
+                        }
+                      />
+                      <PdfFieldHint
+                        diff={pdfFieldDiffs[`line.${idx}.unitPrice`]}
+                        sourced={pdfSourcedFields.has(`line.${idx}.unitPrice`)}
+                        canAccept={canWrite && !pdfAutoBlocked}
+                        onAccept={() =>
+                          acceptPdfField(`line.${idx}.unitPrice`)
                         }
                       />
                     </div>
@@ -2783,6 +3292,18 @@ export function SuppliersHub({
                             )
                           )
                         }
+                        className={
+                          pdfFieldDiffs[`line.${idx}.leadDays`]?.kind ===
+                          'real_diff'
+                            ? 'border-red-500 focus-visible:ring-red-500'
+                            : undefined
+                        }
+                      />
+                      <PdfFieldHint
+                        diff={pdfFieldDiffs[`line.${idx}.leadDays`]}
+                        sourced={pdfSourcedFields.has(`line.${idx}.leadDays`)}
+                        canAccept={canWrite && !pdfAutoBlocked}
+                        onAccept={() => acceptPdfField(`line.${idx}.leadDays`)}
                       />
                     </div>
                     <div className="flex items-end sm:col-span-4">
@@ -2807,59 +3328,184 @@ export function SuppliersHub({
 
           </fieldset>
 
-          <div className="space-y-2 border-t border-border pt-3">
-            <h3 className="text-sm font-semibold">Adjuntos</h3>
-            {!selectedQuoteId ? (
+          <div className="space-y-3 border-t border-border pt-3">
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Documento del proveedor</h3>
               <p className="text-xs text-muted-foreground">
-                Guarda el presupuesto para poder adjuntar archivos.
+                Puedes adjuntar el PDF antes de guardar. La lectura inteligente
+                con IA está desactivada en esta publicación: cumplimenta los
+                campos a mano. Nada se confirma hasta que pulses guardar.
               </p>
-            ) : (
-              <>
-                <ul className="space-y-1 text-sm">
-                  {(quoteDocumentsById[selectedQuoteId] ?? []).map((d) => (
-                    <li key={d.id}>
-                      <button
-                        type="button"
-                        className="text-primary underline-offset-2 hover:underline"
-                        onClick={() => void openSigned(d.storagePath)}
-                      >
-                        {d.fileName}
-                      </button>
-                    </li>
-                  ))}
-                  {(quoteDocumentsById[selectedQuoteId] ?? []).length === 0 ? (
-                    <li className="text-muted-foreground">Sin archivos.</li>
+              {pdfIdentityWarnings.length > 0 ? (
+                <div
+                  role="alert"
+                  className="rounded-lg border border-red-500/60 bg-red-50 px-3 py-2 text-sm text-red-800 dark:bg-red-950/40 dark:text-red-200"
+                >
+                  <p className="font-semibold">
+                    El documento parece corresponder a otro proveedor o
+                    número de presupuesto. Sustitución automática bloqueada.
+                  </p>
+                  <ul className="mt-1 list-disc pl-4 text-xs">
+                    {pdfIdentityWarnings.map((m) => (
+                      <li key={m}>{m}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {pendingQuotePdf ? (
+                <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="font-medium">{pendingQuotePdf.file.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {(pendingQuotePdf.file.size / 1024).toFixed(1)} KB ·{' '}
+                        {pendingQuotePdf.status === 'reading'
+                          ? 'Leyendo…'
+                          : pendingQuotePdf.status === 'ready'
+                            ? 'Lectura lista (pendiente de guardar)'
+                            : pendingQuotePdf.status === 'error'
+                              ? 'Error de lectura — puedes cumplimentar a mano'
+                              : 'Pendiente'}
+                      </div>
+                      {pendingQuotePdf.error ? (
+                        <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">
+                          {pendingQuotePdf.error}
+                        </p>
+                      ) : null}
+                      {pendingQuotePdf.status === 'ready' &&
+                      pendingQuotePdf.model ? (
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Modelo: {pendingQuotePdf.model}
+                          {pendingQuotePdf.estimatedCostCents != null
+                            ? ` · coste est. ~${(
+                                pendingQuotePdf.estimatedCostCents / 100
+                              ).toFixed(2)} €`
+                            : ''}
+                        </p>
+                      ) : null}
+                    </div>
+                    {canWrite ? (
+                      <div className="flex flex-wrap gap-2">
+                        <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent">
+                          Sustituir
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,application/pdf"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!file) return;
+                              void run(async () => attachPendingQuotePdf(file));
+                            }}
+                          />
+                        </label>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => clearPendingQuotePdf()}
+                        >
+                          Retirar
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {pendingQuotePdf.extract?.warnings?.length ? (
+                    <ul className="mt-2 list-disc pl-4 text-xs text-muted-foreground">
+                      {pendingQuotePdf.extract.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
                   ) : null}
-                </ul>
-                {canWrite ? (
-                  <label className="inline-flex cursor-pointer text-sm text-primary underline-offset-2 hover:underline">
-                    Adjuntar PDF/Excel/imagen
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.xls,.xlsx,.png,.jpg,.jpeg,application/pdf,image/*,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        e.target.value = '';
-                        if (!file) return;
-                        run(async () => {
-                          const fd = new FormData();
-                          fd.set('quoteId', selectedQuoteId);
-                          fd.set('file', file);
-                          const res = await uploadSupplierQuoteDocumentAction(fd);
-                          if (!res.ok) {
-                            toast.error(res.error);
+                </div>
+              ) : canWrite ? (
+                <label className="inline-flex cursor-pointer text-sm text-primary underline-offset-2 hover:underline">
+                  Adjuntar PDF
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,application/pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      e.target.value = '';
+                      if (!file) return;
+                      void run(async () => attachPendingQuotePdf(file));
+                    }}
+                  />
+                </label>
+              ) : (
+                <p className="text-xs text-muted-foreground">Sin permiso de escritura.</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-sm font-semibold">Adjuntos guardados</h3>
+              {!selectedQuoteId ? (
+                <p className="text-xs text-muted-foreground">
+                  Tras guardar, el PDF pendiente quedará vinculado aquí.
+                </p>
+              ) : (
+                <>
+                  <ul className="space-y-1 text-sm">
+                    {(quoteDocumentsById[selectedQuoteId] ?? []).map((d) => (
+                      <li key={d.id}>
+                        <button
+                          type="button"
+                          className="text-primary underline-offset-2 hover:underline"
+                          onClick={() => void openSigned(d.storagePath)}
+                        >
+                          {d.fileName}
+                        </button>
+                      </li>
+                    ))}
+                    {(quoteDocumentsById[selectedQuoteId] ?? []).length ===
+                    0 ? (
+                      <li className="text-muted-foreground">Sin archivos.</li>
+                    ) : null}
+                  </ul>
+                  {canWrite ? (
+                    <label className="inline-flex cursor-pointer text-sm text-muted-foreground underline-offset-2 hover:underline">
+                      Adjuntar otro archivo (PDF/Excel/imagen) al guardar…
+                      <span className="sr-only">
+                        Usa Documento del proveedor para adjuntar PDF (IA off)
+                      </span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.xls,.xlsx,.png,.jpg,.jpeg,application/pdf,image/*,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (!file) return;
+                          const isPdf =
+                            (file.type || '').toLowerCase() ===
+                              'application/pdf' ||
+                            file.name.toLowerCase().endsWith('.pdf');
+                          if (isPdf) {
+                            void run(async () => attachPendingQuotePdf(file));
                             return;
                           }
-                          toast.success('Adjunto subido');
-                          router.refresh();
-                        });
-                      }}
-                    />
-                  </label>
-                ) : null}
-              </>
-            )}
+                          run(async () => {
+                            const fd = new FormData();
+                            fd.set('quoteId', selectedQuoteId);
+                            fd.set('file', file);
+                            const res =
+                              await uploadSupplierQuoteDocumentAction(fd);
+                            if (!res.ok) {
+                              toast.error(res.error);
+                              return;
+                            }
+                            toast.success('Adjunto subido');
+                            router.refresh();
+                          });
+                        }}
+                      />
+                    </label>
+                  ) : null}
+                </>
+              )}
+            </div>
           </div>
         </div>
       </AdminWideDialog>

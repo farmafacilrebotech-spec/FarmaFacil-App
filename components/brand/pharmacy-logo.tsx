@@ -6,13 +6,9 @@ import { cn } from '@/lib/utils';
 import { initials } from '@/lib/format';
 
 /**
- * PharmacyLogo — per-pharmacy brand identity.
- *
- * Displays a pharmacy's logo image when available, or a colored
- * initials fallback when no logo has been uploaded yet.
- *
- * In the future, `logoUrl` and `logoColor` will come from the database.
- * Until then, they are passed from mock data.
+ * PharmacyLogo — identidad visual de la farmacia.
+ * Usa `pharmacy_branding.logo_url` con object-contain (sin crop/stretch).
+ * Sin logo → iniciales con `logoColor`. Nunca sustituye por FarmaFácil.
  */
 
 interface PharmacyLogoProps {

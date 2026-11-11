@@ -94,6 +94,6 @@ export const config = {
     /*
      * Excluir estáticos PWA/cliente: no deben pasar por auth ni acabar en /login.
      */
-    '/((?!_next/static|_next/image|favicon.ico|images/|icons/|manifest\\.webmanifest|sw-customer\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|images/|fonts/|icons/|manifest\\.webmanifest|sw-customer\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ttf|woff2?)$).*)',
   ],
 };

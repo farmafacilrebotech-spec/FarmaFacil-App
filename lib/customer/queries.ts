@@ -162,38 +162,50 @@ export async function listCustomerOrders(): Promise<
   if (!profile.ok) return { ok: false, error: profile.error };
 
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('pharmacy_orders')
-    .select(
-      'id, pharmacy_id, display_number, status, source, payment_status, total_amount, currency, amount_confirmed_at, created_at, customer_name'
-    )
-    .eq('customer_profile_id', profile.profile.id)
-    .order('created_at', { ascending: false })
-    .limit(50);
+  // Tras staff_hide, authenticated no puede filtrar por customer_profile_id
+  // en PostgREST; el listado va por RPC SECURITY DEFINER.
+  const { data, error } = await supabase.rpc('ff_list_my_customer_orders_v1', {
+    p_limit: 50,
+  });
 
   if (error) {
-    console.error('[customer] orders', error.code, error.message);
+    console.error('[customer] orders rpc', error.code, error.message);
     return {
       ok: false,
       error:
-        'No se han podido cargar los pedidos. Comprueba que la migración 064 está aplicada.',
+        'No se han podido cargar los pedidos. Comprueba que staff_hide v1c está aplicada.',
+    };
+  }
+
+  const payload = data as {
+    status?: string;
+    orders?: Array<Record<string, unknown>>;
+  } | null;
+
+  if (!payload || payload.status !== 'ok') {
+    return {
+      ok: false,
+      error:
+        payload?.status === 'forbidden'
+          ? 'Tu cuenta no tiene acceso al área de pedidos de cliente.'
+          : 'No se han podido cargar los pedidos.',
     };
   }
 
   return {
     ok: true,
-    orders: (data ?? []).map((r) => ({
-      id: r.id as string,
-      pharmacyId: r.pharmacy_id as string,
-      displayNumber: r.display_number as string,
-      status: r.status as string,
-      source: (r.source as string) ?? 'other',
-      paymentStatus: (r.payment_status as string) ?? 'unpaid',
-      totalAmount: Number(r.total_amount ?? 0),
-      currency: (r.currency as string) ?? 'EUR',
-      amountConfirmedAt: (r.amount_confirmed_at as string | null) ?? null,
-      createdAt: r.created_at as string,
-      customerName: (r.customer_name as string | null) ?? null,
+    orders: (payload.orders ?? []).map((r) => ({
+      id: String(r.id ?? ''),
+      pharmacyId: String(r.pharmacyId ?? ''),
+      displayNumber: String(r.displayNumber ?? ''),
+      status: String(r.status ?? ''),
+      source: String(r.source ?? 'other'),
+      paymentStatus: String(r.paymentStatus ?? 'unpaid'),
+      totalAmount: Number(r.totalAmount ?? 0),
+      currency: String(r.currency ?? 'EUR'),
+      amountConfirmedAt: (r.amountConfirmedAt as string | null) ?? null,
+      createdAt: String(r.createdAt ?? ''),
+      customerName: (r.customerName as string | null) ?? null,
     })),
   };
 }
