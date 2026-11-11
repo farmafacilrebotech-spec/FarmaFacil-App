@@ -148,8 +148,9 @@ export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
     configured: true,
     rect: px(983, 177, 3180, 623),
     insetRatio: 0.05,
-    maxFontSizePt: 22,
-    minFontSizePt: 9,
+    /** Tipografía visual grande en la zona verde (MAYÚSCULAS en draw). */
+    maxFontSizePt: 40,
+    minFontSizePt: 14,
     maxLines: 2,
     fallbackColor: '#0B0B0B',
     align: 'center',

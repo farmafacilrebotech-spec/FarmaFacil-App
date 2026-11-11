@@ -26,7 +26,15 @@ describe('PHARMACY_QR_POSTER_LAYOUT', () => {
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.qr.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.pdfDownloadEnabled, false);
     assert.equal(isPharmacyQrPosterTemplateReady(), true);
+    // Con NEXT_PUBLIC_FF_POSTER_PDF_LOCAL=1 (local) la descarga se habilita;
+    // sin el flag permanece desactivada (pdfDownloadEnabled=false).
+    const prev = process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL;
+    delete process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL;
     assert.equal(isPharmacyQrPosterDownloadEnabled(), false);
+    process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL = '1';
+    assert.equal(isPharmacyQrPosterDownloadEnabled(), true);
+    if (prev === undefined) delete process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL;
+    else process.env.NEXT_PUBLIC_FF_POSTER_PDF_LOCAL = prev;
   });
 
   it('A4 210×297 mm y template 4419×6250', () => {

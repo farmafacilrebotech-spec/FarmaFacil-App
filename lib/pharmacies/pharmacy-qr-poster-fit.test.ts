@@ -61,6 +61,21 @@ describe('fitPharmacyNameInZone', () => {
     assert.ok(fit.fontSizePt >= zone.minFontSizePt);
   });
 
+  it('uppercase visual es-ES (Ñ/tildes) sin mutar el input', () => {
+    const original = 'Farmacia Peñíscola Ñuñez';
+    const fit = fitPharmacyNameInZone(
+      mockDoc(),
+      original,
+      { x: 10, y: 10, w: 180, h: 28 },
+      { ...zone, maxFontSizePt: 36, uppercase: true }
+    );
+    assert.equal(fit.ok, true);
+    const joined = fit.lines.join(' ');
+    assert.match(joined, /PEÑÍSCOLA|PEÑISCOLA/i);
+    assert.ok(joined === joined.toLocaleUpperCase('es-ES'));
+    assert.equal(original, 'Farmacia Peñíscola Ñuñez');
+  });
+
   it('reduce tamaño ante nombre largo', () => {
     const long =
       'Farmacia Fase7 Staging Clientes QR Con Nombre Muy Largo Para Probar';

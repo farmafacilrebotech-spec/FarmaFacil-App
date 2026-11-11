@@ -766,6 +766,7 @@ export function PharmacyDetailClient({
                 <div className="rounded-xl border border-border bg-card p-6 text-center">
                   <PharmacyLogo
                     name={pharmacy.name}
+                    logoUrl={pharmacy.branding?.logo_url}
                     logoColor={color}
                     size={80}
                     rounded="2xl"

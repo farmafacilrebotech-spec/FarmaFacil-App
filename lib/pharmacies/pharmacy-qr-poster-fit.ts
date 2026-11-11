@@ -17,6 +17,10 @@ export type NameZoneFitConfig = {
   minFontSizePt: number;
   maxLines: 1 | 2;
   fontStyle: 'normal' | 'bold';
+  /** Familia jsPDF (p. ej. SourceSans3). Default helvetica. */
+  fontFamily?: string;
+  /** Si true, mide/ajusta en MAYÚSCULAS (solo visual). */
+  uppercase?: boolean;
 };
 
 export type NameFitResult = {
@@ -46,18 +50,22 @@ export function fitPharmacyNameInZone(
   zoneMm: PosterRectMm,
   nameZone: NameZoneFitConfig
 ): NameFitResult {
-  const text = pharmacyName.trim() || 'Farmacia';
+  const raw = pharmacyName.trim() || 'Farmacia';
+  const text = nameZone.uppercase
+    ? raw.toLocaleUpperCase('es-ES')
+    : raw;
   const maxLines = nameZone.maxLines;
   const minPt = nameZone.minFontSizePt;
   const maxPt = Math.max(nameZone.maxFontSizePt, minPt);
+  const family = nameZone.fontFamily?.trim() || 'helvetica';
 
-  doc.setFont('helvetica', nameZone.fontStyle);
+  doc.setFont(family, nameZone.fontStyle);
 
   for (let fontSizePt = maxPt; fontSizePt >= minPt; fontSizePt -= 0.5) {
     doc.setFontSize(fontSizePt);
     const lines = doc.splitTextToSize(text, Math.max(zoneMm.w, 1));
     if (lines.length > maxLines) continue;
-    const lineH = ptToMm(fontSizePt) * 1.2;
+    const lineH = ptToMm(fontSizePt) * 1.15;
     const blockH = lines.length * lineH;
     if (blockH <= zoneMm.h + 0.01) {
       return { ok: true, fontSizePt, lines, warning: null };
@@ -66,7 +74,7 @@ export function fitPharmacyNameInZone(
 
   doc.setFontSize(minPt);
   const lines = doc.splitTextToSize(text, Math.max(zoneMm.w, 1));
-  const lineH = ptToMm(minPt) * 1.2;
+  const lineH = ptToMm(minPt) * 1.15;
   const clipped = lines.slice(0, maxLines);
   const blockH = clipped.length * lineH;
   const overflows = lines.length > maxLines || blockH > zoneMm.h + 0.01;

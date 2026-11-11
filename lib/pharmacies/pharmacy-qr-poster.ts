@@ -28,6 +28,10 @@ import {
   type PharmacyQrPosterLayout,
   type PosterRectMm,
 } from '@/lib/pharmacies/pharmacy-qr-poster-layout';
+import {
+  ensurePosterNameFont,
+  POSTER_NAME_FONT_FAMILY,
+} from '@/lib/pharmacies/pharmacy-qr-poster-font';
 
 export {
   isPharmacyQrPosterDownloadEnabled,
@@ -175,23 +179,27 @@ function drawName(
   pharmacyName: string,
   nameSlot: PosterRectMm,
   layout: PharmacyQrPosterLayout,
-  colorHex: string
+  colorHex: string,
+  fontFamily: string = POSTER_NAME_FONT_FAMILY
 ): string | null {
   const fit = fitPharmacyNameInZone(doc, pharmacyName, nameSlot, {
     maxFontSizePt: layout.name.maxFontSizePt,
     minFontSizePt: layout.name.minFontSizePt,
     maxLines: layout.name.maxLines,
     fontStyle: layout.name.fontStyle,
+    fontFamily,
+    uppercase: true,
   });
   const rgb = hexToRgb(colorHex);
-  doc.setFont('helvetica', layout.name.fontStyle);
+  doc.setFont(fontFamily, layout.name.fontStyle);
   doc.setFontSize(fit.fontSizePt);
   doc.setTextColor(rgb.r, rgb.g, rgb.b);
 
-  const lineH = ptToMm(fit.fontSizePt) * 1.2;
+  const lineH = ptToMm(fit.fontSizePt) * 1.15;
   const blockH = fit.lines.length * lineH;
+  // Centrado vertical en la misma franja que el logo (zona superior).
   const startY =
-    nameSlot.y + Math.max((nameSlot.h - blockH) / 2, 0) + lineH * 0.8;
+    nameSlot.y + Math.max((nameSlot.h - blockH) / 2, 0) + lineH * 0.78;
   const x =
     layout.name.align === 'center'
       ? nameSlot.x + nameSlot.w / 2
@@ -315,12 +323,19 @@ export async function drawPharmacyQrPosterFromTemplate(
     rectNormToMm(layout.name.rect, layout.page),
     layout.name.insetRatio
   );
+  let fontFamily = POSTER_NAME_FONT_FAMILY;
+  try {
+    fontFamily = await ensurePosterNameFont(doc);
+  } catch {
+    fontFamily = 'helvetica';
+  }
   const nameWarning = drawName(
     doc,
     input.pharmacyName,
     nameBox,
     layout,
-    colorRes.color
+    colorRes.color,
+    fontFamily
   );
   drawQrInZone(doc, input.qrDataUrl, layout);
 
