@@ -45,6 +45,8 @@ export default async function PharmacyQrPage({
       : 'Farmacia';
   const pharmacyLogoUrl =
     tenant.ok ? tenant.context.pharmacy.logoUrl ?? null : null;
+  const pharmacyPrimaryColor =
+    tenant.ok ? tenant.context.pharmacy.primaryColor ?? null : null;
 
   const entrypoint = ep.ok ? ep.entrypoint : null;
   const loadError = ep.ok ? null : ep.error;
@@ -67,6 +69,7 @@ export default async function PharmacyQrPage({
       <QrTab
         pharmacyName={pharmacyName}
         pharmacyLogoUrl={pharmacyLogoUrl}
+        pharmacyPrimaryColor={pharmacyPrimaryColor}
         entrypoint={entrypoint}
         loadError={loadError}
         publicUrlOverride={printUrl}

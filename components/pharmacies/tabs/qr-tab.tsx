@@ -42,6 +42,8 @@ export function QrTab({
   pharmacyName,
   /** logo_url de pharmacy_branding; null = sin logo (no sustituir por FarmaFácil). */
   pharmacyLogoUrl = null,
+  /** primary_color de branding; si contraste insuficiente → fallback oscuro. */
+  pharmacyPrimaryColor = null,
   entrypoint,
   loadError,
   /** Sustituye entrypoint.publicUrl (p. ej. URL canónica de producción para impresión). */
@@ -51,6 +53,7 @@ export function QrTab({
 }: {
   pharmacyName: string;
   pharmacyLogoUrl?: string | null;
+  pharmacyPrimaryColor?: string | null;
   entrypoint: PharmacyHomeEntrypoint | null;
   loadError?: string | null;
   publicUrlOverride?: string | null;
@@ -126,6 +129,7 @@ export function QrTab({
         publicUrl,
         publicId: entrypoint.publicId,
         logoUrl: pharmacyLogoUrl,
+        primaryColor: pharmacyPrimaryColor,
       });
       const safe =
         entrypoint.publicId.replace(/[^a-z0-9-]/gi, '').toLowerCase() ||

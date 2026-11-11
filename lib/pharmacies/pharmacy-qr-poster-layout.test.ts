@@ -4,8 +4,8 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
+import { containRect } from './pharmacy-qr-poster-compose.ts';
 import {
-  containRect,
   isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
   PHARMACY_QR_POSTER_LAYOUT,
@@ -20,7 +20,6 @@ describe('PHARMACY_QR_POSTER_LAYOUT', () => {
       PHARMACY_QR_POSTER_LAYOUT.backgroundSrc,
       '/images/posters/pharmacy-qr-a4.png'
     );
-    assert.equal(PHARMACY_QR_POSTER_LAYOUT.logo.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.name.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.qr.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.pdfDownloadEnabled, false);
@@ -37,15 +36,12 @@ describe('PHARMACY_QR_POSTER_LAYOUT', () => {
     });
   });
 
-  it('zonas cabecera quedan por encima de la 2ª línea turquesa (~y=140/1024)', () => {
-    const logoBottom =
-      PHARMACY_QR_POSTER_LAYOUT.logo.rect.y +
-      PHARMACY_QR_POSTER_LAYOUT.logo.rect.h;
-    const nameBottom =
-      PHARMACY_QR_POSTER_LAYOUT.name.rect.y +
-      PHARMACY_QR_POSTER_LAYOUT.name.rect.h;
-    assert.ok(logoBottom < 140 / 1024);
-    assert.ok(nameBottom < 140 / 1024);
+  it('headerBand queda entre las líneas turquesa (~y 145..840 de 6250)', () => {
+    const band = PHARMACY_QR_POSTER_LAYOUT.headerBand;
+    const topPx = band.y * 6250;
+    const bottomPx = (band.y + band.h) * 6250;
+    assert.ok(topPx >= 140 && topPx <= 160);
+    assert.ok(bottomPx >= 820 && bottomPx <= 860);
   });
 });
 

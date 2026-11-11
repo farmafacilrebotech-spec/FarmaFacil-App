@@ -1,11 +1,8 @@
 /**
- * Layout del cartel QR A4: plantilla Canva (PNG) + zonas dinámicas.
+ * Layout del cartel QR A4: plantilla Canva HD + zonas dinámicas.
  *
- * Plantilla: public/images/posters/pharmacy-qr-a4.png (export Canva).
- * La app solo superpone logo, nombre y QR. Coordenadas en fracción 0..1
- * del tamaño de la plantilla → mm A4 (210×297).
- *
- * pdfDownloadEnabled permanece false hasta aprobación visual.
+ * Logo y nombre se componen dentro de `headerBand` (entre líneas turquesa).
+ * QR en la caja blanca inferior. pdfDownloadEnabled=false hasta OK visual.
  */
 
 export type PosterRectNorm = {
@@ -22,19 +19,14 @@ export type PosterRectMm = {
   h: number;
 };
 
-export type PharmacyQrPosterLogoZone = {
+export type PharmacyQrPosterNameStyle = {
   configured: boolean;
-  rect: PosterRectNorm;
-};
-
-export type PharmacyQrPosterNameZone = {
-  configured: boolean;
-  rect: PosterRectNorm;
-  rectWithoutLogo: PosterRectNorm | null;
   maxFontSizePt: number;
+  maxFontSizeNoLogoPt: number;
   minFontSizePt: number;
   maxLines: 1 | 2;
-  color: string;
+  /** Fallback si el primario no contrasta. */
+  fallbackColor: string;
   align: 'left' | 'center' | 'right';
   fontStyle: 'normal' | 'bold';
 };
@@ -49,8 +41,15 @@ export type PharmacyQrPosterLayout = {
   backgroundSrc: string | null;
   templatePx: { width: number; height: number } | null;
   page: { widthMm: number; heightMm: number };
-  logo: PharmacyQrPosterLogoZone;
-  name: PharmacyQrPosterNameZone;
+  /**
+   * Contenedor común logo+nombre entre las dos líneas turquesa.
+   * Medido en HD 4419×6250 (y≈145..840).
+   */
+  headerBand: PosterRectNorm;
+  headerPadXRatio: number;
+  headerPadYMm: number;
+  headerGapMm: number;
+  name: PharmacyQrPosterNameStyle;
   qr: PharmacyQrPosterQrZone;
   pdfDownloadEnabled: boolean;
 };
@@ -79,25 +78,6 @@ export function rectPxToNorm(
   };
 }
 
-export function containRect(
-  srcW: number,
-  srcH: number,
-  box: PosterRectMm
-): PosterRectMm {
-  if (srcW <= 0 || srcH <= 0 || box.w <= 0 || box.h <= 0) {
-    return { x: box.x, y: box.y, w: 0, h: 0 };
-  }
-  const scale = Math.min(box.w / srcW, box.h / srcH);
-  const w = srcW * scale;
-  const h = srcH * scale;
-  return {
-    x: box.x + (box.w - w) / 2,
-    y: box.y + (box.h - h) / 2,
-    w,
-    h,
-  };
-}
-
 export function qrInnerRectMm(
   zone: PosterRectMm,
   quietZoneRatio: number
@@ -119,11 +99,6 @@ export function qrInnerRectMm(
   };
 }
 
-/**
- * Medido sobre pharmacy-qr-a4.png (4419×6250; mismas fracciones relativas que 724×1024):
- * - Cabecera blanca entre líneas turquesa y≈134..848
- * - Caja QR blanca (interior, sin borde turquesa) ≈ 2716,4590 → 4206,6099
- */
 const TEMPLATE_PX = { width: 4419, height: 6250 } as const;
 
 function px(
@@ -135,35 +110,34 @@ function px(
   return rectPxToNorm({ x, y, w, h }, TEMPLATE_PX);
 }
 
+/**
+ * Líneas turquesa HD ≈ y 115–135 y 855–874.
+ * Band útil interior ≈ 145..840, márgenes laterales ~7%.
+ * QR: interior caja blanca (misma fracción relativa validada).
+ */
 export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
   backgroundSrc: '/images/posters/pharmacy-qr-a4.png',
   templatePx: { ...TEMPLATE_PX },
   page: { widthMm: 210, heightMm: 297 },
-  logo: {
-    configured: true,
-    // Franja superior de cabecera (bajo 1ª línea turquesa)
-    rect: px(549, 171, 3320, 317),
-  },
+  headerBand: px(280, 145, 3859, 695),
+  headerPadXRatio: 0.06,
+  headerPadYMm: 1.0,
+  headerGapMm: 2.0,
   name: {
     configured: true,
-    // Bajo el logo, aún sobre la 2ª línea turquesa (y≈140)
-    rect: px(305, 513, 3809, 293),
-    // Sin logo: usa casi toda la cabecera
-    rectWithoutLogo: px(305, 195, 3809, 610),
-    maxFontSizePt: 18,
+    maxFontSizePt: 16,
+    maxFontSizeNoLogoPt: 20,
     minFontSizePt: 9,
     maxLines: 2,
-    color: '#0B0B0B',
+    fallbackColor: '#0B0B0B',
     align: 'center',
     fontStyle: 'bold',
   },
   qr: {
     configured: true,
-    // Interior de la caja blanca (pad ~10px respecto al borde turquesa)
     rect: px(2777, 4651, 1373, 1392),
     quietZoneRatio: 0.04,
   },
-  // Pendiente de aprobación visual de los PDFs de ejemplo
   pdfDownloadEnabled: false,
 };
 
@@ -171,14 +145,10 @@ export function isPharmacyQrPosterTemplateReady(
   layout: PharmacyQrPosterLayout = PHARMACY_QR_POSTER_LAYOUT
 ): boolean {
   if (!layout.backgroundSrc?.trim()) return false;
-  if (!layout.logo.configured || !layout.name.configured || !layout.qr.configured) {
-    return false;
-  }
-  const lr = layout.logo.rect;
-  const nr = layout.name.rect;
+  if (!layout.name.configured || !layout.qr.configured) return false;
+  const band = layout.headerBand;
   const qr = layout.qr.rect;
-  if (lr.w <= 0 || lr.h <= 0) return false;
-  if (nr.w <= 0 || nr.h <= 0) return false;
+  if (band.w <= 0 || band.h <= 0) return false;
   if (qr.w <= 0 || qr.h <= 0) return false;
   return true;
 }
@@ -194,3 +164,6 @@ export const PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE =
 
 export const PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE =
   'El cartel PDF está pendiente de aprobación visual. Mientras tanto puedes descargar el QR en PNG o SVG.';
+
+export const PHARMACY_QR_POSTER_LOGO_LOAD_ERROR =
+  'No se ha podido cargar el logo de la farmacia. Revisa el archivo en Personalización antes de generar el cartel.';
