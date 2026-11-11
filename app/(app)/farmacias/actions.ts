@@ -422,9 +422,30 @@ function mapChangePlanError(message: string, code?: string): string {
   return 'No se ha podido cambiar el plan. Inténtalo de nuevo.';
 }
 
+/** UI / plans.key comercial → SKU commercial_plan_skus.key */
+function commercialPlansKeyToSku(planKey: string): string | null {
+  const k = planKey.trim().toLowerCase();
+  if (k === 'general') return 'general';
+  if (k === 'personalizado' || k === 'personalized') return 'personalized';
+  if (
+    k === 'asistente_ia_personalizado' ||
+    k === 'ai_personalized' ||
+    k === 'ia'
+  ) {
+    return 'ai_personalized';
+  }
+  if (k === 'piloto' || k === 'pilot') return 'pilot';
+  return null;
+}
+
 export async function changePharmacyPlanAction(
   pharmacyId: string,
-  newPlanKey: string
+  newPlanKey: string,
+  options?: {
+    useLaunchPromo?: boolean;
+    endOpenPilot?: boolean;
+    reason?: string;
+  }
 ): Promise<UpdatePharmacyResult> {
   if (!pharmacyId) {
     return { ok: false, error: 'Farmacia no válida.' };
@@ -443,7 +464,44 @@ export async function changePharmacyPlanAction(
     return { ok: false, error: 'Debes iniciar sesión para cambiar el plan.' };
   }
 
-  // Solo claves que existen como fila activa en `plans` (no inventar productos).
+  const commercialSku = commercialPlansKeyToSku(planKey);
+
+  // Planes comerciales: únicamente ff_assign_commercial_plan_v1 (nunca 017).
+  if (commercialSku) {
+    const { data, error } = await supabase.rpc('ff_assign_commercial_plan_v1', {
+      p_pharmacy_id: pharmacyId,
+      p_commercial_plan_key: commercialSku,
+      p_reason: options?.reason?.trim() || 'sa_change_plan_dialog',
+      p_end_open_pilot: options?.endOpenPilot === true,
+      p_use_launch_promo: options?.useLaunchPromo === true,
+    });
+    if (error) {
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[pharmacies] ff_assign_commercial_plan_v1', {
+          message: error.message,
+          code: error.code,
+          details: error.details,
+        });
+      }
+      return {
+        ok: false,
+        error: mapAssignCommercialError(error.message, error.code),
+      };
+    }
+    const payload = data as { status?: string } | null;
+    if (payload?.status && payload.status !== 'ok') {
+      return {
+        ok: false,
+        error: mapAssignCommercialError(String(payload.status)),
+      };
+    }
+    revalidatePath('/farmacias');
+    revalidatePath(`/farmacias/${pharmacyId}`);
+    revalidatePath('/tarifas');
+    return { ok: true };
+  }
+
+  // Solo claves legacy kernel vía 017.
   const { data: planRow, error: planLookupError } = await supabase
     .from('plans')
     .select('id, key, is_active')
@@ -477,6 +535,29 @@ export async function changePharmacyPlanAction(
   revalidatePath('/farmacias');
   revalidatePath(`/farmacias/${pharmacyId}`);
   return { ok: true };
+}
+
+function mapAssignCommercialError(message: string, code?: string): string {
+  const m = (message || '').toLowerCase();
+  if (code === '42501' || m.includes('forbidden') || m.includes('42501')) {
+    return 'No tienes permiso para asignar planes comerciales.';
+  }
+  if (m.includes('launch_slots_exhausted') || m.includes('no quedan plazas')) {
+    return 'No quedan plazas de lanzamiento 2027 (máximo 20). Puedes asignar el plan a tarifa normal.';
+  }
+  if (m.includes('pilot_must_end_first')) {
+    return 'Hay un piloto en curso. Finalízalo antes de asignar un plan de pago.';
+  }
+  if (m.includes('technical_plan_missing')) {
+    return 'Falta la fila técnica del plan comercial. No se ha modificado la farmacia.';
+  }
+  if (m.includes('commercial_plan_requires_assign_rpc')) {
+    return 'Este plan solo puede asignarse con el flujo comercial.';
+  }
+  if (m.includes('unknown_commercial_sku')) {
+    return 'SKU comercial desconocido o inactivo.';
+  }
+  return mapCommercialRpcError(message, code) || mapChangePlanError(message, code);
 }
 
 function mapCommercialTransitionError(message: string, code?: string): string {

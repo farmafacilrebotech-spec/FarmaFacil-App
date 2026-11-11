@@ -30,14 +30,15 @@ describe('plan → catalog_mode expectations', () => {
     );
   });
 
-  it('documenta que assign RPC aún no existe', () => {
-    assert.equal(PLAN_ASSIGN_RPC_STATUS.exists, false);
+  it('documenta assign RPC canónica (083_00/084)', () => {
+    assert.equal(PLAN_ASSIGN_RPC_STATUS.exists, true);
     assert.match(
       PLAN_ASSIGN_RPC_STATUS.draftMigration,
-      /056_commercial_plan_assign/
+      /083_00_ff_assign_commercial_plan/
     );
     assert.ok(
       PLAN_ASSIGN_RPC_STATUS.interimRpcs.includes('ff_attach_master_catalog_v1')
     );
   });
 });
+
