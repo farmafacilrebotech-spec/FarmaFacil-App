@@ -1270,6 +1270,16 @@ export async function convertApprovedQuoteToKioskPurchaseAction(input: {
   };
 }
 
+const QUOTE_DOC_MAX_BYTES = 12 * 1024 * 1024;
+const QUOTE_DOC_ALLOWED_EXT = [
+  '.pdf',
+  '.xls',
+  '.xlsx',
+  '.png',
+  '.jpg',
+  '.jpeg',
+] as const;
+
 export async function uploadSupplierQuoteDocumentAction(formData: FormData): Promise<
   SupplierActionResult<{ documentId: string }>
 > {
@@ -1281,7 +1291,27 @@ export async function uploadSupplierQuoteDocumentAction(formData: FormData): Pro
   if (!quoteId || !(file instanceof File)) {
     return { ok: false, error: 'Faltan presupuesto o archivo.' };
   }
+  if (file.size <= 0 || file.size > QUOTE_DOC_MAX_BYTES) {
+    return { ok: false, error: 'Archivo vacío o superior a 12 MB.' };
+  }
+  const lower = file.name.toLowerCase();
+  const allowed = QUOTE_DOC_ALLOWED_EXT.some((ext) => lower.endsWith(ext));
+  if (!allowed) {
+    return {
+      ok: false,
+      error: 'Tipo no permitido. Usa PDF, Excel o imagen.',
+    };
+  }
   const supabase = createClient();
+  // Comprobar que el presupuesto existe antes de subir (evita objetos huérfanos).
+  const { data: quoteRow, error: quoteErr } = await supabase
+    .from('platform_supplier_quotes')
+    .select('id')
+    .eq('id', quoteId)
+    .maybeSingle();
+  if (quoteErr || !quoteRow) {
+    return { ok: false, error: 'Presupuesto no encontrado.' };
+  }
   const path = `${quoteId}/${Date.now()}-${file.name.replace(/[^\w.\-]+/g, '_')}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
   const { error: upErr } = await supabase.storage
@@ -1306,6 +1336,12 @@ export async function uploadSupplierQuoteDocumentAction(formData: FormData): Pro
     .select('id')
     .single();
   if (error || !data) {
+    // Intentar limpiar el objeto de storage si fallan los metadatos.
+    try {
+      await supabase.storage.from(SUPPLIER_DOCS_BUCKET).remove([path]);
+    } catch {
+      /* ignore */
+    }
     return { ok: false, error: 'Metadatos de documento no guardados.' };
   }
   revalidateSuppliers();
