@@ -33,23 +33,20 @@ function px(x, y, w, h) {
   };
 }
 
-/** Mismo layout que pharmacy-qr-poster-layout.ts */
+/** Mismo layout que pharmacy-qr-poster-layout.ts (zonas anotación). */
 const LAYOUT = {
-  headerBand: px(280, 145, 3859, 695),
-  headerPadXRatio: 0.06,
-  headerPadYMm: 1.0,
-  headerGapMm: 2.0,
-  qr: px(2777, 4651, 1373, 1392),
-  quietZoneRatio: 0.04,
+  logo: { rect: px(275, 177, 604, 610), insetRatio: 0.06 },
   name: {
-    maxFontSizePt: 16,
-    maxFontSizeNoLogoPt: 20,
+    rect: px(983, 177, 3180, 623),
+    insetRatio: 0.05,
+    maxFontSizePt: 22,
     minFontSizePt: 9,
     maxLines: 2,
     fallbackColor: '#0B0B0B',
     align: 'center',
     fontStyle: 'bold',
   },
+  qr: { rect: px(2777, 4651, 1373, 1392), quietZoneRatio: 0.04 },
 };
 
 const PUBLIC_ID = process.env.POSTER_PUBLIC_ID || '2mo6cq0yjss6ratr';
@@ -76,6 +73,16 @@ function containRect(srcW, srcH, box) {
     y: box.y + (box.h - h) / 2,
     w,
     h,
+  };
+}
+
+function insetRect(box, insetRatio) {
+  const pad = Math.min(box.w, box.h) * insetRatio;
+  return {
+    x: box.x + pad,
+    y: box.y + pad,
+    w: Math.max(box.w - pad * 2, 0),
+    h: Math.max(box.h - pad * 2, 0),
   };
 }
 
@@ -136,57 +143,6 @@ function resolveNameColor(primaryHex, fallback = '#0B0B0B') {
     return { color: candidate.toUpperCase(), usedFallback: false };
   }
   return { color: fallback, usedFallback: true };
-}
-
-/** Misma lógica que layoutHeaderSlots en compose.ts */
-function layoutHeaderSlots(band, opts) {
-  const padXRatio = opts.padXRatio ?? 0.06;
-  const padYMm = opts.padYMm ?? 1.0;
-  const gapMm = opts.gapMm ?? 2.0;
-  const nameMinFontPt = opts.nameMinFontPt ?? 9;
-  const nameMaxFontPt = opts.nameMaxFontPt ?? 16;
-  const nameMaxFontNoLogoPt = opts.nameMaxFontNoLogoPt ?? 20;
-  const nameMaxLines = opts.nameMaxLines ?? 2;
-
-  const padX = band.w * padXRatio;
-  const inner = {
-    x: band.x + padX,
-    y: band.y + padYMm,
-    w: Math.max(band.w - padX * 2, 1),
-    h: Math.max(band.h - padYMm * 2, 1),
-  };
-
-  if (!opts.hasLogo) {
-    return {
-      logoSlot: null,
-      nameSlot: inner,
-      nameMaxFontPt: nameMaxFontNoLogoPt,
-    };
-  }
-
-  const aspect = opts.logoAspect && opts.logoAspect > 0 ? opts.logoAspect : 1;
-  const nameMinH = ptToMm(nameMinFontPt) * 1.25 * nameMaxLines + 0.8;
-  const logoMaxH = Math.max(inner.h - gapMm - nameMinH, inner.h * 0.35);
-
-  let logoSlotH;
-  if (aspect >= 1.45) {
-    logoSlotH = Math.min(logoMaxH, inner.h * 0.52);
-  } else if (aspect <= 1.12) {
-    logoSlotH = Math.min(logoMaxH, inner.h * 0.64);
-  } else {
-    logoSlotH = Math.min(logoMaxH, inner.h * 0.58);
-  }
-
-  const logoSlot = { x: inner.x, y: inner.y, w: inner.w, h: logoSlotH };
-  const nameTop = logoSlot.y + logoSlot.h + gapMm;
-  const nameSlot = {
-    x: inner.x,
-    y: nameTop,
-    w: inner.w,
-    h: Math.max(inner.y + inner.h - nameTop, nameMinH * 0.8),
-  };
-
-  return { logoSlot, nameSlot, nameMaxFontPt };
 }
 
 function fitName(doc, text, zoneMm, style) {
@@ -293,23 +249,13 @@ async function buildPdf({ pharmacyName, logoPath, primaryColor }) {
     logoData = `data:image/png;base64,${buf.toString('base64')}`;
   }
 
-  const hasLogo = Boolean(logoData && logoW > 0 && logoH > 0);
-  const band = normToMm(LAYOUT.headerBand);
-  const slots = layoutHeaderSlots(band, {
-    hasLogo,
-    logoAspect: hasLogo ? logoW / logoH : undefined,
-    padXRatio: LAYOUT.headerPadXRatio,
-    padYMm: LAYOUT.headerPadYMm,
-    gapMm: LAYOUT.headerGapMm,
-    nameMinFontPt: LAYOUT.name.minFontSizePt,
-    nameMaxFontPt: LAYOUT.name.maxFontSizePt,
-    nameMaxFontNoLogoPt: LAYOUT.name.maxFontSizeNoLogoPt,
-    nameMaxLines: LAYOUT.name.maxLines,
-  });
-
   let usedLogo = false;
-  if (hasLogo && slots.logoSlot && logoData) {
-    const fitted = containRect(logoW, logoH, slots.logoSlot);
+  if (logoData && logoW > 0 && logoH > 0) {
+    const logoBox = insetRect(
+      normToMm(LAYOUT.logo.rect),
+      LAYOUT.logo.insetRatio
+    );
+    const fitted = containRect(logoW, logoH, logoBox);
     if (fitted.w > 0 && fitted.h > 0) {
       doc.addImage(
         logoData,
@@ -326,10 +272,11 @@ async function buildPdf({ pharmacyName, logoPath, primaryColor }) {
   }
 
   const colorRes = resolveNameColor(primaryColor, LAYOUT.name.fallbackColor);
-  const fit = fitName(doc, pharmacyName, slots.nameSlot, {
-    ...LAYOUT.name,
-    maxFontSizePt: slots.nameMaxFontPt,
-  });
+  const nameBox = insetRect(
+    normToMm(LAYOUT.name.rect),
+    LAYOUT.name.insetRatio
+  );
+  const fit = fitName(doc, pharmacyName, nameBox, LAYOUT.name);
   const rgb = hexToRgb(colorRes.color);
   doc.setFont('helvetica', LAYOUT.name.fontStyle);
   doc.setFontSize(fit.fontSizePt);
@@ -337,15 +284,16 @@ async function buildPdf({ pharmacyName, logoPath, primaryColor }) {
   const lineH = ptToMm(fit.fontSizePt) * 1.2;
   const blockH = fit.lines.length * lineH;
   const startY =
-    slots.nameSlot.y +
-    Math.max((slots.nameSlot.h - blockH) / 2, 0) +
-    lineH * 0.8;
-  doc.text(fit.lines, slots.nameSlot.x + slots.nameSlot.w / 2, startY, {
+    nameBox.y + Math.max((nameBox.h - blockH) / 2, 0) + lineH * 0.8;
+  doc.text(fit.lines, nameBox.x + nameBox.w / 2, startY, {
     align: 'center',
-    maxWidth: slots.nameSlot.w,
+    maxWidth: nameBox.w,
   });
 
-  const qrBox = qrInner(normToMm(LAYOUT.qr), LAYOUT.quietZoneRatio);
+  const qrBox = qrInner(
+    normToMm(LAYOUT.qr.rect),
+    LAYOUT.qr.quietZoneRatio
+  );
   doc.addImage(
     qrData,
     'PNG',
@@ -365,7 +313,6 @@ async function buildPdf({ pharmacyName, logoPath, primaryColor }) {
     fontSizePt: fit.fontSizePt,
     nameColor: colorRes.color,
     nameColorFallback: colorRes.usedFallback,
-    slots,
   };
 }
 
@@ -562,10 +509,11 @@ print('cleaned')
     publicId: PUBLIC_ID,
     template: TEMPLATE,
     templatePx: '4419×6250',
-    headerBandPx: '280,145 3859×695 (entre líneas turquesa)',
+    logoRectPx: '275,177 604×610 (zona roja)',
+    nameRectPx: '983,177 3180×623 (zona verde)',
     qrPx: '2777,4651 1373×1392',
     pdfDownloadEnabled: false,
-    composition: 'headerBand compartido logo+nombre (contain, contraste, trim)',
+    composition: 'logoRect + nameRect independientes (anotación Canva)',
     comparison: path.join(DESKTOP, 'comparativa-9-variantes.png'),
     examplePdf: path.join(DESKTOP, 'ejemplo-cartel-a4.pdf'),
     variants: summary,
