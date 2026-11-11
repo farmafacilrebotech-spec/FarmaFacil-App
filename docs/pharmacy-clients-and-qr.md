@@ -59,7 +59,13 @@ Pedidos de STAFF siguen operativos (no seleccionan esa columna).
 - Descarga PDF del panel **desactivada** hasta aprobación visual (`pdfDownloadEnabled: false`).
 - PDFs de ejemplo en `~/Desktop/farmafacil-cartel-review/` (revisión local).
 
+## Logo de farmacia (Personalización)
+- Campo existente: `pharmacy_branding.logo_url`.
+- UI: SuperAdmin → Personalización → Branding + tenant Configuración (`PharmacyLogoManager`).
+- Permisos: SuperAdmin write / Owner / Admin (`branding.update`). Farmacéutico y STAFF: sin modificación.
+- Storage: draft staging `docs/migrations/staging_pharmacy_logos_storage_*.sql` (**no** aplicado en prod).
+- Cartel QR consume `logo_url`; sin logo → solo nombre.
+
 ## Fuera de alcance de este PR
 - Merge / deploy / migraciones en producción.
 - Mezcla con PR #21 / #22.
-- Diseño definitivo del cartel (Canva, fuera de repo hasta export).

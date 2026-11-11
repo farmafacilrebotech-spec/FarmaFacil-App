@@ -2,8 +2,10 @@ import { displayNameFromIdentity } from '@/lib/format';
 import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
 import type { PharmacyTenantContext } from '@/lib/pharmacies/tenant';
 import type { TenantSubscriptionSummary } from '@/lib/pharmacies/tenant-subscription-summary';
+import { roleCanManagePharmacyLogo } from '@/lib/pharmacies/pharmacy-logo-file';
 import { PageHeader } from '@/components/shared/page-header';
 import { PharmacyLogo } from '@/components/brand';
+import { PharmacyLogoManager } from '@/components/pharmacies/pharmacy-logo-manager';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { PharmacyTenantSubscriptionCard } from '@/components/pharmacy-tenant/pharmacy-tenant-subscription-card';
@@ -21,6 +23,10 @@ export function PharmacyTenantSettings({
     context.profile.email
   );
   const roleLabel = pharmacyRoleLabel(context.membership.roleKey);
+  const canManageLogo = roleCanManagePharmacyLogo(
+    context.membership.roleKey
+  );
+  const logoColor = context.pharmacy.logoColor || '#0d9488';
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -33,12 +39,20 @@ export function PharmacyTenantSettings({
         <PharmacyTenantSubscriptionCard summary={subscriptionSummary} />
       ) : null}
 
+      <PharmacyLogoManager
+        pharmacyId={context.pharmacy.id}
+        pharmacyName={context.pharmacy.name}
+        logoUrl={context.pharmacy.logoUrl}
+        logoColor={logoColor}
+        canManage={canManageLogo}
+      />
+
       <Card className="overflow-hidden">
         <div className="flex items-center gap-4 border-b border-border bg-muted/30 px-6 py-5">
           <PharmacyLogo
             name={context.pharmacy.name}
             logoUrl={context.pharmacy.logoUrl}
-            logoColor={context.pharmacy.logoColor || '#0d9488'}
+            logoColor={logoColor}
             size={56}
             rounded="2xl"
           />
@@ -88,8 +102,8 @@ export function PharmacyTenantSettings({
         </dl>
 
         <p className="border-t border-border px-6 py-4 text-xs text-muted-foreground">
-          La edición de branding, datos de contacto y otros ajustes se
-          habilitará en una fase posterior.
+          El logo se usa automáticamente en el cartel QR. La edición ampliada
+          de colores y contacto se habilitará en una fase posterior.
         </p>
       </Card>
     </div>

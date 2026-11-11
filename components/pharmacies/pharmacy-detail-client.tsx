@@ -54,6 +54,7 @@ import {
   toneForPharmacyStatus,
 } from '@/components/shared/status-badge';
 import { PharmacyLogo } from '@/components/brand';
+import { PharmacyLogoManager } from '@/components/pharmacies/pharmacy-logo-manager';
 import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
 import { PharmacySubscriptionPanel } from '@/components/pharmacies/pharmacy-subscription-panel';
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
@@ -472,6 +473,7 @@ export function PharmacyDetailClient({
           <div className="flex items-start gap-4">
             <PharmacyLogo
               name={pharmacy.name}
+              logoUrl={pharmacy.branding?.logo_url}
               logoColor={color}
               size={64}
               rounded="2xl"
@@ -856,6 +858,31 @@ export function PharmacyDetailClient({
               ) : null}
             </div>
 
+            <PharmacyLogoManager
+              pharmacyId={pharmacy.id}
+              pharmacyName={pharmacy.name}
+              logoUrl={pharmacy.branding?.logo_url ?? null}
+              logoColor={color}
+              canManage
+              onLogoChange={(logoUrl) =>
+                setPharmacy((prev) => ({
+                  ...prev,
+                  branding: {
+                    pharmacy_id: prev.id,
+                    logo_url: logoUrl,
+                    primary_color: prev.branding?.primary_color ?? null,
+                    secondary_color: prev.branding?.secondary_color ?? null,
+                    accent_color: prev.branding?.accent_color ?? null,
+                    font_family: prev.branding?.font_family ?? null,
+                    border_radius: prev.branding?.border_radius ?? null,
+                    kiosk_wallpaper_url:
+                      prev.branding?.kiosk_wallpaper_url ?? null,
+                    welcome_message: prev.branding?.welcome_message ?? null,
+                  },
+                }))
+              }
+            />
+
             {editingPersonalization ? (
               <div className="rounded-xl border border-border bg-card p-5 shadow-soft sm:p-6">
                 <div className="grid gap-6 lg:grid-cols-2">
@@ -1044,6 +1071,12 @@ export function PharmacyDetailClient({
                     Branding
                   </h3>
                   <div className="mt-4 space-y-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-muted-foreground">Logo</span>
+                      <span className="font-medium text-foreground">
+                        {pharmacy.branding?.logo_url ? 'Configurado' : 'Sin logo'}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-muted-foreground">
                         Color primario
