@@ -1,6 +1,6 @@
 /**
- * Cartel PDF A4: plantilla Canva HD + logo + nombre + QR.
- * Composición superior dinámica dentro de headerBand.
+ * Cartel PDF A4: plantilla Canva HD + logo (zona roja) + nombre (zona verde) + QR.
+ * Rectángulos independientes medidos sobre la referencia marcada.
  */
 
 import { jsPDF } from 'jspdf';
@@ -13,10 +13,10 @@ import {
 } from '@/lib/pharmacies/pharmacy-qr-poster-fit';
 import {
   containRect,
-  layoutHeaderSlots,
   resolvePosterNameColor,
 } from '@/lib/pharmacies/pharmacy-qr-poster-compose';
 import {
+  insetRectMm,
   isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
   PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE,
@@ -141,7 +141,6 @@ export async function trimTransparentMargins(
   const trimmedH = maxY - minY + 1;
   const trimmedArea = trimmedW * trimmedH;
   const fullArea = w * h;
-  // Solo recortar si el margen vacío es significativo (>12%)
   if (trimmedArea / fullArea > 0.88) {
     return { dataUrl: logoDataUrl, width: w, height: h };
   }
@@ -176,11 +175,10 @@ function drawName(
   pharmacyName: string,
   nameSlot: PosterRectMm,
   layout: PharmacyQrPosterLayout,
-  maxFontPt: number,
   colorHex: string
 ): string | null {
   const fit = fitPharmacyNameInZone(doc, pharmacyName, nameSlot, {
-    maxFontSizePt: maxFontPt,
+    maxFontSizePt: layout.name.maxFontSizePt,
     minFontSizePt: layout.name.minFontSizePt,
     maxLines: layout.name.maxLines,
     fontStyle: layout.name.fontStyle,
@@ -227,6 +225,20 @@ function drawQrInZone(
   );
 }
 
+/** Guías de depuración (rojo/verde). Nunca en el PDF de producción. */
+export function drawPosterZoneGuides(
+  doc: jsPDF,
+  layout: PharmacyQrPosterLayout = PHARMACY_QR_POSTER_LAYOUT
+): void {
+  const logo = rectNormToMm(layout.logo.rect, layout.page);
+  const name = rectNormToMm(layout.name.rect, layout.page);
+  doc.setDrawColor(220, 20, 20);
+  doc.setLineWidth(0.35);
+  doc.rect(logo.x, logo.y, logo.w, logo.h);
+  doc.setDrawColor(20, 160, 40);
+  doc.rect(name.x, name.y, name.w, name.h);
+}
+
 export async function drawPharmacyQrPosterFromTemplate(
   doc: jsPDF,
   input: {
@@ -234,12 +246,12 @@ export async function drawPharmacyQrPosterFromTemplate(
     backgroundDataUrl: string;
     qrDataUrl: string;
     logoDataUrl?: string | null;
-    /** Si true y hay logoUrl fallido, no se debe llamar (el caller lanza). */
     primaryColor?: string | null;
     layout?: PharmacyQrPosterLayout;
-    /** Dimensiones logo ya conocidas (scripts Node). */
     logoWidth?: number;
     logoHeight?: number;
+    /** Solo revisión visual: dibuja zonas roja/verde. */
+    showZoneGuides?: boolean;
   }
 ): Promise<{
   nameWarning: string | null;
@@ -272,23 +284,13 @@ export async function drawPharmacyQrPosterFromTemplate(
     logoH = trimmed.height;
   }
 
-  const hasLogo = Boolean(logoDataUrl && logoW > 0 && logoH > 0);
-  const band = rectNormToMm(layout.headerBand, layout.page);
-  const slots = layoutHeaderSlots(band, {
-    hasLogo,
-    logoAspect: hasLogo ? logoW / logoH : undefined,
-    padXRatio: layout.headerPadXRatio,
-    padYMm: layout.headerPadYMm,
-    gapMm: layout.headerGapMm,
-    nameMinFontPt: layout.name.minFontSizePt,
-    nameMaxFontPt: layout.name.maxFontSizePt,
-    nameMaxFontNoLogoPt: layout.name.maxFontSizeNoLogoPt,
-    nameMaxLines: layout.name.maxLines,
-  });
-
   let usedLogo = false;
-  if (hasLogo && slots.logoSlot && logoDataUrl) {
-    const fitted = containRect(logoW, logoH, slots.logoSlot);
+  if (logoDataUrl && logoW > 0 && logoH > 0) {
+    const logoBox = insetRectMm(
+      rectNormToMm(layout.logo.rect, layout.page),
+      layout.logo.insetRatio
+    );
+    const fitted = containRect(logoW, logoH, logoBox);
     if (fitted.w > 0 && fitted.h > 0) {
       const format = logoDataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG';
       doc.addImage(
@@ -309,15 +311,22 @@ export async function drawPharmacyQrPosterFromTemplate(
     input.primaryColor,
     layout.name.fallbackColor
   );
+  const nameBox = insetRectMm(
+    rectNormToMm(layout.name.rect, layout.page),
+    layout.name.insetRatio
+  );
   const nameWarning = drawName(
     doc,
     input.pharmacyName,
-    slots.nameSlot,
+    nameBox,
     layout,
-    slots.nameMaxFontPt,
     colorRes.color
   );
   drawQrInZone(doc, input.qrDataUrl, layout);
+
+  if (input.showZoneGuides) {
+    drawPosterZoneGuides(doc, layout);
+  }
 
   return {
     nameWarning,
@@ -339,6 +348,7 @@ export async function buildPharmacyQrPosterPdf(input: {
   logoWidth?: number;
   logoHeight?: number;
   allowUnapprovedReview?: boolean;
+  showZoneGuides?: boolean;
 }): Promise<PharmacyQrPosterBuildResult> {
   if (!isPrintSafePharmacyPublicUrl(input.publicUrl)) {
     throw new Error(
@@ -416,6 +426,7 @@ export async function buildPharmacyQrPosterPdf(input: {
     logoHeight,
     primaryColor: input.primaryColor,
     layout,
+    showZoneGuides: input.showZoneGuides === true,
   });
 
   return {

@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 
 import { containRect } from './pharmacy-qr-poster-compose.ts';
 import {
+  insetRectMm,
   isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
   PHARMACY_QR_POSTER_LAYOUT,
@@ -15,11 +16,12 @@ import {
 } from './pharmacy-qr-poster-layout.ts';
 
 describe('PHARMACY_QR_POSTER_LAYOUT', () => {
-  it('tiene plantilla Canva configurada pero descarga desactivada', () => {
+  it('tiene plantilla Canva y zonas logo/nombre independientes; descarga off', () => {
     assert.equal(
       PHARMACY_QR_POSTER_LAYOUT.backgroundSrc,
       '/images/posters/pharmacy-qr-a4.png'
     );
+    assert.equal(PHARMACY_QR_POSTER_LAYOUT.logo.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.name.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.qr.configured, true);
     assert.equal(PHARMACY_QR_POSTER_LAYOUT.pdfDownloadEnabled, false);
@@ -36,16 +38,46 @@ describe('PHARMACY_QR_POSTER_LAYOUT', () => {
     });
   });
 
-  it('headerBand queda entre las líneas turquesa (~y 145..840 de 6250)', () => {
-    const band = PHARMACY_QR_POSTER_LAYOUT.headerBand;
-    const topPx = band.y * 6250;
-    const bottomPx = (band.y + band.h) * 6250;
-    assert.ok(topPx >= 140 && topPx <= 160);
-    assert.ok(bottomPx >= 820 && bottomPx <= 860);
+  it('logo y nombre no se solapan y quedan entre líneas turquesa HD', () => {
+    const logo = PHARMACY_QR_POSTER_LAYOUT.logo.rect;
+    const name = PHARMACY_QR_POSTER_LAYOUT.name.rect;
+    const logoRight = logo.x + logo.w;
+    const logoBottom = (logo.y + logo.h) * 6250;
+    const nameBottom = (name.y + name.h) * 6250;
+    const logoTop = logo.y * 6250;
+    const nameTop = name.y * 6250;
+
+    assert.ok(logoRight <= name.x + 1e-9, 'logo no invade zona nombre');
+    // Entre teal ≈122 y 861
+    assert.ok(logoTop >= 150 && logoTop <= 200);
+    assert.ok(nameTop >= 150 && nameTop <= 200);
+    assert.ok(logoBottom <= 820);
+    assert.ok(nameBottom <= 830);
+  });
+
+  it('coordenadas HD coinciden con la anotación escalada', () => {
+    const logo = PHARMACY_QR_POSTER_LAYOUT.logo.rect;
+    const name = PHARMACY_QR_POSTER_LAYOUT.name.rect;
+    assert.ok(Math.abs(logo.x * 4419 - 275) < 1);
+    assert.ok(Math.abs(logo.y * 6250 - 177) < 1);
+    assert.ok(Math.abs(logo.w * 4419 - 604) < 1);
+    assert.ok(Math.abs(logo.h * 6250 - 610) < 1);
+    assert.ok(Math.abs(name.x * 4419 - 983) < 1);
+    assert.ok(Math.abs(name.y * 6250 - 177) < 1);
+    assert.ok(Math.abs(name.w * 4419 - 3180) < 1);
+    assert.ok(Math.abs(name.h * 6250 - 623) < 1);
   });
 });
 
-describe('rectNormToMm / rectPxToNorm', () => {
+describe('insetRectMm / rectNormToMm', () => {
+  it('aplica margen interior', () => {
+    const inner = insetRectMm({ x: 0, y: 0, w: 100, h: 50 }, 0.1);
+    assert.equal(inner.x, 5);
+    assert.equal(inner.y, 5);
+    assert.equal(inner.w, 90);
+    assert.equal(inner.h, 40);
+  });
+
   it('convierte fracciones a mm A4', () => {
     const mm = rectNormToMm(
       { x: 0.1, y: 0.2, w: 0.5, h: 0.25 },

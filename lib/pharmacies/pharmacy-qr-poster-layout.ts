@@ -1,8 +1,9 @@
 /**
  * Layout del cartel QR A4: plantilla Canva HD + zonas dinámicas.
  *
- * Logo y nombre se componen dentro de `headerBand` (entre líneas turquesa).
- * QR en la caja blanca inferior. pdfDownloadEnabled=false hasta OK visual.
+ * Zonas ROJA (logo) y VERDE (nombre) son rectángulos INDEPENDIENTES
+ * medidos sobre la referencia marcada (escala 724×1024 → 4419×6250).
+ * pdfDownloadEnabled=false hasta OK visual.
  */
 
 export type PosterRectNorm = {
@@ -19,10 +20,18 @@ export type PosterRectMm = {
   h: number;
 };
 
+export type PharmacyQrPosterLogoZone = {
+  configured: boolean;
+  rect: PosterRectNorm;
+  /** Margen interior relativo al menor lado (0..0.2). */
+  insetRatio: number;
+};
+
 export type PharmacyQrPosterNameStyle = {
   configured: boolean;
+  rect: PosterRectNorm;
+  insetRatio: number;
   maxFontSizePt: number;
-  maxFontSizeNoLogoPt: number;
   minFontSizePt: number;
   maxLines: 1 | 2;
   /** Fallback si el primario no contrasta. */
@@ -41,14 +50,9 @@ export type PharmacyQrPosterLayout = {
   backgroundSrc: string | null;
   templatePx: { width: number; height: number } | null;
   page: { widthMm: number; heightMm: number };
-  /**
-   * Contenedor común logo+nombre entre las dos líneas turquesa.
-   * Medido en HD 4419×6250 (y≈145..840).
-   */
-  headerBand: PosterRectNorm;
-  headerPadXRatio: number;
-  headerPadYMm: number;
-  headerGapMm: number;
+  /** Zona ROJA: solo logo (izquierda, entre líneas turquesa). */
+  logo: PharmacyQrPosterLogoZone;
+  /** Zona VERDE: solo nombre (derecha). No se mueve si falta logo. */
   name: PharmacyQrPosterNameStyle;
   qr: PharmacyQrPosterQrZone;
   pdfDownloadEnabled: boolean;
@@ -75,6 +79,21 @@ export function rectPxToNorm(
     y: px.y / templatePx.height,
     w: px.w / templatePx.width,
     h: px.h / templatePx.height,
+  };
+}
+
+/** Aplica margen interior a un rectángulo mm. */
+export function insetRectMm(
+  box: PosterRectMm,
+  insetRatio: number
+): PosterRectMm {
+  const q = Math.min(Math.max(insetRatio, 0), 0.2);
+  const pad = Math.min(box.w, box.h) * q;
+  return {
+    x: box.x + pad,
+    y: box.y + pad,
+    w: Math.max(box.w - pad * 2, 0),
+    h: Math.max(box.h - pad * 2, 0),
   };
 }
 
@@ -111,22 +130,25 @@ function px(
 }
 
 /**
- * Líneas turquesa HD ≈ y 115–135 y 855–874.
- * Band útil interior ≈ 145..840, márgenes laterales ~7%.
- * QR: interior caja blanca (misma fracción relativa validada).
+ * Coordenadas HD derivadas de la anotación 724×1024 (escala ≈6.1036):
+ *   ROJO  ann (45,29)–(143,128)  → HD (275,177,604×610)
+ *   VERDE ann (161,29)–(681,130) → HD (983,177,3180×623)
+ * Entre líneas turquesa HD ≈ y 122 y 861. QR sin cambios.
  */
 export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
   backgroundSrc: '/images/posters/pharmacy-qr-a4.png',
   templatePx: { ...TEMPLATE_PX },
   page: { widthMm: 210, heightMm: 297 },
-  headerBand: px(280, 145, 3859, 695),
-  headerPadXRatio: 0.06,
-  headerPadYMm: 1.0,
-  headerGapMm: 2.0,
+  logo: {
+    configured: true,
+    rect: px(275, 177, 604, 610),
+    insetRatio: 0.06,
+  },
   name: {
     configured: true,
-    maxFontSizePt: 16,
-    maxFontSizeNoLogoPt: 20,
+    rect: px(983, 177, 3180, 623),
+    insetRatio: 0.05,
+    maxFontSizePt: 22,
     minFontSizePt: 9,
     maxLines: 2,
     fallbackColor: '#0B0B0B',
@@ -145,11 +167,12 @@ export function isPharmacyQrPosterTemplateReady(
   layout: PharmacyQrPosterLayout = PHARMACY_QR_POSTER_LAYOUT
 ): boolean {
   if (!layout.backgroundSrc?.trim()) return false;
-  if (!layout.name.configured || !layout.qr.configured) return false;
-  const band = layout.headerBand;
-  const qr = layout.qr.rect;
-  if (band.w <= 0 || band.h <= 0) return false;
-  if (qr.w <= 0 || qr.h <= 0) return false;
+  if (!layout.logo.configured || !layout.name.configured || !layout.qr.configured) {
+    return false;
+  }
+  if (layout.logo.rect.w <= 0 || layout.logo.rect.h <= 0) return false;
+  if (layout.name.rect.w <= 0 || layout.name.rect.h <= 0) return false;
+  if (layout.qr.rect.w <= 0 || layout.qr.rect.h <= 0) return false;
   return true;
 }
 
