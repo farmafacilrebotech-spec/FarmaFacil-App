@@ -1,6 +1,6 @@
 # Staging — RLS identidad de farmacia (v1)
 
-**Estado:** preparado, **NO aplicado**. Esperar autorización explícita.  
+**Estado:** **APLICADO en staging** (2026-11-11). Ver staging_pharmacy_identity_rls_RESULTS.md  
 **Proyecto:** `dazfdcjscnpfvhcyjddt`  
 **SQL:** `staging_pharmacy_identity_rls_v1.sql` · rollback `…_DOWN.sql`  
 **Prod (mismo contenido, tras OK staging):** ver sección «Producción» abajo.
