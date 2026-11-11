@@ -431,7 +431,7 @@ export async function changePharmacyPlanAction(
   }
 
   const planKey = newPlanKey?.trim() ?? '';
-  if (!['starter', 'pro', 'business', 'enterprise'].includes(planKey)) {
+  if (!planKey) {
     return { ok: false, error: 'Selecciona un plan válido.' };
   }
 
@@ -441,6 +441,21 @@ export async function changePharmacyPlanAction(
   } = await supabase.auth.getUser();
   if (!user) {
     return { ok: false, error: 'Debes iniciar sesión para cambiar el plan.' };
+  }
+
+  // Solo claves que existen como fila activa en `plans` (no inventar productos).
+  const { data: planRow, error: planLookupError } = await supabase
+    .from('plans')
+    .select('id, key, is_active')
+    .eq('key', planKey)
+    .eq('is_active', true)
+    .maybeSingle();
+  if (planLookupError || !planRow) {
+    return {
+      ok: false,
+      error:
+        'Ese plan no está disponible en el catálogo técnico activo. No se ha modificado la suscripción.',
+    };
   }
 
   const { error } = await supabase.rpc('ff_change_pharmacy_plan_v1', {

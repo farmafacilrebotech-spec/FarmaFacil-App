@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { CreditCard, Loader2 } from 'lucide-react';
+import { CreditCard } from 'lucide-react';
 
 import type { PharmacyDetail } from '@/lib/pharmacies/types';
 import {
@@ -12,26 +12,13 @@ import {
 import { formatDate } from '@/lib/format';
 import { COMMERCIAL_PILOT_DURATION_DAYS } from '@/lib/commercial/pharmacy-onboarding';
 import {
-  COMMERCIAL_ACTION_LABELS,
-  COMMERCIAL_ACTION_SUCCESS,
-  commercialActionRequiresConfirm,
   hasOpenCommercialPilot,
   listVisibleCommercialActions,
   snapshotFromPharmacyDetail,
-  type CommercialAction,
 } from '@/lib/pharmacies/commercial-lifecycle';
-import { transitionPharmacySubscriptionAction } from '@/app/(app)/farmacias/actions';
+import { ManageSubscriptionDialog } from '@/components/pharmacies/manage-subscription-dialog';
+import { commercialPlanLabel } from '@/lib/pharmacies/commercial-plan-catalog';
 import { Button } from '@/components/ui/button';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 
 function DateValue({ value }: { value: string | null | undefined }) {
   if (!value) return <span className="text-muted-foreground">—</span>;
@@ -65,11 +52,7 @@ export function PharmacySubscriptionPanel({
   pharmacy: PharmacyDetail;
 }) {
   const router = useRouter();
-  const [pendingAction, setPendingAction] =
-    React.useState<CommercialAction | null>(null);
-  const [confirmAction, setConfirmAction] =
-    React.useState<CommercialAction | null>(null);
-  const [busy, setBusy] = React.useState(false);
+  const [manageOpen, setManageOpen] = React.useState(false);
   const [feedback, setFeedback] = React.useState<{
     tone: 'success' | 'error';
     message: string;
@@ -114,45 +97,6 @@ export function PharmacySubscriptionPanel({
         hideReactivateForOpenPilot: openPilot,
       })
     : [];
-
-  async function runAction(action: CommercialAction) {
-    if (busy) return;
-    setBusy(true);
-    setPendingAction(action);
-    try {
-      const result = await transitionPharmacySubscriptionAction(
-        pharmacy.id,
-        action
-      );
-      if (!result.ok) {
-        setFeedback({ tone: 'error', message: result.error });
-        return;
-      }
-      setFeedback({
-        tone: 'success',
-        message: COMMERCIAL_ACTION_SUCCESS[action],
-      });
-      router.refresh();
-    } catch {
-      setFeedback({
-        tone: 'error',
-        message:
-          'No se ha podido completar la operación comercial. Inténtalo de nuevo.',
-      });
-    } finally {
-      setBusy(false);
-      setPendingAction(null);
-      setConfirmAction(null);
-    }
-  }
-
-  function handleActionClick(action: CommercialAction) {
-    if (commercialActionRequiresConfirm(action)) {
-      setConfirmAction(action);
-      return;
-    }
-    void runAction(action);
-  }
 
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-soft">
@@ -268,7 +212,9 @@ export function PharmacySubscriptionPanel({
             <div>
               <dt className="text-xs text-muted-foreground">Plan</dt>
               <dd className="text-sm font-medium text-foreground">
-                {pharmacy.plan?.name ?? sub.plan?.name ?? '—'}
+                {commercialPlanLabel(
+                  pharmacy.plan?.key ?? sub.plan?.key ?? pharmacy.plan?.name
+                )}
               </dd>
             </div>
           </dl>
@@ -297,7 +243,9 @@ export function PharmacySubscriptionPanel({
             <div>
               <dt className="text-xs text-muted-foreground">Plan</dt>
               <dd className="text-sm font-medium text-foreground">
-                {pharmacy.plan?.name ?? sub.plan?.name ?? '—'}
+                {commercialPlanLabel(
+                  pharmacy.plan?.key ?? sub.plan?.key ?? pharmacy.plan?.name
+                )}
               </dd>
             </div>
             <div>
@@ -347,28 +295,14 @@ export function PharmacySubscriptionPanel({
           )}
 
           {visibleActions.length > 0 ? (
-            <div className="mt-4 flex flex-wrap gap-2">
-              {visibleActions.map((action) => {
-                const destructive =
-                  action === 'cancel_now' ||
-                  action === 'suspend_for_nonpayment';
-                const isPending = busy && pendingAction === action;
-                return (
-                  <Button
-                    key={action}
-                    type="button"
-                    size="sm"
-                    variant={destructive ? 'destructive' : 'outline'}
-                    disabled={busy}
-                    onClick={() => handleActionClick(action)}
-                  >
-                    {isPending ? (
-                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                    ) : null}
-                    {COMMERCIAL_ACTION_LABELS[action]}
-                  </Button>
-                );
-              })}
+            <div className="mt-4">
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setManageOpen(true)}
+              >
+                Gestionar suscripción
+              </Button>
             </div>
           ) : (
             <p className="mt-4 text-xs text-muted-foreground">
@@ -387,45 +321,16 @@ export function PharmacySubscriptionPanel({
         </p>
       ) : null}
 
-      <AlertDialog
-        open={confirmAction != null}
-        onOpenChange={(open) => {
-          if (!open && !busy) setConfirmAction(null);
+      <ManageSubscriptionDialog
+        open={manageOpen}
+        onOpenChange={setManageOpen}
+        pharmacyId={pharmacy.id}
+        visibleActions={visibleActions}
+        onDone={(message) => {
+          setFeedback({ tone: 'success', message });
+          router.refresh();
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmAction
-                ? COMMERCIAL_ACTION_LABELS[confirmAction]
-                : 'Confirmar'}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmAction === 'cancel_now'
-                ? 'La cancelación es inmediata: el acceso operativo de la farmacia quedará bloqueado. Los datos y usuarios se conservan. Esta acción no archiva la farmacia.'
-                : confirmAction === 'suspend_for_nonpayment'
-                  ? 'La farmacia quedará suspendida por impago y sin acceso operativo. Los datos, usuarios y configuración se conservan.'
-                  : '¿Confirmas esta operación?'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy || !confirmAction}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={(e) => {
-                e.preventDefault();
-                if (confirmAction) void runAction(confirmAction);
-              }}
-            >
-              {busy ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : null}
-              Confirmar
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      />
     </div>
   );
 }
