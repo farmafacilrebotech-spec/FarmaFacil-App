@@ -12,6 +12,11 @@ SECURITY DEFINER
 SET search_path TO 'pg_catalog', 'public'
 AS $fn$
 BEGIN
+  -- Solo JWT service_role (no usar current_user: en SECURITY DEFINER es siempre el owner).
+  IF auth.role() = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
   IF TG_OP = 'INSERT' THEN
     IF NEW.logo_url IS NOT NULL
        AND NOT public.ff_has_platform_permission('platform.pharmacies.write') THEN
@@ -44,6 +49,10 @@ SECURITY DEFINER
 SET search_path TO 'pg_catalog', 'public'
 AS $fn$
 BEGIN
+  IF auth.role() = 'service_role' THEN
+    RETURN NEW;
+  END IF;
+
   IF TG_OP = 'INSERT' THEN
     IF NEW.visible_name IS NOT NULL
        AND NOT public.ff_has_platform_permission('platform.pharmacies.write') THEN

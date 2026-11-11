@@ -211,9 +211,12 @@ SELECT pg_get_expr(polqual, polrelid) FROM pg_policy p JOIN pg_class c ON c.oid=
         .update({ logo_url: beforeBr.logo_url })
         .eq('pharmacy_id', PHARMACY_ID);
     }
+    const logoDenied = /ff_identity_forbidden|row-level security|42501/i.test(
+      logoTry.error?.message || ''
+    );
     record(
       `${role} branding.logo_url`,
-      expectAllow ? logoChanged || Boolean(logoTry.error) === false && logoChanged : !logoChanged,
+      expectAllow ? logoChanged && !logoDenied : logoDenied || !logoChanged,
       `err=${logoTry.error?.message || null} changed=${logoChanged}`
     );
 
@@ -236,9 +239,12 @@ SELECT pg_get_expr(polqual, polrelid) FROM pg_policy p JOIN pg_class c ON c.oid=
         .update({ visible_name: beforeSt?.visible_name ?? null })
         .eq('pharmacy_id', PHARMACY_ID);
     }
+    const visDenied = /ff_identity_forbidden|row-level security|42501/i.test(
+      visTry.error?.message || ''
+    );
     record(
       `${role} settings.visible_name`,
-      expectAllow ? visChanged : !visChanged,
+      expectAllow ? visChanged && !visDenied : visDenied || !visChanged,
       `err=${visTry.error?.message || null} changed=${visChanged}`
     );
 
