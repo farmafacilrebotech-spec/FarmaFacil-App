@@ -115,7 +115,7 @@ export default async function ProveedoresPage({
       if (c.ok) contactsBySupplier[s.id] = c.contacts;
       if (a.ok) activityBySupplier[s.id] = a.rows;
     }),
-    ...quotes.slice(0, 40).map(async (q) => {
+    ...quotes.slice(0, 100).map(async (q) => {
       const [docs, lines] = await Promise.all([
         listQuoteDocuments(q.id),
         listQuoteLines(q.id),
@@ -123,7 +123,7 @@ export default async function ProveedoresPage({
       if (docs.ok) quoteDocumentsById[q.id] = docs.documents;
       if (lines.ok) quoteLinesById[q.id] = lines.lines;
     }),
-    ...generalPurchases.slice(0, 40).map(async (o) => {
+    ...generalPurchases.slice(0, 100).map(async (o) => {
       const [docs, lines] = await Promise.all([
         listPurchaseDocuments(o.id),
         listPurchaseLines(o.id),

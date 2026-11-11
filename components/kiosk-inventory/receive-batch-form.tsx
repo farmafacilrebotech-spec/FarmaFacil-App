@@ -11,7 +11,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 
-export function ReceiveBatchForm() {
+export function ReceiveBatchForm({
+  embedded = false,
+  onCompleted,
+}: {
+  embedded?: boolean;
+  onCompleted?: () => void;
+} = {}) {
   const router = useRouter();
   const [count, setCount] = React.useState(1);
   const [model, setModel] = React.useState('');
@@ -53,6 +59,7 @@ export function ReceiveBatchForm() {
       setCount(1);
       setSerialsText('');
       router.refresh();
+      onCompleted?.();
     } finally {
       setBusy(false);
     }
@@ -61,19 +68,31 @@ export function ReceiveBatchForm() {
   return (
     <form
       onSubmit={onSubmit}
-      className="space-y-4 rounded-2xl border border-border bg-card p-5 shadow-soft"
+      className={
+        embedded
+          ? 'space-y-4'
+          : 'space-y-4 rounded-2xl border border-border bg-card p-5 shadow-soft'
+      }
     >
-      <div>
-        <h2 className="text-sm font-semibold text-foreground">
-          Registrar recepción (lote)
-        </h2>
-        <p className="mt-1 text-xs text-muted-foreground">
-          Crea un activo individual por unidad con identificador permanente
-          (KSK-…). Tablet e impresora viajan juntas; la serie opcional es la del
-          conjunto (Serial USB ICOD). No reutiliza códigos ni altera el
-          simulador comercial.
+      {!embedded ? (
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">
+            Registrar recepción (lote)
+          </h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Crea un activo individual por unidad con identificador permanente
+            (KSK-…). Tablet e impresora viajan juntas; la serie opcional es la
+            del conjunto (Serial USB ICOD). No reutiliza códigos ni altera el
+            simulador comercial.
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          Alta de activos físicos con KSK permanente. La serie es opcional
+          (Serial USB ICOD). «Pendiente de identificar» no es lo mismo que
+          «Pedido pendiente de recibir».
         </p>
-      </div>
+      )}
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="space-y-1.5">
           <Label>Unidades</Label>

@@ -270,7 +270,8 @@ export async function receiveAgainstPurchaseOrderAction(input: {
     ) {
       return {
         ok: false,
-        error: 'Falta aplicar la migración 068 (pedidos de compra de kioskos).',
+        error:
+          'No se ha podido registrar la recepción: la función de recepción (ff_kiosk_purchase_receive_v1) no está disponible en este entorno.',
       };
     }
     return { ok: false, error: 'No se ha podido registrar la recepción.' };
