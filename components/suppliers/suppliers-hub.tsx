@@ -3332,8 +3332,9 @@ export function SuppliersHub({
             <div className="space-y-2">
               <h3 className="text-sm font-semibold">Documento del proveedor</h3>
               <p className="text-xs text-muted-foreground">
-                Puedes adjuntar el PDF antes de guardar. La lectura con IA
-                propone valores; nada se confirma hasta que pulses guardar.
+                Puedes adjuntar el PDF antes de guardar. La lectura inteligente
+                con IA está desactivada en esta publicación: cumplimenta los
+                campos a mano. Nada se confirma hasta que pulses guardar.
               </p>
               {pdfIdentityWarnings.length > 0 ? (
                 <div
@@ -3467,7 +3468,7 @@ export function SuppliersHub({
                     <label className="inline-flex cursor-pointer text-sm text-muted-foreground underline-offset-2 hover:underline">
                       Adjuntar otro archivo (PDF/Excel/imagen) al guardar…
                       <span className="sr-only">
-                        Usa Documento del proveedor para PDF con lectura IA
+                        Usa Documento del proveedor para adjuntar PDF (IA off)
                       </span>
                       <input
                         type="file"

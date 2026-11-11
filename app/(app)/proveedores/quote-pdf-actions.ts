@@ -5,6 +5,7 @@ import {
   parseExtractJson,
   type QuotePdfExtract,
 } from '@/lib/suppliers/quote-pdf-extract';
+import { isSupplierQuotePdfAiEnabled } from '@/lib/suppliers/supplier-quote-pdf-ai';
 
 const MAX_BYTES = 12 * 1024 * 1024; // 12 MB (bucket 25 MB; margen de seguridad)
 const MAX_TEXT_CHARS = 40_000;
@@ -24,6 +25,8 @@ export type QuotePdfExtractActionResult =
   | { ok: false; error: string; code?: 'ai_unavailable' | 'parse_failed' | 'invalid_file' };
 
 function getOpenAiConfig() {
+  // OPENAI_API_KEY puede existir por el asistente kiosk; este módulo exige flag aparte.
+  if (!isSupplierQuotePdfAiEnabled()) return null;
   const apiKey = (process.env.OPENAI_API_KEY ?? '').trim();
   if (!apiKey) return null;
   const model = (process.env.OPENAI_MODEL ?? 'gpt-4o-mini').trim() || 'gpt-4o-mini';
@@ -140,10 +143,12 @@ export async function extractSupplierQuotePdfAction(
   const clipped = text.slice(0, MAX_TEXT_CHARS);
   const config = getOpenAiConfig();
   if (!config) {
+    const disabledByFlag = !isSupplierQuotePdfAiEnabled();
     return {
       ok: false,
-      error:
-        'La lectura con IA no está configurada (falta OPENAI_API_KEY). El archivo se puede adjuntar y el presupuesto cumplimentarse manualmente.',
+      error: disabledByFlag
+        ? 'La lectura inteligente de PDF de proveedores está desactivada en esta publicación. Adjunta el PDF y cumplimenta el presupuesto a mano.'
+        : 'La lectura con IA no está configurada (falta OPENAI_API_KEY). El archivo se puede adjuntar y el presupuesto cumplimentarse manualmente.',
       code: 'ai_unavailable',
     };
   }
