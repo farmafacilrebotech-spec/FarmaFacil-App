@@ -1,22 +1,15 @@
 /**
  * Layout del cartel QR A4: plantilla Canva (PNG) + zonas dinámicas.
  *
- * La composición visual fija vive en Canva. La app solo superpone:
- *   1) logo de la farmacia (pharmacy_branding.logo_url)
- *   2) nombre real de la farmacia
- *   3) QR de la URL canónica de producción
+ * Plantilla: public/images/posters/pharmacy-qr-a4.png (export Canva).
+ * La app solo superpone logo, nombre y QR. Coordenadas en fracción 0..1
+ * del tamaño de la plantilla → mm A4 (210×297).
  *
- * Coordenadas en fracción 0..1 del tamaño de la plantilla (relativas),
- * convertidas a mm A4 (210×297) al generar el PDF.
- *
- * Hasta recibir el PNG Canva: backgroundSrc=null, zonas configured=false.
- * Hasta aprobación visual: pdfDownloadEnabled=false.
+ * pdfDownloadEnabled permanece false hasta aprobación visual.
  */
 
 export type PosterRectNorm = {
-  /** Origen X relativo (0 = izquierda, 1 = derecha). */
   x: number;
-  /** Origen Y relativo (0 = arriba, 1 = abajo). */
   y: number;
   w: number;
   h: number;
@@ -31,18 +24,12 @@ export type PosterRectMm = {
 
 export type PharmacyQrPosterLogoZone = {
   configured: boolean;
-  /** Zona reservada para el logo (contain, centrado). */
   rect: PosterRectNorm;
 };
 
 export type PharmacyQrPosterNameZone = {
   configured: boolean;
-  /** Zona del nombre cuando hay logo. */
   rect: PosterRectNorm;
-  /**
-   * Zona ampliada del nombre si no hay logo (ocupa logo+nombre).
-   * Si null, se usa `rect` tal cual.
-   */
   rectWithoutLogo: PosterRectNorm | null;
   maxFontSizePt: number;
   minFontSizePt: number;
@@ -55,36 +42,19 @@ export type PharmacyQrPosterNameZone = {
 export type PharmacyQrPosterQrZone = {
   configured: boolean;
   rect: PosterRectNorm;
-  /**
-   * Margen blanco interior relativo al lado menor de la zona (0..0.25).
-   * El QR se dibuja en el rect interior.
-   */
   quietZoneRatio: number;
 };
 
 export type PharmacyQrPosterLayout = {
-  /**
-   * Ruta pública del PNG A4 de Canva (bajo /public).
-   * null = aún no entregado.
-   */
   backgroundSrc: string | null;
-  /**
-   * Tamaño del export Canva en píxeles (para documentar origen de las
-   * fracciones). No afecta al PDF si las zonas ya están en 0..1.
-   */
   templatePx: { width: number; height: number } | null;
   page: { widthMm: number; heightMm: number };
   logo: PharmacyQrPosterLogoZone;
   name: PharmacyQrPosterNameZone;
   qr: PharmacyQrPosterQrZone;
-  /**
-   * false hasta aprobación visual de los PDFs de ejemplo.
-   * Aunque la plantilla esté lista, la UI no descarga el PDF definitivo.
-   */
   pdfDownloadEnabled: boolean;
 };
 
-/** Convierte rect relativo (0..1) a mm sobre la página A4. */
 export function rectNormToMm(
   norm: PosterRectNorm,
   page: { widthMm: number; heightMm: number } = PHARMACY_QR_POSTER_LAYOUT.page
@@ -97,7 +67,6 @@ export function rectNormToMm(
   };
 }
 
-/** Rect en píxeles de plantilla → fracción 0..1. */
 export function rectPxToNorm(
   px: { x: number; y: number; w: number; h: number },
   templatePx: { width: number; height: number }
@@ -110,9 +79,6 @@ export function rectPxToNorm(
   };
 }
 
-/**
- * Escala contain: encaja src dentro de box sin crop ni stretch, centrado.
- */
 export function containRect(
   srcW: number,
   srcH: number,
@@ -132,7 +98,6 @@ export function containRect(
   };
 }
 
-/** QR interior tras quiet zone. */
 export function qrInnerRectMm(
   zone: PosterRectMm,
   quietZoneRatio: number
@@ -155,33 +120,50 @@ export function qrInnerRectMm(
 }
 
 /**
- * Configuración vigente.
- * Coordenadas definitivas: se fijan al medir el PNG Canva (sin inventar zonas).
+ * Medido sobre pharmacy-qr-a4.png (724×1024):
+ * - Cabecera blanca entre líneas turquesa y≈22..139
+ * - Caja QR blanca (interior, sin borde turquesa) ≈ 445,752 → 689,999
  */
+const TEMPLATE_PX = { width: 724, height: 1024 } as const;
+
+function px(
+  x: number,
+  y: number,
+  w: number,
+  h: number
+): PosterRectNorm {
+  return rectPxToNorm({ x, y, w, h }, TEMPLATE_PX);
+}
+
 export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
-  backgroundSrc: null,
-  templatePx: null,
+  backgroundSrc: '/images/posters/pharmacy-qr-a4.png',
+  templatePx: { ...TEMPLATE_PX },
   page: { widthMm: 210, heightMm: 297 },
   logo: {
-    configured: false,
-    rect: { x: 0, y: 0, w: 0, h: 0 },
+    configured: true,
+    // Franja superior de cabecera (bajo 1ª línea turquesa)
+    rect: px(90, 28, 544, 52),
   },
   name: {
-    configured: false,
-    rect: { x: 0, y: 0, w: 0, h: 0 },
-    rectWithoutLogo: null,
-    maxFontSizePt: 22,
-    minFontSizePt: 10,
+    configured: true,
+    // Bajo el logo, aún sobre la 2ª línea turquesa (y≈140)
+    rect: px(50, 84, 624, 48),
+    // Sin logo: usa casi toda la cabecera
+    rectWithoutLogo: px(50, 32, 624, 100),
+    maxFontSizePt: 18,
+    minFontSizePt: 9,
     maxLines: 2,
     color: '#0B0B0B',
     align: 'center',
     fontStyle: 'bold',
   },
   qr: {
-    configured: false,
-    rect: { x: 0, y: 0, w: 0, h: 0 },
-    quietZoneRatio: 0.06,
+    configured: true,
+    // Interior de la caja blanca (pad ~10px respecto al borde turquesa)
+    rect: px(455, 762, 225, 228),
+    quietZoneRatio: 0.04,
   },
+  // Pendiente de aprobación visual de los PDFs de ejemplo
   pdfDownloadEnabled: false,
 };
 
@@ -201,7 +183,6 @@ export function isPharmacyQrPosterTemplateReady(
   return true;
 }
 
-/** Listo para que el panel descargue el PDF (plantilla + OK visual). */
 export function isPharmacyQrPosterDownloadEnabled(
   layout: PharmacyQrPosterLayout = PHARMACY_QR_POSTER_LAYOUT
 ): boolean {

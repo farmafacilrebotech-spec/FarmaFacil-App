@@ -1,49 +1,34 @@
-# Cartel QR A4 — integración plantilla Canva
+# Cartel QR A4 — plantilla Canva integrada
 
-## Enfoque
-1. Diseñar el cartel completo en **Canva** (A4 vertical).
-2. Exportar **PNG de alta resolución** (recomendado ≥ 2480×3508 px ≈ 300 dpi).
-3. La app **solo** inserta dinámicamente:
-   - Logo de la farmacia (`pharmacy_branding.logo_url`) — contain, centrado; si no hay logo, no se dibuja nada y el nombre usa `rectWithoutLogo`.
-   - Nombre real de la farmacia (1–2 líneas, tamaño auto, mínimo legible).
-   - QR de `https://app.farmafacil.solutions/e/{publicId}`.
+## Asset
+`public/images/posters/pharmacy-qr-a4.png`  
+Export Canva (724×1024 px en la entrega actual). El diseño fijo no se redibuja en código.
 
-No rediseñar el cartel en TypeScript/jsPDF.
+## Zonas dinámicas (px sobre plantilla → fracción 0..1)
 
-## Dónde colocar el asset
+Medidas sobre la cabecera blanca entre líneas turquesa (y≈22..139) y la caja QR blanca.
+
+| Zona | Píxeles (x, y, w×h) | Notas |
+|------|---------------------|--------|
+| Logo | `90, 28, 544×52` | contain, centrado; sin logo → no se dibuja |
+| Nombre (con logo) | `50, 84, 624×48` | 1–2 líneas, auto-tamaño 18→9 pt |
+| Nombre (sin logo) | `50, 32, 624×100` | aprovecha cabecera |
+| QR | `455, 762, 225×228` | interior de la caja blanca (pad ~10 px del borde turquesa) + quiet zone 4 % |
+
+Config: `lib/pharmacies/pharmacy-qr-poster-layout.ts`  
+`pdfDownloadEnabled: **false**` hasta aprobación visual.
+
+## QR
+URL canónica: `https://app.farmafacil.solutions/e/{publicId}`  
+Nunca localhost/staging.
+
+## Revisión local
+```bash
+node scripts/generate-pharmacy-qr-poster-review.mjs
 ```
-public/images/posters/pharmacy-qr-a4.png
-```
+Salida gitignored: `public/_review_clients_qr/` (+ copia en `~/Desktop/farmafacil-cartel-review/`).
 
-## Coordenadas
-Se definen en **fracción 0..1** del tamaño de la plantilla (`PosterRectNorm`) en
-`lib/pharmacies/pharmacy-qr-poster-layout.ts`, y se convierten a mm A4 con
-`rectNormToMm`.
-
-También se puede partir de píxeles del export Canva con `rectPxToNorm`.
-
-| Zona | Campos |
-|------|--------|
-| Logo | `logo.rect`, `logo.configured` |
-| Nombre | `name.rect`, `name.rectWithoutLogo`, tipografía, `configured` |
-| QR | `qr.rect`, `qr.quietZoneRatio`, `configured` |
-| Fondo | `backgroundSrc`, `templatePx` |
-| Descarga UI | `pdfDownloadEnabled` (false hasta OK visual) |
-
-## Estado actual (PR #23)
-- Generador preparado (logo + nombre + QR).
-- **PNG Canva aún no recibido** → zonas `configured: false`.
-- **Descarga PDF del panel desactivada** (`pdfDownloadEnabled: false`) hasta aprobación de ejemplos.
-- PNG/SVG independientes del QR: activos.
-
-## Checklist al recibir el Canva
-- [ ] Copiar PNG a `public/images/posters/pharmacy-qr-a4.png`
-- [ ] Anotar tamaño px del export en `templatePx`
-- [ ] Medir zonas vacías (logo / nombre / QR) sin solapar titulares fijos
-- [ ] Rellenar `rect` / `rectWithoutLogo` / `quietZoneRatio` y `configured: true`
-- [ ] Generar PDFs de revisión (`allowUnapprovedReview`) con variantes logo/nombre
-- [ ] Escanear QR → URL canónica
-- [ ] Aprobación visual → `pdfDownloadEnabled: true`
-
-## Scripts
-Cuando exista el PNG: `scripts/generate-pharmacy-qr-poster-review.mjs` (revisión local, gitignored en `public/_review_clients_qr/`).
+## Checklist post-aprobación
+- [ ] OK visual de Pilar
+- [ ] `pdfDownloadEnabled: true`
+- [ ] (Opcional) sustituir PNG por export ≥ 2480×3508 si se quiere más nitidez de impresión

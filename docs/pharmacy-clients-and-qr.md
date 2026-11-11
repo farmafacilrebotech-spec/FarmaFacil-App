@@ -55,10 +55,9 @@ Pedidos de STAFF siguen operativos (no seleccionan esa columna).
 - Código preparado en:
   - `lib/pharmacies/pharmacy-qr-poster-layout.ts` (zonas relativas 0..1 + `pdfDownloadEnabled`)
   - `lib/pharmacies/pharmacy-qr-poster-fit.ts` / `pharmacy-qr-poster.ts`
-- **PNG Canva no recibido aún** → zonas `configured: false`.
+- Plantilla Canva en `public/images/posters/pharmacy-qr-a4.png` + zonas medidas (ver `docs/pharmacy-qr-poster-canva.md`).
 - Descarga PDF del panel **desactivada** hasta aprobación visual (`pdfDownloadEnabled: false`).
-- **No** inventar plantilla ni coordenadas a ciegas.
-- Instrucciones: `docs/pharmacy-qr-poster-canva.md`.
+- PDFs de ejemplo en `~/Desktop/farmafacil-cartel-review/` (revisión local).
 
 ## Fuera de alcance de este PR
 - Merge / deploy / migraciones en producción.
