@@ -5,11 +5,16 @@ import {
   Pill,
   Tag,
   Package,
+  QrCode,
 } from 'lucide-react';
 
 import type { PharmacyTenantContext } from '@/lib/pharmacies/tenant';
 import type { PharmacyTenantDashboardStats } from '@/lib/orders/tenant-dashboard-stats';
 import { tenantHref } from '@/lib/pharmacies/tenant-nav';
+import {
+  roleCanManagePharmacyQr,
+  roleCanViewPharmacyClients,
+} from '@/lib/pharmacies/pharmacy-clients-roles';
 import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
 import { PageHeader } from '@/components/shared/page-header';
 import { KpiCard } from '@/components/shared/kpi-card';
@@ -26,6 +31,7 @@ export function PharmacyTenantDashboard({
   stats: PharmacyTenantDashboardStats;
 }) {
   const pharmacyId = context.pharmacy.id;
+  const roleKey = String(context.membership.roleKey);
   const roleLabel = pharmacyRoleLabel(context.membership.roleKey);
 
   const quickLinks = [
@@ -34,11 +40,24 @@ export function PharmacyTenantDashboard({
       href: tenantHref(pharmacyId, 'pedidos'),
       icon: ShoppingCart,
     },
-    {
-      label: 'Clientes',
-      href: tenantHref(pharmacyId, 'clientes'),
-      icon: Users,
-    },
+    ...(roleCanViewPharmacyClients(roleKey)
+      ? [
+          {
+            label: 'Clientes',
+            href: tenantHref(pharmacyId, 'clientes'),
+            icon: Users,
+          },
+        ]
+      : []),
+    ...(roleCanManagePharmacyQr(roleKey)
+      ? [
+          {
+            label: 'QR de mi farmacia',
+            href: tenantHref(pharmacyId, 'qr'),
+            icon: QrCode,
+          },
+        ]
+      : []),
     {
       label: 'Catálogo',
       href: tenantHref(pharmacyId, 'catalogo'),
@@ -61,7 +80,8 @@ export function PharmacyTenantDashboard({
       <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
         Pedidos de hoy incluyen solicitudes del catálogo QR. Productos = ítems
         activos del catálogo de esta farmacia (p. ej. genéricos del piloto), no
-        un inventario de almacén. Clientes y facturación aún no conectados.
+        un inventario de almacén. Clientes = perfiles con pedidos vinculados a
+        esta farmacia.
       </p>
 
       {stats.partialError ? (

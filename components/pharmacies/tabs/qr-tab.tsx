@@ -7,6 +7,7 @@ import {
   Download,
   FileCode,
   FileImage,
+  FileText,
   Link as LinkIcon,
   Loader2,
 } from 'lucide-react';
@@ -20,6 +21,11 @@ import {
   downloadTextFile,
   officialQrFilenames,
 } from '@/lib/pharmacies/qr-download';
+import {
+  buildPharmacyQrPosterPdf,
+  downloadBlob,
+} from '@/lib/pharmacies/pharmacy-qr-poster';
+import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import { ScannableQr } from '@/components/kiosk/scannable-qr';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -32,18 +38,26 @@ export function QrTab({
   pharmacyName,
   entrypoint,
   loadError,
+  /** Sustituye entrypoint.publicUrl (p. ej. URL canónica de producción para impresión). */
+  publicUrlOverride,
+  /** Muestra descarga de cartel PDF A4. */
+  showPdfPoster = false,
 }: {
   pharmacyName: string;
   entrypoint: PharmacyHomeEntrypoint | null;
   loadError?: string | null;
+  publicUrlOverride?: string | null;
+  showPdfPoster?: boolean;
 }) {
   const [copied, setCopied] = React.useState(false);
-  const [busy, setBusy] = React.useState<'png' | 'svg' | null>(null);
+  const [busy, setBusy] = React.useState<'png' | 'svg' | 'pdf' | null>(null);
+
+  const publicUrl = publicUrlOverride?.trim() || entrypoint?.publicUrl || '';
 
   async function copyUrl() {
-    if (!entrypoint) return;
+    if (!publicUrl) return;
     try {
-      await navigator.clipboard?.writeText(entrypoint.publicUrl);
+      await navigator.clipboard?.writeText(publicUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
       toast.success('URL copiada');
@@ -53,10 +67,10 @@ export function QrTab({
   }
 
   async function downloadPng() {
-    if (!entrypoint) return;
+    if (!entrypoint || !publicUrl) return;
     setBusy('png');
     try {
-      const dataUrl = await buildOfficialQrPngDataUrl(entrypoint.publicUrl);
+      const dataUrl = await buildOfficialQrPngDataUrl(publicUrl);
       const { png } = officialQrFilenames(entrypoint.publicId);
       downloadDataUrl(png, dataUrl);
       toast.success('PNG descargado');
@@ -68,15 +82,42 @@ export function QrTab({
   }
 
   async function downloadSvg() {
-    if (!entrypoint) return;
+    if (!entrypoint || !publicUrl) return;
     setBusy('svg');
     try {
-      const svg = await buildOfficialQrSvgString(entrypoint.publicUrl);
+      const svg = await buildOfficialQrSvgString(publicUrl);
       const { svg: filename } = officialQrFilenames(entrypoint.publicId);
       downloadTextFile(filename, svg);
       toast.success('SVG descargado');
     } catch {
       toast.error('No se ha podido generar el SVG');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function downloadPdf() {
+    if (!entrypoint || !publicUrl) return;
+    if (!isPrintSafePharmacyPublicUrl(publicUrl)) {
+      toast.error(
+        'El cartel solo se genera con la URL de producción. Revisa la configuración.'
+      );
+      return;
+    }
+    setBusy('pdf');
+    try {
+      const blob = await buildPharmacyQrPosterPdf({
+        pharmacyName,
+        publicUrl,
+        publicId: entrypoint.publicId,
+      });
+      const safe =
+        entrypoint.publicId.replace(/[^a-z0-9-]/gi, '').toLowerCase() ||
+        'farmacia';
+      downloadBlob(`farmafacil-cartel-qr-${safe}.pdf`, blob);
+      toast.success('Cartel PDF descargado');
+    } catch {
+      toast.error('No se ha podido generar el cartel PDF');
     } finally {
       setBusy(null);
     }
@@ -104,7 +145,7 @@ export function QrTab({
       <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-8">
         <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
           <ScannableQr
-            value={entrypoint.publicUrl}
+            value={publicUrl}
             size={220}
             label={`QR oficial de ${pharmacyName}`}
           />
@@ -123,14 +164,16 @@ export function QrTab({
         <div>
           <h4 className="text-sm font-semibold text-foreground">URL pública oficial</h4>
           <p className="mt-1 text-xs text-muted-foreground">
-            Misma URL en kiosko, escaparate, tarjetas y SuperAdmin.
+            {showPdfPoster
+              ? 'Enlace de producción para escaparate, pegatinas y cartel impreso.'
+              : 'Misma URL en kiosko, escaparate, tarjetas y SuperAdmin.'}
           </p>
           <div className="mt-3 flex items-center gap-2">
             <div className="relative flex-1">
               <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 readOnly
-                value={entrypoint.publicUrl}
+                value={publicUrl}
                 className="pl-9 font-mono text-xs"
               />
             </div>
@@ -152,7 +195,7 @@ export function QrTab({
 
         <div className="space-y-3">
           <h4 className="text-sm font-semibold text-foreground">Descargas</h4>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Button
               variant="outline"
               className="gap-2"
@@ -164,7 +207,7 @@ export function QrTab({
               ) : (
                 <FileImage className="h-4 w-4" />
               )}
-              PNG ({/* 1024px */}alta res.)
+              PNG (alta res.)
             </Button>
             <Button
               variant="outline"
@@ -179,6 +222,21 @@ export function QrTab({
               )}
               SVG vectorial
             </Button>
+            {showPdfPoster ? (
+              <Button
+                variant="outline"
+                className="gap-2 sm:col-span-2"
+                disabled={busy !== null}
+                onClick={() => void downloadPdf()}
+              >
+                {busy === 'pdf' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileText className="h-4 w-4" />
+                )}
+                Cartel PDF A4 vertical
+              </Button>
+            ) : null}
           </div>
           <p className="flex items-start gap-2 text-xs text-muted-foreground">
             <Download className="mt-0.5 h-3.5 w-3.5 shrink-0" />
