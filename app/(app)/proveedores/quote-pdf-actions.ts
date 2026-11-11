@@ -2,7 +2,6 @@
 
 import { hasSuppliersWrite } from '@/lib/kiosk-inventory/authz';
 import {
-  emptyQuotePdfExtract,
   parseExtractJson,
   type QuotePdfExtract,
 } from '@/lib/suppliers/quote-pdf-extract';
@@ -238,9 +237,4 @@ export async function extractSupplierQuotePdfAction(
   } finally {
     clearTimeout(timer);
   }
-}
-
-/** Utilidad tipada para tests / defaults. */
-export function blankExtract(): QuotePdfExtract {
-  return emptyQuotePdfExtract();
 }
