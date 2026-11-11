@@ -18,6 +18,7 @@ export type PharmacyTenantContext = {
     name: string;
     logoUrl: string | null;
     logoColor: string | null;
+    primaryColor: string | null;
   };
   /** Farmacias con membership active del usuario (RLS). Para el selector. */
   authorizedPharmacies: ShellPharmacyOption[];
@@ -171,7 +172,8 @@ export async function loadPharmacyTenantContext(
       name,
       logo_color,
       pharmacy_branding (
-        logo_url
+        logo_url,
+        primary_color
       )
     `
     )
@@ -189,8 +191,8 @@ export async function loadPharmacyTenantContext(
 
   const branding = unwrapOne(
     pharmacy.pharmacy_branding as
-      | { logo_url: string | null }
-      | { logo_url: string | null }[]
+      | { logo_url: string | null; primary_color: string | null }
+      | { logo_url: string | null; primary_color: string | null }[]
       | null
   );
 
@@ -213,6 +215,7 @@ export async function loadPharmacyTenantContext(
         name: pharmacy.name as string,
         logoUrl: branding?.logo_url ?? null,
         logoColor: (pharmacy.logo_color as string | null) ?? null,
+        primaryColor: branding?.primary_color ?? null,
       },
       authorizedPharmacies,
       pendingInvitations,

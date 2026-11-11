@@ -22,6 +22,7 @@ const labels: Record<string, string> = {
   perfil: 'Mi perfil',
   nueva: 'Nueva',
   login: 'Acceso',
+  qr: 'QR de mi farmacia',
 };
 
 export function Breadcrumbs({ className }: { className?: string }) {
