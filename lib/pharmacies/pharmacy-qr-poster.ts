@@ -1,15 +1,21 @@
 /**
- * Cartel comercial A4 vertical (PDF) con logo circular, nombre y QR real.
- * URL del QR debe ser canónica de producción (ver print-entrypoint-url).
+ * Cartel comercial A4 vertical (PDF) para escaparate / mostrador.
+ * Logo: PNG oficial recortado en círculo (mismo criterio que BrandLogo).
+ * QR: URL canónica de producción únicamente.
  */
 
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 
 import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
+import {
+  POSTER_COLORS,
+  POSTER_COPY,
+} from '@/lib/pharmacies/pharmacy-qr-poster-copy';
 
-const TEAL = { r: 13, g: 148, b: 136 }; // #0d9488
-const INK = { r: 15, g: 23, b: 42 }; // #0f172a
+export { POSTER_COLORS, POSTER_COPY };
+
+const OFFICIAL_LOGO_PATH = '/images/logos/farmafacil-logo-512.png';
 
 async function loadImageAsDataUrl(src: string): Promise<string> {
   const res = await fetch(src);
@@ -23,12 +29,176 @@ async function loadImageAsDataUrl(src: string): Promise<string> {
   });
 }
 
+function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('No se ha podido decodificar el logo'));
+    img.src = dataUrl;
+  });
+}
+
+/**
+ * Recorta el PNG oficial (cuadrado con fondo negro fuera del aro) a círculo.
+ * Compone sobre blanco: el logo vive sobre fondo blanco del cartel y jsPDF
+ * no depende de alpha PNG.
+ */
+export async function circularizeOfficialLogoDataUrl(
+  logoDataUrl: string,
+  sizePx = 640
+): Promise<string> {
+  const img = await loadHtmlImage(logoDataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = sizePx;
+  canvas.height = sizePx;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Canvas no disponible para el logo');
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, sizePx, sizePx);
+  ctx.beginPath();
+  ctx.arc(sizePx / 2, sizePx / 2, sizePx / 2, 0, Math.PI * 2);
+  ctx.closePath();
+  ctx.clip();
+  ctx.drawImage(img, 0, 0, sizePx, sizePx);
+  return canvas.toDataURL('image/png');
+}
+
+function fillRect(
+  doc: jsPDF,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  color: { r: number; g: number; b: number }
+) {
+  doc.setFillColor(color.r, color.g, color.b);
+  doc.rect(x, y, w, h, 'F');
+}
+
+/** Dibuja el cartel en un jsPDF A4 ya creado (testable / reutilizable). */
+export function drawPharmacyQrPoster(
+  doc: jsPDF,
+  input: {
+    pharmacyName: string;
+    logoDataUrl: string;
+    qrDataUrl: string;
+  }
+): void {
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const side = 16;
+  const contentW = pageW - side * 2;
+  const { black, teal, white, softGray, muted } = POSTER_COLORS;
+
+  fillRect(doc, 0, 0, pageW, pageH, white);
+
+  // Cabecera
+  fillRect(doc, 0, 0, pageW, 14, black);
+  fillRect(doc, 0, 14, pageW, 2.5, teal);
+
+  let y = 26;
+
+  // Logo circular oficial (sobre blanco)
+  const logoSize = 44;
+  const logoX = (pageW - logoSize) / 2;
+  doc.addImage(
+    input.logoDataUrl,
+    'PNG',
+    logoX,
+    y,
+    logoSize,
+    logoSize,
+    undefined,
+    'FAST'
+  );
+  y += logoSize + 10;
+
+  // Titular
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(24);
+  doc.setTextColor(black.r, black.g, black.b);
+  const headlineLines = doc.splitTextToSize(POSTER_COPY.headline, contentW);
+  doc.text(headlineLines, pageW / 2, y, { align: 'center' });
+  y += headlineLines.length * 9 + 5;
+
+  // Nombre farmacia
+  doc.setFontSize(15);
+  doc.setTextColor(teal.r, teal.g, teal.b);
+  const nameLines = doc.splitTextToSize(
+    input.pharmacyName.trim() || 'Farmacia',
+    contentW
+  );
+  doc.text(nameLines, pageW / 2, y, { align: 'center' });
+  y += nameLines.length * 6.5 + 7;
+
+  // Beneficios
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(muted.r, muted.g, muted.b);
+  const benefitLines = doc.splitTextToSize(
+    POSTER_COPY.benefits,
+    contentW * 0.92
+  );
+  doc.text(benefitLines, pageW / 2, y, { align: 'center' });
+  y += benefitLines.length * 5.4 + 9;
+
+  // Panel QR
+  const qrPanelPad = 7;
+  const qrSize = 108;
+  const panelW = qrSize + qrPanelPad * 2;
+  const panelH = qrSize + qrPanelPad * 2;
+  const panelX = (pageW - panelW) / 2;
+  const maxPanelY = pageH - 52 - panelH;
+  const panelY = Math.min(Math.max(y, 112), maxPanelY);
+
+  fillRect(doc, panelX, panelY, panelW, panelH, softGray);
+  doc.setDrawColor(teal.r, teal.g, teal.b);
+  doc.setLineWidth(0.45);
+  doc.roundedRect(panelX, panelY, panelW, panelH, 3, 3, 'S');
+
+  doc.addImage(
+    input.qrDataUrl,
+    'PNG',
+    panelX + qrPanelPad,
+    panelY + qrPanelPad,
+    qrSize,
+    qrSize,
+    undefined,
+    'FAST'
+  );
+
+  y = panelY + panelH + 11;
+
+  // CTA
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(12.5);
+  doc.setTextColor(black.r, black.g, black.b);
+  doc.text(POSTER_COPY.cta, pageW / 2, y, { align: 'center' });
+  y += 6;
+
+  const accentW = 40;
+  fillRect(doc, (pageW - accentW) / 2, y, accentW, 1.3, teal);
+
+  // Pie
+  fillRect(doc, 0, pageH - 16, pageW, 16, black);
+  fillRect(doc, 0, pageH - 16, pageW, 1.2, teal);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(9);
+  doc.setTextColor(white.r, white.g, white.b);
+  doc.text(POSTER_COPY.footer, pageW / 2, pageH - 7, { align: 'center' });
+}
+
 export async function buildPharmacyQrPosterPdf(input: {
   pharmacyName: string;
   publicUrl: string;
   publicId: string;
-  /** Ruta pública del logo circular oficial (p. ej. /images/logos/farmafacil-logo-512.png). */
+  /** Ruta pública del logo oficial (por defecto farmafacil-logo-512.png). */
   logoUrl?: string;
+  /** Data URL del logo ya cargado (evita fetch; útil en scripts). */
+  logoDataUrl?: string;
+  /** Data URL del logo ya circularizado (salta canvas del navegador). */
+  circularLogoDataUrl?: string;
 }): Promise<Blob> {
   if (!isPrintSafePharmacyPublicUrl(input.publicUrl)) {
     throw new Error(
@@ -36,21 +206,25 @@ export async function buildPharmacyQrPosterPdf(input: {
     );
   }
 
-  const logoSrc =
-    input.logoUrl ??
-    (typeof window !== 'undefined'
-      ? `${window.location.origin}/images/logos/farmafacil-logo-512.png`
-      : '/images/logos/farmafacil-logo-512.png');
+  const qrDataUrl = await QRCode.toDataURL(input.publicUrl, {
+    width: 960,
+    margin: 3,
+    errorCorrectionLevel: 'M',
+    color: { dark: '#0B0B0B', light: '#ffffff' },
+  });
 
-  const [logoDataUrl, qrDataUrl] = await Promise.all([
-    loadImageAsDataUrl(logoSrc),
-    QRCode.toDataURL(input.publicUrl, {
-      width: 720,
-      margin: 2,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#0f172a', light: '#ffffff' },
-    }),
-  ]);
+  let logoDataUrl = input.circularLogoDataUrl;
+  if (!logoDataUrl) {
+    const raw =
+      input.logoDataUrl ??
+      (await loadImageAsDataUrl(
+        input.logoUrl ??
+          (typeof window !== 'undefined'
+            ? `${window.location.origin}${OFFICIAL_LOGO_PATH}`
+            : OFFICIAL_LOGO_PATH)
+      ));
+    logoDataUrl = await circularizeOfficialLogoDataUrl(raw, 640);
+  }
 
   const doc = new jsPDF({
     orientation: 'portrait',
@@ -58,67 +232,11 @@ export async function buildPharmacyQrPosterPdf(input: {
     format: 'a4',
   });
 
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const margin = 18;
-
-  // Fondo blanco + franja superior turquesa
-  doc.setFillColor(255, 255, 255);
-  doc.rect(0, 0, pageW, pageH, 'F');
-  doc.setFillColor(TEAL.r, TEAL.g, TEAL.b);
-  doc.rect(0, 0, pageW, 8, 'F');
-  doc.rect(0, pageH - 8, pageW, 8, 'F');
-
-  // Logo circular
-  const logoSize = 42;
-  const logoX = (pageW - logoSize) / 2;
-  const logoY = 22;
-  doc.addImage(logoDataUrl, 'PNG', logoX, logoY, logoSize, logoSize);
-
-  // Marca
-  doc.setTextColor(INK.r, INK.g, INK.b);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('FARMAFÁCIL', pageW / 2, logoY + logoSize + 10, {
-    align: 'center',
+  drawPharmacyQrPoster(doc, {
+    pharmacyName: input.pharmacyName,
+    logoDataUrl,
+    qrDataUrl,
   });
-
-  // Nombre farmacia
-  doc.setFontSize(20);
-  const nameLines = doc.splitTextToSize(
-    input.pharmacyName.trim() || 'Farmacia',
-    pageW - margin * 2
-  );
-  doc.text(nameLines, pageW / 2, logoY + logoSize + 24, { align: 'center' });
-
-  // QR
-  const qrSize = 95;
-  const qrX = (pageW - qrSize) / 2;
-  const qrY = Math.min(logoY + logoSize + 24 + nameLines.length * 9 + 10, 105);
-  doc.addImage(qrDataUrl, 'PNG', qrX, qrY, qrSize, qrSize);
-
-  // Textos pie
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.setTextColor(TEAL.r, TEAL.g, TEAL.b);
-  doc.text('Escanea para ver el catálogo y pedir', pageW / 2, qrY + qrSize + 12, {
-    align: 'center',
-  });
-
-  doc.setTextColor(100, 116, 139);
-  doc.setFontSize(8);
-  doc.text(input.publicUrl, pageW / 2, qrY + qrSize + 20, {
-    align: 'center',
-    maxWidth: pageW - margin * 2,
-  });
-
-  doc.setFontSize(7);
-  doc.text(
-    'Código oficial FarmaFácil · No comparte datos personales al escanear',
-    pageW / 2,
-    pageH - 14,
-    { align: 'center' }
-  );
 
   return doc.output('blob');
 }
