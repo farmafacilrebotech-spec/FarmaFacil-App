@@ -9,6 +9,7 @@ import {
   hasPlatformPermission,
   type CurrentProfile,
 } from '@/lib/auth/platform';
+import { PHARMACY_IDENTITY_CHANGE_POLICY } from '@/lib/pharmacies/pharmacy-identity-fields';
 
 export type PharmacyLogoAuthzResult =
   | {
@@ -31,8 +32,7 @@ export async function requirePharmacyLogoManageAccess(
   if (!write.ok) {
     return {
       ok: false,
-      error:
-        'Solo SuperAdmin puede cambiar el logo. El titular debe solicitarlo por escrito a FarmaFácil.',
+      error: PHARMACY_IDENTITY_CHANGE_POLICY,
     };
   }
 
