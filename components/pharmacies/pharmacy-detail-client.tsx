@@ -76,6 +76,7 @@ import type {
 } from '@/lib/kiosk/assistant/entitlement-status';
 import type { PharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 import type { PharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
+import { pharmacyPrintPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import type { PharmacyOrderSummary } from '@/lib/orders/types';
 import type { SaCustomerRow } from '@/lib/platform/sa-customers';
 
@@ -1222,6 +1223,11 @@ export function PharmacyDetailClient({
             pharmacyPrimaryColor={pharmacy.branding?.primary_color ?? null}
             entrypoint={homeEntrypoint}
             loadError={homeEntrypointError}
+            publicUrlOverride={
+              homeEntrypoint?.publicId
+                ? pharmacyPrintPublicUrl(homeEntrypoint.publicId)
+                : null
+            }
             showPdfPoster
           />
         )}
