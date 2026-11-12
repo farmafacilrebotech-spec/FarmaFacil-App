@@ -1,0 +1,12 @@
+# Evidencia SQL solo lectura — pedido #0011 (anonimizada)
+# Entorno: producción · Farmacia Pruebas · 2026-11-03/05
+# Sin email, nombre ni teléfono.
+
+display_number: 0011
+source: public_qr
+status: request_pending
+payment_status: pending_confirmation
+amount_confirmed_at: NULL
+customer_profile_id: <UUID perfil cliente de prueba — omitido>
+vinculacion: SI (customer_profile_id NOT NULL)
+modalidad: Usar mis datos

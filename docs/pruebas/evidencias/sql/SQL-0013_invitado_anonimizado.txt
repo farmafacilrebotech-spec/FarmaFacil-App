@@ -1,0 +1,11 @@
+# Evidencia SQL solo lectura — pedido #0013 (anonimizada)
+# Entorno: producción · Farmacia Pruebas · 2026-11-05 05:07:12
+# Sin email, nombre ni teléfono.
+
+display_number: 0013
+source: public_qr
+status: request_pending
+customer_profile_id: NULL
+vinculacion: NO (pedido invitado)
+resultado: CORRECTO - Pedido invitado sin vincular
+nota_prueba: E2E-QR-GUEST-2026-11-04 (texto de prueba, no PII personal)

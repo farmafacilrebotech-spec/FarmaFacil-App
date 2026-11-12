@@ -1,0 +1,41 @@
+---
+description: Documentación viva, pruebas y Centro de ayuda obligatorios al cerrar funcionalidades
+alwaysApply: true
+---
+
+# Documentación viva y control de pruebas
+
+FarmaFácil exige actualizar documentación y pruebas como parte del desarrollo, no como paso opcional.
+
+## Antes de dar por cerrada una funcionalidad
+
+1. Desarrollo completado en su rama.
+2. Pruebas técnicas documentadas en `docs/pruebas/` (matriz + evidencias).
+3. Validación funcional registrada o estado `pendiente_validacion_usuario`.
+4. `PLAN_MAESTRO_PRUEBAS.md` / `MATRIZ_PRUEBAS.csv` / `REGISTRO_PR.md` actualizados.
+5. Manual(es) de la audiencia afectada actualizados (solo comportamientos reales).
+6. Publicación solo con autorización explícita; luego verificar.
+7. `docs/gobernanza/HISTORIAL_VERSIONES.md` actualizado tras publish.
+
+Usar el checklist: `docs/gobernanza/CHECKLIST_CIERRE_FUNCIONAL.md`.
+
+## Estados de prueba
+
+`pendiente` · `en_desarrollo` · `prueba_tecnica_ok` · `pendiente_validacion_usuario` · `validado_usuario` · `publicado_produccion` · `incidencia`
+
+No marcar como superada / validada / publicada ninguna prueba sin evidencia enlazada.
+
+## Staging vs producción
+
+- En staging: documentar como pendiente de publicación.
+- Tras publish: actualizar estado y versión.
+
+## Centro de ayuda
+
+- El documento maestro de pruebas es **interno** (SuperAdmin Total). No exponer a farmacias ni clientes.
+- Permisos reales en backend; no basta ocultar el menú.
+- Rama de ayuda/docs: no mezclar con Emails u otras features sin acuerdo.
+
+## Emails y PRs abiertas
+
+Al trabajar Emails u otras PRs: añadir/actualizar casos y manuales en la misma entrega documental (aunque la UI del Centro de ayuda viva en `feature/help-center-living-docs`).
