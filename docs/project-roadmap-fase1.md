@@ -8,7 +8,7 @@
 
 | # | Módulo | Estado | Rama prevista | Migraciones | Dependencias |
 |---|--------|--------|---------------|-------------|--------------|
-| 1 | Emails corporativos Fase B | **PR #25 abierta** (`defb842`) · 085 en staging | `feature/emails-phase-b-send` | `075` (STG+PROD) + `085` (solo STG) | Resend, SA `platform.emails.*` |
+| 1 | Emails corporativos Fase B | **PR #25 abierta** (`e2c14bd`) · cierre adjuntos/remitentes · 085+086 STG | `feature/emails-phase-b-send` | `075` (STG+PROD) + `085`/`086` (solo STG) | Resend, SA `platform.emails.*` |
 | 2 | Asistente por niveles de plan | Pendiente | `feature/assistant-plan-tiers-…` | nueva serie post-085 | PR #24 plans/entitlements; OpenAI |
 | 3 | Cartera comercial de farmacias | Pendiente | `feature/pharmacy-portfolio-…` | nueva serie | rol Comercial; import Excel; Sheets después |
 | 4 | Promociones comerciales reutilizables y reservas | Registrado / no implementar | TBD | TBD | `launch_2027` contador 084; cartera |
@@ -45,7 +45,8 @@
 |-------|-----|
 | `075` | Emails Fase A drafts/outbox (aplicada STG+PROD) |
 | `076`–`084` | Proveedores/inventario + planes comerciales (main) |
-| **`085`** | **Emails Fase B** (send/consent/attachments) — esta rama |
+| **`085`** | **Emails Fase B** (send/consent/attachments) — solo STG |
+| **`086`** | **Emails cierre** (draft attachments, senders, provider_status) — solo STG |
 | `086+` | Reservar por módulo en ramas independientes (asistente, cartera, promo, contratos) |
 
 ## Política
