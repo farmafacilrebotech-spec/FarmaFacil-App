@@ -51,7 +51,7 @@ export function PharmacyLogo({
       )}
       style={{ width: size, height: size }}
     >
-      {showImage ? (
+      {showImage && logoUrl ? (
         <Image
           src={logoUrl}
           alt={`Logo de ${name}`}
