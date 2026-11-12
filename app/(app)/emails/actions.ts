@@ -40,6 +40,7 @@ import {
   corporateEmailSendReadiness,
   getCorporateEmailSendMode,
 } from '@/lib/email/send-config';
+import { assertCorporateEmailRecipientsAllowed } from '@/lib/email/send-recipient-allowlist';
 import {
   assertAuthorizedSenderKey,
   defaultCorporateSenderKey,
@@ -1359,6 +1360,12 @@ export async function sendCorporateEmailAction(input: {
       code: 'blocked',
       error: 'Indica exactamente un destinatario en Para.',
     };
+  }
+  const allowCheck = assertCorporateEmailRecipientsAllowed(
+    recipients.recipients.all
+  );
+  if (!allowCheck.ok) {
+    return { ok: false, code: 'blocked', error: allowCheck.error };
   }
   const subject = (input.subject ?? draft?.subject ?? '').trim();
   const htmlBodyRaw = sanitizeEmailHtml(

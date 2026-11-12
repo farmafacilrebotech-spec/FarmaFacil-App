@@ -19,12 +19,23 @@ Panel → **Emails** → menú lateral: Recibidos, Enviados, Borradores, Plantil
 
 1. Pulse **Nuevo email**.
 2. Elija **Plantilla** o **Sin plantilla**.
-3. Seleccione remitente (**De**): 8 cuentas corporativas.
+3. Seleccione remitente (**De**): 8 cuentas corporativas (en prueba controlada puede estar limitada a `pilar@`).
 4. Complete Para / CC / CCO, asunto y cuerpo (editor con formato).
 5. Active o desactive **Incluir firma** (no duplica firmas ya embebidas en plantillas).
 6. Acciones: **Adjuntar**, **Enviar**, **Guardar borrador**, **Guardar como plantilla**, **Descartar** (envía el borrador a Papelera si existía).
 
-No aparecen formularios jurídicos en la redacción; el backend sigue bloqueando comerciales sin habilitación.
+No aparecen formularios jurídicos en la redacción; el backend sigue bloqueando comerciales sin habilitación (Cartera).
+
+### Primera prueba de envío real (staging)
+
+Cuando el preview tenga flags de envío activos:
+
+1. Abra el borrador preparado (URL que indiquen en la sesión de prueba).
+2. Revise De / Para / asunto / adjunto / **Incluir firma**.
+3. Pulse **Enviar** usted misma (no hay envío automático).
+4. Compruebe **Enviados**: estado «Enviado a Resend» (aceptación proveedor). «Entregado» solo si llega webhook.
+
+Durante la fase controlada, el backend solo permite destinatarios de la allowlist de prueba.
 
 ## Plantillas
 
@@ -51,37 +62,43 @@ Botón **Guardar cambios** actualiza la plantilla existente.
 
 - Listado filtrable por cuenta y búsqueda.
 - Acciones por icono (mismo estilo que Plantillas):
-  - **Pencil** — Abrir borrador (recupera asunto, cuerpo, destinatarios y adjuntos).
-  - **Trash2** — Enviar a la papelera (confirmación; recuperable; no borra definitivamente).
+  - **Pencil** — Abrir borrador.
+  - **Trash2** — Enviar a la papelera (confirmación; recuperable).
 - **Descartar** en el compositor también mueve a Papelera.
 
 ## Enviados
 
 - Historial outbox filtrable por cuenta, estado y búsqueda.
-- Acción por icono: **Eye** / **ChevronUp** — Ver u ocultar detalle (tipo, remitente interno, adjuntos, estado proveedor).
+- Acción por icono: **Eye** / **ChevronUp** — Ver u ocultar detalle (tipo, remitente interno, adjuntos, estado proveedor / id Resend cuando exista).
+
+Estados relevantes:
+
+| Etiqueta | Significado |
+|----------|-------------|
+| Enviado a Resend | Proveedor aceptó el mensaje (`provider_message_id`) |
+| Entregado | Webhook de entrega (si está configurado) |
+| Error / Rebotado / Bloqueado | Fallo o rechazo |
 
 ## Recibidos
 
-Bandeja de entrada aún no conectada (fase IMAP posterior). Sin acciones de mensaje por ahora.
+Bandeja de entrada aún no conectada (fase IMAP posterior).
 
 ## Papelera
-
-Borradores descartados. Acciones por icono:
 
 | Icono | Acción | Efecto |
 |-------|--------|--------|
 | ArchiveRestore | Restaurar | Vuelve a Borradores |
-| Trash2 (rojo) | Eliminar definitivamente | Confirmación; borrado irreversible |
+| Trash2 (rojo) | Eliminar definitivamente | Confirmación; irreversible |
 
 ## Errores frecuentes
 
-- No poder abrir Borradores por error de serialización: corregido (títulos resueltos en servidor).
-- Firma duplicada al usar plantilla con firma: desactivar «Incluir firma» o dejar la detección automática.
+- Firma duplicada: desactivar «Incluir firma» o dejar la detección automática.
 - Envío comercial bloqueado: esperado hasta Cartera de farmacias.
+- Destinatario no permitido: allowlist de prueba activa en staging.
 
 ## FAQ
 
 **¿Usar modifica la plantilla?** No. Solo **Editar** + Guardar cambios.  
-**¿Archivar Lanzadera la quita del desplegable?** Sí.  
 **¿Eliminar en Borradores borra el correo?** No: lo mueve a Papelera.  
-**¿Se regeneran plantillas en cada despliegue?** No.
+**¿Se regeneran plantillas en cada despliegue?** No.  
+**¿Hay campañas masivas?** No en este módulo.

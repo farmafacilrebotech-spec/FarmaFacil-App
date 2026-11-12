@@ -2,61 +2,91 @@
 
 **Entorno:** staging preview `http://127.0.0.1:3040`  
 **Fecha:** 2026-11-12  
-**Commit rama:** `d526d2c` (+ evidencias iconos pendientes de commit)  
-**Estado global:** `prueba_tecnica_ok` / `pendiente_validacion_usuario` (sin publicación)
-
-Destinado a consolidar en el plan maestro / Centro de ayuda (SA Total).
+**Rama:** `feature/emails-phase-b-send`  
+**Estado global:** UI aprobada · **primera prueba real preparada (sin auto-envío)** · sin push/merge/deploy
 
 ## Incidencias y resolución
 
 | ID | Incidencia | Estado | Resolución |
 |----|------------|--------|------------|
-| INC-EML-001 | `/emails/drafts` rompía con «Functions cannot be passed… templateTitle={function}» | **Resuelta** | Títulos resueltos en servidor (`buildDraftTemplateTitleMap`); cliente recibe `Record<string,string>` |
-| INC-EML-002 | Botones de Plantillas cortaban nombres | **Resuelta** | Acciones por iconos Lucide + tooltips; nombre/asunto `line-clamp-2` |
-| INC-EML-003 | «Renombrar» no era edición real WYSIWYG | **Resuelta** | Modo `editTemplate` con Guardar cambios (mismo ID) |
-| INC-EML-004 | Migas duplicadas (shell + cabecera) | **Resuelta** | Eliminadas migas del `EmailsShell`; cabecera general única |
-| INC-EML-005 | Borradores/Enviados/Papelera con botones grandes Abrir/Eliminar | **Resuelta** | Iconos compactos (`MailboxIconAction`); Borradores Eliminar → `trashEmailDraftAction` (Papelera) |
+| INC-EML-001 | `/emails/drafts` rompía con templateTitle función | **Resuelta** | Mapa serializable en servidor |
+| INC-EML-002 | Botones Plantillas cortaban nombres | **Resuelta** | Iconos + tooltips |
+| INC-EML-003 | Renombrar ≠ edición WYSIWYG | **Resuelta** | Modo editTemplate |
+| INC-EML-004 | Migas duplicadas | **Resuelta** | Solo cabecera |
+| INC-EML-005 | Botones grandes Abrir/Eliminar | **Resuelta** | Iconos; trash → Papelera |
 
-## Casos de navegación autenticada (staging)
+## Controles de seguridad para envío real (staging)
 
-| ID | Ruta | Resultado esperado | Resultado obtenido | Estado |
-|----|------|--------------------|--------------------|--------|
-| TC-EML-NAV-001 | `/emails/inbox` | 200, título Recibidos | 200 OK; placeholder IMAP | `prueba_tecnica_ok` |
-| TC-EML-NAV-002 | `/emails/sends` | 200, Enviados; icono Ver detalle si hay filas | 200 OK; sin envíos (sin filas → sin icono) | `prueba_tecnica_ok` |
-| TC-EML-NAV-003 | `/emails/drafts` | 200; iconos Pencil/Trash2; títulos completos | aria `Abrir borrador` / `Enviar a la papelera`; 2 filas | `prueba_tecnica_ok` |
-| TC-EML-NAV-004 | `/emails/templates` | Iconos Usar/Editar/Duplicar/Archivar/Eliminar | OK (corrida previa) | `prueba_tecnica_ok` |
-| TC-EML-NAV-005 | `/emails/trash` | Iconos Restaurar + Eliminar definitivo | aria `Restaurar borrador` / `Eliminar definitivamente` | `prueba_tecnica_ok` |
-| TC-EML-NAV-006 | `/emails/compose` | Compositor limpio | 200 OK (corrida previa) | `prueba_tecnica_ok` |
-| TC-EML-TPL-010 | Editar Lanzadera | Nombre + asunto + WYSIWYG + Guardar cambios | UI OK; guardado ejecutado | `prueba_tecnica_ok` |
-| TC-EML-DRF-010 | Conservar borradores existentes | No perder filas al corregir drafts | 2 borradores listados | `prueba_tecnica_ok` |
-| TC-EML-DRF-020 | Eliminar en Borradores | Confirmación → aparece en Papelera; no hard-delete | Borrador «Sin asunto» movido a Papelera | `prueba_tecnica_ok` |
-| TC-EML-TRH-010 | Restaurar desde Papelera | Vuelve a Borradores | Restaurado; Papelera vacía; 2 borradores de nuevo | `prueba_tecnica_ok` |
+| Control | Valor / comportamiento |
+|---------|------------------------|
+| Supabase | Staging `dazfdcjscnpfvhcyjddt` (`.env.local` local del worktree emails; **no** prod) |
+| `FF_CORPORATE_EMAIL_SEND_ENABLED` | `1` (solo preview :3040) |
+| `FF_CORPORATE_EMAIL_DRY_RUN` | `0` (live Resend) |
+| `FF_CORPORATE_EMAIL_TEST_RECIPIENTS` | `pilar.reyesbononat@gmail.com` (To/CC/CCO) |
+| `FF_CORPORATE_EMAIL_ALLOWED_FROM_KEYS` | `pilar` (primera prueba) |
+| Comercial | Sigue bloqueado sin Cartera / ack |
+| Masivo / campañas | No existen en este módulo |
+| Producción Vercel / `.env` prod | **No modificado** |
+| Auto-envío | **No** — solo botón Enviar de la usuaria |
 
-## Regresión unitaria
+Allowlist backend: `lib/email/send-recipient-allowlist.ts` (usado en `sendCorporateEmailAction`).
 
-- `lib/email/draft-template-titles.test.ts` — mapa serializable JSON-safe (pass).
-- `lib/email/send-config.test.ts` — send OFF por defecto; dry-run seguro (pass).
+## Credenciales / dominio
+
+| Comprobación | Resultado |
+|--------------|-----------|
+| `RESEND_API_KEY` presente | Sí (clave restringida a **solo envío**; `/domains` API → 401 restricted_api_key, esperado) |
+| `EMAIL_FROM` | `FarmaFácil <contacto@farmafacil.solutions>` (fallback; el From del mensaje usa `pilar@` del catálogo) |
+| Remitente prueba | `pilar@farmafacil.solutions` (catálogo cerrado) |
+| Firma Pilar (local preview) | `/images/email/firma-pilar.png` en app |
+| Firma Pilar (URL pública web) | Verificar en bandeja tras envío (foto puede resolverse vía origin del preview o URL pública) |
+
+## Borrador preparado — primera prueba
+
+| Campo | Valor |
+|-------|-------|
+| Draft ID | `07284d59-8a49-477f-8b21-f4f94e21ef92` |
+| URL | `http://127.0.0.1:3040/emails/compose?draft=07284d59-8a49-477f-8b21-f4f94e21ef92` |
+| De | `pilar@farmafacil.solutions` |
+| Para | `pilar.reyesbononat@gmail.com` |
+| Asunto | `FarmaFácil \| Primera prueba de envío` |
+| Tipo | `operational` |
+| Adjunto | `primera-prueba-envio.pdf` |
+| Firma | Activar **Incluir firma** en compositor antes de Enviar |
+
+**Acción pendiente de la usuaria:** abrir la URL y pulsar **Enviar**.
+
+## Checklist post-envío (cuando pulses Enviar)
+
+| # | Comprobación | Estado |
+|---|--------------|--------|
+| 1 | Aparece en `/emails/sends` | pendiente |
+| 2 | Historial = «Enviado a Resend» (aceptación) | pendiente |
+| 3 | `provider_message_id` (id Resend) visible en detalle | pendiente |
+| 4 | Distinguir aceptación vs entrega vs error | pendiente |
+| 5 | Adjunto PDF llega al buzón | pendiente |
+| 6 | Firma Pilar visible en el correo | pendiente |
+| 7 | Sin duplicados (reintento idempotente / no doble click) | pendiente |
+| 8 | Comercial sigue bloqueado | N/A (esta prueba es operativa) |
+
+## Próximas oleadas (después de esta)
+
+1. Otros remitentes corporativos (ampliar `ALLOWED_FROM_KEYS`).  
+2. CC / CCO (ampliar allowlist si hace falta).  
+3. Plantillas operativas (no comerciales).
+
+## Casos de navegación (previos)
+
+| ID | Estado |
+|----|--------|
+| TC-EML-NAV-001…006 | `prueba_tecnica_ok` |
+| TC-EML-DRF-020 / TRH-010 | `prueba_tecnica_ok` |
+| TC-EML-SEND-001 primera real | `preparado_pendiente_click_usuario` |
 
 ## Evidencias
 
-`_review_emails/` — compositor, plantillas, edición, drafts/trash iconos (`07`/`08`).
+`_review_emails/` + PDF `primera-prueba-envio.pdf`.
 
-## Preparación primer envío real (NO ejecutado)
+## Validación
 
-Checklist controlado (staging). **No enviar** hasta autorización explícita.
-
-| # | Condición | Estado actual |
-|---|-----------|---------------|
-| 1 | Dominio Resend verificado + SPF/DKIM | Pendiente confirmación owner |
-| 2 | `RESEND_API_KEY` + `EMAIL_FROM` en preview | **Presentes** en `.env.staging.local` |
-| 3 | `FF_CORPORATE_EMAIL_SEND_ENABLED=1` | **Ausente** → send OFF (seguro) |
-| 4 | `FF_CORPORATE_EMAIL_DRY_RUN=0` solo con autorización | **Ausente** (no live) |
-| 5 | Remitente `pilar@` → destinatario corporativo propio | Listo para indicar |
-| 6 | Plantilla operativa / sin plantilla; PDF opcional | Listo en UI |
-| 7 | Tras envío: Enviados = «Enviado a Resend» | N/A hasta autorización |
-
-**Prohibido aún:** SQL prod, merge, deploy, live en producción, envío masivo, envío real.
-
-## Validación de usuario
-
-Pendiente de OK visual de iconos en Borradores/Enviados/Papelera en :3040. Sin push.
+Sin push / merge / deploy hasta tu OK tras la prueba real.
