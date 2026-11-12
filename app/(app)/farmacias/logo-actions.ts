@@ -120,6 +120,8 @@ export async function uploadPharmacyLogoAction(
     };
   }
 
+  revalidatePath('/farmacias');
+  revalidatePath('/dashboard');
   revalidatePath(`/farmacias/${pharmacyId}`);
   revalidatePath(`/f/${pharmacyId}/configuracion`);
   revalidatePath(`/f/${pharmacyId}/qr`);
@@ -163,6 +165,8 @@ export async function removePharmacyLogoAction(
     };
   }
 
+  revalidatePath('/farmacias');
+  revalidatePath('/dashboard');
   revalidatePath(`/farmacias/${pharmacyId}`);
   revalidatePath(`/f/${pharmacyId}/configuracion`);
   revalidatePath(`/f/${pharmacyId}/qr`);
