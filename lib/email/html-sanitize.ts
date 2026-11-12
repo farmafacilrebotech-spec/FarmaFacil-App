@@ -54,3 +54,43 @@ export function markRemoteImagesAsBlocked(html: string): string {
       `<img${pre}data-ff-remote-src=${src} src="" alt="Imagen remota bloqueada"${post}>`
   );
 }
+
+/** Extrae el interior de <body> para editar sin DOCTYPE/head. */
+export function extractComposerEditableHtml(raw: string): string {
+  const html = raw || '';
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  if (bodyMatch) {
+    return sanitizeEmailHtml(bodyMatch[1].trim() || '<p><br/></p>');
+  }
+  return sanitizeEmailHtml(html.trim() || '<p><br/></p>');
+}
+
+/**
+ * Si el contenido ya es documento completo, se respeta (sanitizado).
+ * Si es fragmento del editor, se envuelve en cáscara corporativa mínima.
+ */
+export function wrapComposerHtmlForSend(editableHtml: string): string {
+  const cleaned = sanitizeEmailHtml(editableHtml || '');
+  if (/<html[\s>]/i.test(cleaned) || /<!DOCTYPE/i.test(cleaned)) {
+    return cleaned;
+  }
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>FarmaFácil</title></head>
+<body style="margin:0;padding:0;background-color:#F8FAFC;-webkit-text-size-adjust:100%;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#F8FAFC;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:640px;background:#FFFFFF;border:1px solid #E7EEF3;border-radius:12px;">
+          <tr>
+            <td style="padding:28px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#111827;">
+              ${cleaned}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+}

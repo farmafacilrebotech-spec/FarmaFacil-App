@@ -39,7 +39,12 @@ import {
   type EmailLegalBasis,
   type EmailPurpose,
 } from '@/lib/email/corporate-send-policy';
-import { htmlToPlainText, sanitizeEmailHtml } from '@/lib/email/html-sanitize';
+import {
+  extractComposerEditableHtml,
+  htmlToPlainText,
+  sanitizeEmailHtml,
+  wrapComposerHtmlForSend,
+} from '@/lib/email/html-sanitize';
 import type { CorporateSender } from '@/lib/email/senders';
 import { appendSignatureIfNeeded } from '@/lib/email/signature';
 import { Button } from '@/components/ui/button';
@@ -130,7 +135,8 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
   React.useEffect(() => {
     const el = editorRef.current;
     if (!el) return;
-    el.innerHTML = draft.htmlBody || '<p><br/></p>';
+    el.innerHTML =
+      extractComposerEditableHtml(draft.htmlBody) || '<p><br/></p>';
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft.templateSlug, draft.templateId, draft.id]);
 
@@ -178,14 +184,16 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
     setBusyTemplate(true);
     const dbTpl = templates.find((t) => t.id === templateIdOrSlug);
     if (dbTpl) {
-      const html = sanitizeEmailHtml(dbTpl.htmlBody);
-      if (editorRef.current) editorRef.current.innerHTML = html || '<p><br/></p>';
+      const editable = extractComposerEditableHtml(dbTpl.htmlBody);
+      if (editorRef.current) {
+        editorRef.current.innerHTML = editable || '<p><br/></p>';
+      }
       patch({
         templateSlug: dbTpl.systemKey || 'custom',
         templateId: dbTpl.id,
         subject: dbTpl.subject,
-        htmlBody: html,
-        textBody: dbTpl.textBody || htmlToPlainText(html),
+        htmlBody: editable,
+        textBody: dbTpl.textBody || htmlToPlainText(editable),
         purpose: dbTpl.purpose,
       });
       setBusyTemplate(false);
@@ -201,21 +209,29 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       toast.error(result.error);
       return;
     }
-    const html = sanitizeEmailHtml(result.seed.htmlBody);
-    if (editorRef.current) editorRef.current.innerHTML = html || '<p><br/></p>';
+    const editable = extractComposerEditableHtml(result.seed.htmlBody);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = editable || '<p><br/></p>';
+    }
     patch({
       templateSlug: result.seed.templateSlug,
       templateId: null,
       subject: result.seed.subject,
-      htmlBody: html,
-      textBody: result.seed.textBody,
+      htmlBody: editable,
+      textBody: result.seed.textBody || htmlToPlainText(editable),
       purpose: defaultPurposeForTemplate(result.seed.templateSlug),
     });
   }
 
+  function currentEditableHtml(): string {
+    return sanitizeEmailHtml(
+      editorRef.current?.innerHTML || draft.htmlBody
+    );
+  }
+
   async function onSave() {
     setSaveState('saving');
-    const html = sanitizeEmailHtml(
+    const editable = sanitizeEmailHtml(
       editorRef.current?.innerHTML || draft.htmlBody
     );
     const result = await saveEmailDraftAction({
@@ -223,8 +239,8 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       templateSlug: draft.templateSlug,
       templateId: draft.templateId,
       subject: draft.subject,
-      htmlBody: html,
-      textBody: htmlToPlainText(html),
+      htmlBody: editable,
+      textBody: htmlToPlainText(editable),
       recipientEmail: draft.recipientEmail,
       recipientName: draft.recipientName || null,
       ccEmails: draft.ccEmails,
@@ -275,14 +291,14 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       toast.error('Indica un nombre para la plantilla.');
       return;
     }
-    const html = sanitizeEmailHtml(
+    const editable = sanitizeEmailHtml(
       editorRef.current?.innerHTML || draft.htmlBody
     );
     const result = await saveEmailAsTemplateAction({
       name: tplName.trim(),
       subject: draft.subject,
-      htmlBody: html,
-      textBody: htmlToPlainText(html),
+      htmlBody: editable,
+      textBody: htmlToPlainText(editable),
       purpose: effectivePurpose,
       category: 'personalizada',
     });
@@ -338,9 +354,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
 
   async function onConfirmSend() {
     setSending(true);
-    const html = sanitizeEmailHtml(
-      editorRef.current?.innerHTML || draft.htmlBody
-    );
+    const editable = currentEditableHtml();
     const result = await sendCorporateEmailAction({
       draftId: draft.id,
       explicitConfirm: true,
@@ -354,8 +368,8 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       ccEmails: draft.ccEmails,
       bccEmails: draft.bccEmails,
       subject: draft.subject,
-      htmlBody: html,
-      textBody: htmlToPlainText(html),
+      htmlBody: wrapComposerHtmlForSend(editable),
+      textBody: htmlToPlainText(editable),
       templateSlug: draft.templateSlug,
       previewOrigin: window.location.origin,
     });

@@ -78,7 +78,14 @@ export function TemplatesPanel({
                 className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
               >
                 <div className="min-w-0">
-                  <p className="truncate font-medium">{t.name}</p>
+                  <p className="truncate font-medium">
+                    {t.name}
+                    {t.systemKey ? (
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
+                        (copia editable)
+                      </span>
+                    ) : null}
+                  </p>
                   <p className="truncate text-sm text-muted-foreground">
                     {t.category}
                     {' · '}

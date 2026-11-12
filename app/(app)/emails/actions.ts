@@ -10,6 +10,7 @@ import {
 } from '@/lib/email/compose-catalog';
 import {
   assertCorporateSendPolicy,
+  defaultPurposeForTemplate,
   resolveEffectivePurpose,
   type EmailLegalBasis,
   type EmailPurpose,
@@ -47,7 +48,11 @@ import {
   type CorporateSender,
   type CorporateSenderKey,
 } from '@/lib/email/senders';
-import { sanitizeEmailHtml, htmlToPlainText } from '@/lib/email/html-sanitize';
+import {
+  extractComposerEditableHtml,
+  htmlToPlainText,
+  sanitizeEmailHtml,
+} from '@/lib/email/html-sanitize';
 import { normalizeRecipients } from '@/lib/email/recipients';
 import { appendSignatureIfNeeded } from '@/lib/email/signature';
 import { createClient } from '@/lib/supabase/server';
@@ -901,6 +906,58 @@ export async function listEmailTemplatesAction(): Promise<
     };
   });
   return { ok: true, templates };
+}
+
+/**
+ * Siembra copias editables de plantillas de sistema (idempotente por system_key).
+ * Editar la copia no altera el builder de código.
+ */
+export async function ensureSystemEmailTemplatesAction(previewOrigin?: string | null): Promise<
+  ActionOk<{ seeded: number }> | ActionErr
+> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const supabase = createClient();
+  const systemSlugs = ['lanzadera', 'imprentas', 'demo', 'piloto'] as const;
+  let seeded = 0;
+  for (const slug of systemSlugs) {
+    const { data: existing } = await supabase
+      .from('email_templates')
+      .select('id')
+      .eq('system_key', slug)
+      .maybeSingle();
+    if (existing?.id) continue;
+    const seed = buildComposeSeed(slug, { previewOrigin });
+    const editable = extractComposerEditableHtml(seed.htmlBody);
+    const { error } = await supabase.from('email_templates').insert({
+      slug: `system-${slug}`,
+      name: seed.title,
+      category: 'sistema',
+      subject: seed.subject,
+      html_body: editable,
+      text_body: seed.textBody,
+      purpose: defaultPurposeForTemplate(slug),
+      variables: [],
+      include_signature: true,
+      status: 'active',
+      system_key: slug,
+      created_by: access.profile.id,
+      updated_by: access.profile.id,
+    });
+    if (error) {
+      if (isMissingRelation(error)) return migrationPendingError();
+      // unique conflict → ya existe
+      if (!/duplicate|unique/i.test(error.message || '')) {
+        console.error('[emails] seed template', slug, error.message);
+      }
+      continue;
+    }
+    seeded += 1;
+  }
+  if (seeded > 0) revalidatePath('/emails/templates');
+  return { ok: true, seeded };
 }
 
 export async function saveEmailAsTemplateAction(input: {

@@ -15,6 +15,7 @@ import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
 import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
 import { normalizeFfPreviewOrigin } from '@/lib/email/corporate-templates';
+import { extractComposerEditableHtml } from '@/lib/email/html-sanitize';
 import {
   defaultCorporateSenderKey,
   getCorporateSender,
@@ -74,7 +75,9 @@ export default async function EmailComposePage({
         templateSlug: loaded.draft.templateSlug,
         templateId: loaded.draft.templateId,
         subject: loaded.draft.subject,
-        htmlBody: loaded.draft.htmlBody || '<p><br/></p>',
+        htmlBody: extractComposerEditableHtml(
+          loaded.draft.htmlBody || '<p><br/></p>'
+        ),
         textBody: loaded.draft.textBody,
         recipientEmail: loaded.draft.recipientEmail,
         recipientName: loaded.draft.recipientName ?? '',
@@ -99,7 +102,9 @@ export default async function EmailComposePage({
           templateSlug: tpl.systemKey || 'custom',
           templateId: tpl.id,
           subject: tpl.subject,
-          htmlBody: tpl.htmlBody || '<p><br/></p>',
+          htmlBody: extractComposerEditableHtml(
+            tpl.htmlBody || '<p><br/></p>'
+          ),
           textBody: tpl.textBody,
           purpose: tpl.purpose,
         };
@@ -117,7 +122,7 @@ export default async function EmailComposePage({
         ...initial,
         templateSlug: seed.templateSlug,
         subject: seed.subject,
-        htmlBody: seed.htmlBody,
+        htmlBody: extractComposerEditableHtml(seed.htmlBody),
         textBody: seed.textBody,
         purpose: defaultPurposeForTemplate(slug),
       };

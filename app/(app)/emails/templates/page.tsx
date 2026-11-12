@@ -1,7 +1,15 @@
+import { headers } from 'next/headers';
+
 import { EmailsShell } from '@/components/email/emails-shell';
 import { TemplatesPanel } from '@/components/email/templates-panel';
-import { listEmailTemplatesAction } from '@/app/(app)/emails/actions';
+import {
+  ensureSystemEmailTemplatesAction,
+  listEmailTemplatesAction,
+} from '@/app/(app)/emails/actions';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
+import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
+import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
+import { normalizeFfPreviewOrigin } from '@/lib/email/corporate-templates';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +42,10 @@ const SYSTEM = [
 
 export default async function EmailTemplatesPage() {
   await assertEmailsPageAccess();
+  const origin = normalizeFfPreviewOrigin(
+    requestPublicOriginFromHeaders(headers(), CANONICAL_PRODUCTION_APP_URL)
+  );
+  await ensureSystemEmailTemplatesAction(origin);
   const listed = await listEmailTemplatesAction();
   const templates = listed.ok ? listed.templates : [];
 
