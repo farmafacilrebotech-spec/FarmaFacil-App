@@ -1,12 +1,19 @@
 # Manual de usuario — Logos de farmacia (SuperAdmin)
 
-**Estado:** pendiente de publicación en producción (ajuste listado · PR #23 / follow-up)  
+**Estado:** corrección en rama `fix/pr23-pharmacy-list-logos` · **pendiente validación visual** · no publicada en producción  
 **Actualizado:** 2026-11-12  
 **Audiencia:** SuperAdmin con `platform.pharmacies.write`
 
 ## Objetivo
 
 Ver y gestionar el logo de cada farmacia en el panel. El logo alimenta la ficha, el listado, el selector de farmacia y el cartel QR.
+
+## Preview local (validación)
+
+Para ver el listado con logos reales (staging):  
+http://127.0.0.1:3050/farmacias  
+
+No usar el puerto `:3040` (módulo Emails / otra rama).
 
 ## Dónde se ve
 
