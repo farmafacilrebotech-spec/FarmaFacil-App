@@ -40,6 +40,8 @@ export interface PharmacyListItem {
   province: string | null;
   status: PharmacyStatus;
   logo_color: string | null;
+  /** `pharmacy_branding.logo_url`; null → iniciales en listado. */
+  logo_url: string | null;
   created_at: string;
   plan: PlanSummary | null;
 }

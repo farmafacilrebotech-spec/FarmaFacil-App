@@ -87,7 +87,8 @@ export const listPharmacies = cache(async (): Promise<PharmacyListItem[]> => {
       status,
       logo_color,
       created_at,
-      plan:plans ( id, key, name, description, is_active, sort_order )
+      plan:plans ( id, key, name, description, is_active, sort_order ),
+      pharmacy_branding ( logo_url )
     `
     )
     .order('created_at', { ascending: false });
@@ -99,20 +100,28 @@ export const listPharmacies = cache(async (): Promise<PharmacyListItem[]> => {
     throw new Error('No se han podido cargar las farmacias.');
   }
 
-  return (data ?? []).map((row) => ({
-    id: row.id as string,
-    name: row.name as string,
-    legal_name: (row.legal_name as string | null) ?? null,
-    cif: (row.cif as string | null) ?? null,
-    email: (row.email as string | null) ?? null,
-    phone: (row.phone as string | null) ?? null,
-    city: (row.city as string | null) ?? null,
-    province: (row.province as string | null) ?? null,
-    status: row.status as PharmacyStatus,
-    logo_color: (row.logo_color as string | null) ?? null,
-    created_at: row.created_at as string,
-    plan: mapPlan(row.plan as PlanRow | PlanRow[] | null),
-  }));
+  return (data ?? []).map((row) => {
+    const branding = row.pharmacy_branding as
+      | { logo_url: string | null }
+      | { logo_url: string | null }[]
+      | null;
+    const brandingRow = Array.isArray(branding) ? branding[0] : branding;
+    return {
+      id: row.id as string,
+      name: row.name as string,
+      legal_name: (row.legal_name as string | null) ?? null,
+      cif: (row.cif as string | null) ?? null,
+      email: (row.email as string | null) ?? null,
+      phone: (row.phone as string | null) ?? null,
+      city: (row.city as string | null) ?? null,
+      province: (row.province as string | null) ?? null,
+      status: row.status as PharmacyStatus,
+      logo_color: (row.logo_color as string | null) ?? null,
+      logo_url: brandingRow?.logo_url ?? null,
+      created_at: row.created_at as string,
+      plan: mapPlan(row.plan as PlanRow | PlanRow[] | null),
+    };
+  });
 });
 
 type SubscriptionQueryRow = {

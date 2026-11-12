@@ -36,7 +36,10 @@ export function PharmacyLogo({
   rounded = 'lg',
 }: PharmacyLogoProps) {
   const [imgError, setImgError] = React.useState(false);
-  const showImage = logoUrl && !imgError;
+  React.useEffect(() => {
+    setImgError(false);
+  }, [logoUrl]);
+  const showImage = Boolean(logoUrl) && !imgError;
   const fontSize = Math.max(10, size * 0.36);
 
   return (
@@ -48,7 +51,7 @@ export function PharmacyLogo({
       )}
       style={{ width: size, height: size }}
     >
-      {showImage ? (
+      {showImage && logoUrl ? (
         <Image
           src={logoUrl}
           alt={`Logo de ${name}`}

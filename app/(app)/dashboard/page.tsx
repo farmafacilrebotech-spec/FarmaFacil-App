@@ -156,6 +156,7 @@ export default async function DashboardPage() {
                         >
                           <PharmacyLogo
                             name={p.name}
+                            logoUrl={p.logo_url}
                             logoColor={p.logo_color || '#2EC4C7'}
                             size={36}
                           />

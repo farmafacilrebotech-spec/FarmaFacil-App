@@ -69,6 +69,7 @@ const columns: Column<PharmacyListItem>[] = [
       <div className="flex items-center gap-3">
         <PharmacyLogo
           name={r.name}
+          logoUrl={r.logo_url}
           logoColor={r.logo_color || '#2EC4C7'}
           size={36}
         />

@@ -64,8 +64,10 @@ Pedidos de STAFF siguen operativos (no seleccionan esa columna).
 - Identidad protegida (solo SuperAdmin): nombre/legal/CIF/dirección en `pharmacies`, `logo_url`, `pharmacy_settings.visible_name`.
 - Operativo (Owner/Admin vía `settings.update` / `branding.update`): horario/contactos kiosk, colores branding, asistente.
 - UI tenant: logo e identidad en solo lectura; cambio tras solicitud escrita → SA.
-- SQL staging pendiente de autorización: `docs/migrations/staging_pharmacy_identity_rls_v1.sql`.
-- Prod (espejo, no aplicar): `docs/migrations/prod_pharmacy_identity_rls_v1.sql`.
+- **Listado `/farmacias` y dashboard:** muestran `logo_url` vía `PharmacyLogo` (contain); sin logo o error de imagen → iniciales.
+- Tras subir/eliminar logo: revalidación de `/farmacias` y `/dashboard`.
+- Manual / pruebas: `docs/pharmacies/MANUAL_LOGOS_FARMACIA.md`, `docs/pharmacies/PRUEBAS_LOGOS_LISTADO.md`.
+- SQL staging identity: aplicado (evidencia smoke). Prod espejo: `docs/migrations/prod_pharmacy_identity_rls_v1.sql` (**no aplicar** hasta autorización).
 - Cartel QR consume `logo_url`; sin logo → solo nombre.
 
 ## Fuera de alcance de este PR
