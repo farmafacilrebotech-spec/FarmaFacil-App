@@ -13,6 +13,10 @@ import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
 import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
 import { normalizeFfPreviewOrigin } from '@/lib/email/corporate-templates';
+import {
+  defaultCorporateSenderKey,
+  getCorporateSender,
+} from '@/lib/email/senders';
 
 export const dynamic = 'force-dynamic';
 
@@ -32,6 +36,7 @@ export default async function EmailComposePage({
 
   const draftId = searchParams?.draft?.trim() || null;
   const templateParam = searchParams?.template?.trim() || 'blank';
+  const defaultSender = getCorporateSender(defaultCorporateSenderKey());
 
   let initial: {
     id: string | null;
@@ -41,6 +46,7 @@ export default async function EmailComposePage({
     textBody: string;
     recipientEmail: string;
     recipientName: string;
+    fromKey: string;
     from: string;
     replyTo: string;
     purpose: 'operational' | 'commercial';
@@ -55,8 +61,9 @@ export default async function EmailComposePage({
     textBody: '',
     recipientEmail: '',
     recipientName: '',
-    from: '',
-    replyTo: '',
+    fromKey: defaultSender.key,
+    from: defaultSender.fromHeader,
+    replyTo: defaultSender.replyTo,
     purpose: 'operational',
     legalBasis: '',
     commercialAuthAck: false,
@@ -66,9 +73,7 @@ export default async function EmailComposePage({
   if (draftId) {
     const loaded = await getEmailDraftAction(draftId);
     if (loaded.ok) {
-      const seed = buildComposeSeed(loaded.draft.templateSlug, {
-        previewOrigin: origin,
-      });
+      const sender = getCorporateSender(loaded.draft.fromKey);
       initial = {
         id: loaded.draft.id,
         templateSlug: loaded.draft.templateSlug,
@@ -77,8 +82,9 @@ export default async function EmailComposePage({
         textBody: loaded.draft.textBody,
         recipientEmail: loaded.draft.recipientEmail,
         recipientName: loaded.draft.recipientName ?? '',
-        from: seed.from,
-        replyTo: seed.replyTo,
+        fromKey: sender.key,
+        from: sender.fromHeader,
+        replyTo: sender.replyTo,
         purpose: loaded.draft.purpose,
         legalBasis: loaded.draft.legalBasis ?? '',
         commercialAuthAck: loaded.draft.commercialAuthAck,
@@ -100,8 +106,9 @@ export default async function EmailComposePage({
       textBody: seed.textBody,
       recipientEmail: '',
       recipientName: '',
-      from: seed.from,
-      replyTo: seed.replyTo,
+      fromKey: defaultSender.key,
+      from: defaultSender.fromHeader,
+      replyTo: defaultSender.replyTo,
       purpose: defaultPurposeForTemplate(slug),
       legalBasis: '',
       commercialAuthAck: false,
@@ -121,7 +128,7 @@ export default async function EmailComposePage({
       </div>
       <PageHeader
         title={initial.id ? 'Editar borrador' : 'Nuevo email'}
-        description="Redacción, vista previa y envío 1:1 (flag servidor; dry-run por defecto)."
+        description="Remitente autorizado, redacción, adjuntos, vista previa y confirmación de envío 1:1."
       />
       <EmailComposer initial={initial} />
     </div>

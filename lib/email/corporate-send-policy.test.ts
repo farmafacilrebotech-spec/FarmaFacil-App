@@ -4,6 +4,7 @@ import { describe, it } from 'node:test';
 import {
   assertCorporateSendPolicy,
   defaultPurposeForTemplate,
+  resolveEffectivePurpose,
 } from './corporate-send-policy.ts';
 
 const base = {
@@ -54,5 +55,20 @@ describe('assertCorporateSendPolicy', () => {
   it('defaultPurposeForTemplate', () => {
     assert.equal(defaultPurposeForTemplate('demo'), 'commercial');
     assert.equal(defaultPurposeForTemplate('blank'), 'operational');
+  });
+
+  it('no permite eludir comercial marcando operativa en plantilla comercial', () => {
+    assert.equal(
+      resolveEffectivePurpose('demo', 'operational'),
+      'commercial'
+    );
+    const r = assertCorporateSendPolicy({
+      ...base,
+      purpose: 'operational',
+      templateSlug: 'lanzadera',
+      commercialAuthAck: false,
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.code, 'commercial_ack_required');
   });
 });

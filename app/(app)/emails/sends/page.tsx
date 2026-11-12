@@ -4,24 +4,9 @@ import { listEmailSendsAction } from '@/app/(app)/emails/actions';
 import { PageHeader } from '@/components/shared/page-header';
 import { Button } from '@/components/ui/button';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
+import { getCorporateSender } from '@/lib/email/senders';
 
 export const dynamic = 'force-dynamic';
-
-function statusLabel(status: string, dryRun: boolean): string {
-  const base =
-    status === 'sent'
-      ? 'Enviado'
-      : status === 'failed'
-        ? 'Error'
-        : status === 'queued'
-          ? 'En cola'
-          : status === 'blocked'
-            ? 'Bloqueado'
-            : status === 'cancelled'
-              ? 'Cancelado'
-              : status;
-  return dryRun ? `${base} (dry-run)` : base;
-}
 
 export default async function EmailSendsPage() {
   await assertEmailsPageAccess();
@@ -41,7 +26,7 @@ export default async function EmailSendsPage() {
           </div>
           <PageHeader
             title="Historial de envíos"
-            description="Outbox e idempotencia Resend (1:1). Incluye dry-runs y errores."
+            description="Estados: borrador (en lista de borradores), pendiente, enviado a Resend, entregado (solo con confirmación del proveedor), error, rebotado o bloqueado. Aceptado por Resend no implica entregado."
           />
         </div>
         <Button asChild>
@@ -59,35 +44,41 @@ export default async function EmailSendsPage() {
         </p>
       ) : (
         <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-          {listed.sends.map((s) => (
-            <li key={s.id} className="space-y-1 px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="truncate font-medium">
-                  {s.subject || '(Sin asunto)'}
+          {listed.sends.map((s) => {
+            const sender = getCorporateSender(s.fromKey);
+            return (
+              <li key={s.id} className="space-y-1 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="truncate font-medium">
+                    {s.subject || '(Sin asunto)'}
+                  </p>
+                  <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    {s.historyLabel}
+                  </span>
+                </div>
+                <p className="truncate text-sm text-muted-foreground">
+                  Para: {s.recipientEmail}
+                  {' · '}
+                  De: {sender.email}
+                  {' · '}
+                  {s.purpose === 'commercial' ? 'Comercial' : 'Operativa'}
+                  {' · '}
+                  {new Date(s.createdAt).toLocaleString('es-ES')}
                 </p>
-                <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  {statusLabel(s.status, s.dryRun)}
-                </span>
-              </div>
-              <p className="truncate text-sm text-muted-foreground">
-                {s.purpose === 'commercial' ? 'Comercial' : 'Operativa'}
-                {' · '}
-                {s.recipientEmail}
-                {' · '}
-                {s.templateSlug}
-                {' · '}
-                {new Date(s.createdAt).toLocaleString('es-ES')}
-              </p>
-              {s.error ? (
-                <p className="text-sm text-destructive">{s.error}</p>
-              ) : null}
-              {s.providerMessageId ? (
-                <p className="text-xs text-muted-foreground">
-                  Provider id: {s.providerMessageId}
+                <p className="truncate text-xs text-muted-foreground">
+                  Enviado por: {s.createdByLabel || '—'}
+                  {' · '}
+                  Adjuntos: {s.attachmentCount}
+                  {s.providerStatus
+                    ? ` · Proveedor: ${s.providerStatus}`
+                    : ''}
                 </p>
-              ) : null}
-            </li>
-          ))}
+                {s.error ? (
+                  <p className="text-sm text-destructive">{s.error}</p>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

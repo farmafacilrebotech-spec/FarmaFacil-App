@@ -56,9 +56,27 @@ export function defaultPurposeForTemplate(slug: string): EmailPurpose {
   }
 }
 
+/**
+ * Plantillas comerciales fuerzan gates comerciales aunque el usuario marque «operativa».
+ */
+export function resolveEffectivePurpose(
+  templateSlug: string,
+  requested: EmailPurpose
+): EmailPurpose {
+  if (defaultPurposeForTemplate(templateSlug) === 'commercial') {
+    return 'commercial';
+  }
+  return requested;
+}
+
 export function assertCorporateSendPolicy(
-  input: CorporateSendPolicyInput
+  input: CorporateSendPolicyInput & { templateSlug?: string }
 ): CorporateSendPolicyOk | CorporateSendPolicyErr {
+  const purpose = resolveEffectivePurpose(
+    input.templateSlug ?? 'blank',
+    input.purpose
+  );
+
   const email = input.recipientEmail.trim().toLowerCase();
   if (!email || !EMAIL_RE.test(email)) {
     return {
@@ -89,7 +107,7 @@ export function assertCorporateSendPolicy(
     };
   }
 
-  if (input.purpose === 'commercial') {
+  if (purpose === 'commercial') {
     if (!input.commercialAuthAck) {
       return {
         ok: false,
@@ -125,7 +143,7 @@ export function assertCorporateSendPolicy(
 
   return {
     ok: true,
-    purpose: input.purpose,
-    legalBasis: input.purpose === 'commercial' ? input.legalBasis : null,
+    purpose,
+    legalBasis: purpose === 'commercial' ? input.legalBasis : null,
   };
 }

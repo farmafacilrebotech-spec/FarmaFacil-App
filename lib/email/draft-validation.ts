@@ -24,6 +24,19 @@ export type EmailLegalBasis =
   | 'legitimate_interest_documented'
   | 'contractual';
 
+const FROM_KEYS = [
+  'pilar',
+  'contacto',
+  'info',
+  'soporte',
+  'pruebas',
+  'ventas',
+  'admin',
+  'privacidad',
+] as const;
+
+export type EmailFromKey = (typeof FROM_KEYS)[number];
+
 export type EmailDraftInput = {
   id?: string | null;
   templateSlug: string;
@@ -36,6 +49,7 @@ export type EmailDraftInput = {
   legalBasis?: string | null;
   commercialAuthAck?: boolean;
   oppositionChecked?: boolean;
+  fromKey?: string | null;
 };
 
 export type EmailDraftNormalized = {
@@ -50,6 +64,7 @@ export type EmailDraftNormalized = {
   legalBasis: EmailLegalBasis | null;
   commercialAuthAck: boolean;
   oppositionChecked: boolean;
+  fromKey: EmailFromKey;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
@@ -117,6 +132,12 @@ export function validateEmailDraftInput(
     legalBasis = basisRaw as EmailLegalBasis;
   }
 
+  const fromRaw = (input.fromKey ?? 'pilar').trim().toLowerCase();
+  if (!(FROM_KEYS as readonly string[]).includes(fromRaw)) {
+    return { ok: false, error: 'Remitente no válido.' };
+  }
+  const fromKey = fromRaw as EmailFromKey;
+
   return {
     ok: true,
     draft: {
@@ -131,6 +152,7 @@ export function validateEmailDraftInput(
       legalBasis,
       commercialAuthAck: Boolean(input.commercialAuthAck),
       oppositionChecked: Boolean(input.oppositionChecked),
+      fromKey,
     },
   };
 }
