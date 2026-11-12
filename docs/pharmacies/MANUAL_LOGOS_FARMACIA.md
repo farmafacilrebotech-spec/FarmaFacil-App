@@ -1,8 +1,9 @@
 # Manual de usuario — Logos de farmacia (SuperAdmin)
 
-**Estado:** corrección en rama `fix/pr23-pharmacy-list-logos` · **pendiente validación visual** · no publicada en producción  
+**Estado:** validación visual del listado **aprobada** · PR independiente pendiente de merge/deploy  
 **Actualizado:** 2026-11-12  
-**Audiencia:** SuperAdmin con `platform.pharmacies.write`
+**Audiencia:** SuperAdmin con `platform.pharmacies.write`  
+**Rama:** `fix/pr23-pharmacy-list-logos`
 
 ## Objetivo
 
