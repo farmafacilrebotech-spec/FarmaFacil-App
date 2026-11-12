@@ -1,146 +1,194 @@
 'use client';
 
+import * as React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 
 import {
+  deleteEmailTemplateAction,
   duplicateEmailTemplateAction,
+  updateEmailTemplateAction,
   updateEmailTemplateStatusAction,
   type EmailTemplateRow,
 } from '@/app/(app)/emails/actions';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 
 export function TemplatesPanel({
   templates,
-  systemCards,
 }: {
   templates: EmailTemplateRow[];
-  systemCards: Array<{
-    slug: string;
-    title: string;
-    description: string;
-    previewHref: string;
-  }>;
 }) {
   const router = useRouter();
+  const [showArchived, setShowArchived] = React.useState(false);
+  const [renamingId, setRenamingId] = React.useState<string | null>(null);
+  const [renameValue, setRenameValue] = React.useState('');
+
+  const visible = templates.filter((t) =>
+    showArchived ? true : t.status === 'active'
+  );
 
   return (
-    <div className="space-y-8">
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Corporativas (sistema)
-        </h2>
-        <ul className="grid gap-3 sm:grid-cols-2">
-          {systemCards.map((t) => (
-            <li
-              key={t.slug}
-              className="flex flex-col rounded-xl border border-border bg-card p-4 shadow-soft"
-            >
-              <p className="font-medium">{t.title}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t.description}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link href={t.previewHref}>Vista previa</Link>
-                </Button>
-                <Button asChild size="sm">
-                  <Link href={`/emails/compose?template=${t.slug}`}>
-                    Usar para redactar
-                  </Link>
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </section>
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={(e) => setShowArchived(e.target.checked)}
+          />
+          Mostrar archivadas
+        </label>
+        <Button asChild size="sm">
+          <Link href="/emails/compose">Nueva desde correo</Link>
+        </Button>
+      </div>
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Plantillas guardadas
-          </h2>
-          <Button asChild size="sm">
-            <Link href="/emails/compose">Crear desde nuevo email</Link>
-          </Button>
-        </div>
-        {templates.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            Aún no hay plantillas personalizadas. Redacta un correo y usa
-            «Guardar como plantilla».
-          </p>
-        ) : (
-          <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-            {templates.map((t) => (
-              <li
-                key={t.id}
-                className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-medium">
-                    {t.name}
-                    {t.systemKey ? (
-                      <span className="ml-2 text-xs font-normal text-muted-foreground">
-                        (copia editable)
-                      </span>
-                    ) : null}
-                  </p>
-                  <p className="truncate text-sm text-muted-foreground">
-                    {t.category}
-                    {' · '}
-                    {t.purpose === 'commercial' ? 'Comercial' : 'Operativa'}
-                    {' · '}
-                    {t.status}
-                    {' · '}
-                    {t.subject || '(sin asunto)'}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
+      {visible.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No hay plantillas. Crea una desde el compositor con «Guardar como
+          plantilla».
+        </p>
+      ) : (
+        <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
+          {visible.map((t) => (
+            <li
+              key={t.id}
+              className="flex flex-wrap items-center justify-between gap-3 px-4 py-3"
+            >
+              <div className="min-w-0 flex-1">
+                {renamingId === t.id ? (
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      className="h-8 max-w-xs"
+                      value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() =>
+                        void updateEmailTemplateAction({
+                          templateId: t.id,
+                          name: renameValue,
+                        }).then((r) => {
+                          if (!r.ok) toast.error(r.error);
+                          else {
+                            toast.success('Nombre actualizado.');
+                            setRenamingId(null);
+                            router.refresh();
+                          }
+                        })
+                      }
+                    >
+                      Guardar
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setRenamingId(null)}
+                    >
+                      Cancelar
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="truncate font-medium">
+                      {t.name}
+                      {t.status !== 'active' ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          ({t.status === 'archived' ? 'archivada' : t.status})
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-sm text-muted-foreground">
+                      {t.subject || '(sin asunto)'}
+                    </p>
+                  </>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {t.status === 'active' ? (
                   <Button asChild size="sm">
                     <Link href={`/emails/compose?templateId=${t.id}`}>
                       Usar
                     </Link>
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      void duplicateEmailTemplateAction(t.id).then((r) => {
-                        if (!r.ok) toast.error(r.error);
-                        else {
-                          toast.success('Plantilla duplicada.');
-                          router.refresh();
-                        }
-                      })
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setRenamingId(t.id);
+                    setRenameValue(t.name);
+                  }}
+                >
+                  Renombrar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void duplicateEmailTemplateAction(t.id).then((r) => {
+                      if (!r.ok) toast.error(r.error);
+                      else {
+                        toast.success('Plantilla duplicada.');
+                        router.refresh();
+                      }
+                    })
+                  }
+                >
+                  Duplicar
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    void updateEmailTemplateStatusAction({
+                      templateId: t.id,
+                      status: t.status === 'active' ? 'archived' : 'active',
+                    }).then((r) => {
+                      if (!r.ok) toast.error(r.error);
+                      else router.refresh();
+                    })
+                  }
+                >
+                  {t.status === 'active' ? 'Archivar' : 'Restaurar'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        '¿Eliminar esta plantilla? Los borradores vinculados no se borrarán.'
+                      )
+                    ) {
+                      return;
                     }
-                  >
-                    Duplicar
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={() =>
-                      void updateEmailTemplateStatusAction({
-                        templateId: t.id,
-                        status:
-                          t.status === 'active' ? 'archived' : 'active',
-                      }).then((r) => {
-                        if (!r.ok) toast.error(r.error);
-                        else router.refresh();
-                      })
-                    }
-                  >
-                    {t.status === 'active' ? 'Archivar' : 'Reactivar'}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+                    void deleteEmailTemplateAction(t.id).then((r) => {
+                      if (!r.ok) toast.error(r.error);
+                      else {
+                        toast.success('Plantilla eliminada.');
+                        router.refresh();
+                      }
+                    });
+                  }}
+                >
+                  Eliminar
+                </Button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

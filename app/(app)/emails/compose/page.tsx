@@ -1,21 +1,12 @@
-import { headers } from 'next/headers';
-
 import { EmailComposer } from '@/components/email/email-composer';
 import { EmailsShell } from '@/components/email/emails-shell';
 import {
   getEmailDraftAction,
   listEmailTemplatesAction,
 } from '@/app/(app)/emails/actions';
-import {
-  buildComposeSeed,
-  type EmailTemplateSlug,
-} from '@/lib/email/compose-catalog';
-import { defaultPurposeForTemplate } from '@/lib/email/corporate-send-policy';
-import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
-import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
-import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
-import { normalizeFfPreviewOrigin } from '@/lib/email/corporate-templates';
 import { extractComposerEditableHtml } from '@/lib/email/html-sanitize';
+import { htmlHasEmbeddedSignature } from '@/lib/email/signature';
+import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 import {
   defaultCorporateSenderKey,
   getCorporateSender,
@@ -23,7 +14,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-type SearchParams = { draft?: string; template?: string; templateId?: string };
+type SearchParams = { draft?: string; templateId?: string };
 
 export default async function EmailComposePage({
   searchParams,
@@ -32,13 +23,7 @@ export default async function EmailComposePage({
 }) {
   await assertEmailsPageAccess();
 
-  const h = headers();
-  const origin = normalizeFfPreviewOrigin(
-    requestPublicOriginFromHeaders(h, CANONICAL_PRODUCTION_APP_URL)
-  );
-
   const draftId = searchParams?.draft?.trim() || null;
-  const templateParam = searchParams?.template?.trim() || 'blank';
   const templateIdParam = searchParams?.templateId?.trim() || null;
   const defaultSender = getCorporateSender(defaultCorporateSenderKey());
 
@@ -57,13 +42,6 @@ export default async function EmailComposePage({
     from: defaultSender.fromHeader,
     replyTo: defaultSender.replyTo,
     purpose: 'operational' as 'operational' | 'commercial',
-    legalBasis: '' as
-      | ''
-      | 'consent'
-      | 'legitimate_interest_documented'
-      | 'contractual',
-    commercialAuthAck: false,
-    oppositionChecked: false,
   };
 
   if (draftId) {
@@ -87,9 +65,6 @@ export default async function EmailComposePage({
         from: sender.fromHeader,
         replyTo: sender.replyTo,
         purpose: loaded.draft.purpose,
-        legalBasis: loaded.draft.legalBasis ?? '',
-        commercialAuthAck: loaded.draft.commercialAuthAck,
-        oppositionChecked: loaded.draft.oppositionChecked,
       };
     }
   } else if (templateIdParam) {
@@ -97,43 +72,26 @@ export default async function EmailComposePage({
     if (listed.ok) {
       const tpl = listed.templates.find((t) => t.id === templateIdParam);
       if (tpl) {
+        const body = extractComposerEditableHtml(
+          tpl.htmlBody || '<p><br/></p>'
+        );
         initial = {
           ...initial,
           templateSlug: tpl.systemKey || 'custom',
           templateId: tpl.id,
           subject: tpl.subject,
-          htmlBody: extractComposerEditableHtml(
-            tpl.htmlBody || '<p><br/></p>'
-          ),
+          htmlBody: body,
           textBody: tpl.textBody,
           purpose: tpl.purpose,
         };
+        // includeSignature se decide en el cliente según htmlHasEmbeddedSignature
+        void htmlHasEmbeddedSignature(body);
       }
-    }
-  } else if (templateParam && templateParam !== 'blank') {
-    const slug = (
-      ['lanzadera', 'imprentas', 'demo', 'piloto'] as const
-    ).includes(templateParam as EmailTemplateSlug)
-      ? (templateParam as EmailTemplateSlug)
-      : 'blank';
-    if (slug !== 'blank') {
-      const seed = buildComposeSeed(slug, { previewOrigin: origin });
-      initial = {
-        ...initial,
-        templateSlug: seed.templateSlug,
-        subject: seed.subject,
-        htmlBody: extractComposerEditableHtml(seed.htmlBody),
-        textBody: seed.textBody,
-        purpose: defaultPurposeForTemplate(slug),
-      };
     }
   }
 
   return (
-    <EmailsShell
-      title={initial.id ? 'Editar borrador' : 'Nuevo email'}
-      description="Redacción compacta · confirmación antes de enviar"
-    >
+    <EmailsShell title={initial.id ? 'Editar borrador' : 'Nuevo email'}>
       <EmailComposer initial={initial} />
     </EmailsShell>
   );

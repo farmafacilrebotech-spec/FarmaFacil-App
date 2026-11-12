@@ -13,30 +13,13 @@ export default async function EmailsInboxPage() {
   await assertEmailsPageAccess();
 
   return (
-    <EmailsShell
-      title="Recibidos"
-      description="Bandeja de entrada de cuentas corporativas"
-    >
+    <EmailsShell title="Recibidos">
       <div className="rounded-xl border border-dashed border-border bg-muted/20 px-5 py-10 text-center">
-        <p className="text-sm font-medium">Recepción aún no conectada</p>
+        <p className="text-sm font-medium">Bandeja de entrada no disponible todavía</p>
         <p className="mx-auto mt-2 max-w-lg text-sm text-muted-foreground">
-          Las cuentas viven en SiteGround (IMAP/webmail). Integrar Recibidos
-          requiere un worker fuera de Vercel serverless, secretos en vault y
-          sincronización segura. No se muestra una bandeja simulada.
-        </p>
-        <p className="mt-4 text-xs text-muted-foreground">
-          Detalle técnico:{' '}
-          <Link
-            href="/emails"
-            className="underline underline-offset-2 hover:text-foreground"
-          >
-            ver resumen del módulo
-          </Link>{' '}
-          y documento{' '}
-          <code className="rounded bg-muted px-1 py-0.5">
-            docs/emails/SITEGROUND_IMAP_AUDIT.md
-          </code>
-          .
+          La recepción de correo corporativo se activará en una fase posterior.
+          Mientras tanto puedes redactar, guardar borradores y consultar
+          enviados.
         </p>
       </div>
     </EmailsShell>

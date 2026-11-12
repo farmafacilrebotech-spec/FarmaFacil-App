@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import {
@@ -20,8 +19,6 @@ import {
 
 import {
   deleteDraftAttachmentAction,
-  deleteEmailDraftAction,
-  getComposeSeedAction,
   getCorporateEmailSendStatusAction,
   listCorporateSendersAction,
   listDraftAttachmentsAction,
@@ -29,16 +26,11 @@ import {
   saveEmailAsTemplateAction,
   saveEmailDraftAction,
   sendCorporateEmailAction,
+  trashEmailDraftAction,
   uploadDraftAttachmentAction,
   type EmailDraftAttachmentRow,
   type EmailTemplateRow,
 } from '@/app/(app)/emails/actions';
-import {
-  defaultPurposeForTemplate,
-  resolveEffectivePurpose,
-  type EmailLegalBasis,
-  type EmailPurpose,
-} from '@/lib/email/corporate-send-policy';
 import {
   extractComposerEditableHtml,
   htmlToPlainText,
@@ -46,7 +38,11 @@ import {
   wrapComposerHtmlForSend,
 } from '@/lib/email/html-sanitize';
 import type { CorporateSender } from '@/lib/email/senders';
-import { appendSignatureIfNeeded } from '@/lib/email/signature';
+import {
+  applySignaturePolicy,
+  htmlHasEmbeddedSignature,
+  stripManagedSignature,
+} from '@/lib/email/signature';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -65,10 +61,8 @@ type ComposerDraft = {
   fromKey: string;
   from: string;
   replyTo: string;
-  purpose: EmailPurpose;
-  legalBasis: EmailLegalBasis | '';
-  commercialAuthAck: boolean;
-  oppositionChecked: boolean;
+  /** Metadato interno (no se muestra en UI). */
+  purpose: 'operational' | 'commercial';
 };
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -84,9 +78,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
   const [templates, setTemplates] = React.useState<EmailTemplateRow[]>([]);
   const [senders, setSenders] = React.useState<CorporateSender[]>([]);
   const [saveState, setSaveState] = React.useState<SaveState>('idle');
-  const [showCc, setShowCc] = React.useState(
-    Boolean(initial.ccEmails?.trim())
-  );
+  const [showCc, setShowCc] = React.useState(Boolean(initial.ccEmails?.trim()));
   const [showBcc, setShowBcc] = React.useState(
     Boolean(initial.bccEmails?.trim())
   );
@@ -96,19 +88,28 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
   const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [saveAsTplOpen, setSaveAsTplOpen] = React.useState(false);
   const [tplName, setTplName] = React.useState('');
+  const [includeSignature, setIncludeSignature] = React.useState(
+    !htmlHasEmbeddedSignature(initial.htmlBody)
+  );
   const [sendStatus, setSendStatus] = React.useState<{
     sendEnabled: boolean;
     dryRun: boolean;
   } | null>(null);
 
-  const effectivePurpose = resolveEffectivePurpose(
-    draft.templateSlug === 'custom' ? 'blank' : draft.templateSlug,
-    draft.purpose
-  );
-  const commercialForced =
-    draft.purpose === 'commercial' ||
-    (draft.templateSlug !== 'custom' &&
-      defaultPurposeForTemplate(draft.templateSlug) === 'commercial');
+  const origin =
+    typeof window !== 'undefined' ? window.location.origin : null;
+
+  function renderEditorHtml(body: string, fromKey: string, withSig: boolean) {
+    const editable = extractComposerEditableHtml(body);
+    const applied = applySignaturePolicy({
+      htmlBody: editable,
+      textBody: '',
+      fromKey,
+      previewOrigin: origin,
+      includeSignature: withSig,
+    });
+    return applied.html;
+  }
 
   React.useEffect(() => {
     void getCorporateEmailSendStatusAction().then((r) => {
@@ -118,7 +119,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       if (r.ok) setSenders(r.senders);
     });
     void listEmailTemplatesAction().then((r) => {
-      if (r.ok) setTemplates(r.templates.filter((t) => t.status === 'active'));
+      if (r.ok) setTemplates(r.templates);
     });
   }, []);
 
@@ -136,9 +137,22 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
     const el = editorRef.current;
     if (!el) return;
     el.innerHTML =
-      extractComposerEditableHtml(draft.htmlBody) || '<p><br/></p>';
+      renderEditorHtml(draft.htmlBody, draft.fromKey, includeSignature) ||
+      '<p><br/></p>';
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft.templateSlug, draft.templateId, draft.id]);
+  }, [draft.templateId, draft.id]);
+
+  function syncEditorToDraft() {
+    const raw = sanitizeEmailHtml(editorRef.current?.innerHTML ?? '');
+    // Guardamos el cuerpo sin la firma gestionada (se re-aplica al render/envío)
+    const bodyOnly = stripManagedSignature(raw);
+    setDraft((d) => ({
+      ...d,
+      htmlBody: bodyOnly,
+      textBody: htmlToPlainText(bodyOnly),
+    }));
+    setSaveState('dirty');
+  }
 
   function patch(partial: Partial<ComposerDraft>) {
     setDraft((d) => {
@@ -155,24 +169,81 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
     setSaveState('dirty');
   }
 
-  function onEditorInput() {
-    const html = sanitizeEmailHtml(editorRef.current?.innerHTML ?? '');
-    setDraft((d) => ({
-      ...d,
-      htmlBody: html,
-      textBody: htmlToPlainText(html),
-    }));
-    setSaveState('dirty');
+  function onFromKeyChange(nextKey: string) {
+    if (nextKey === draft.fromKey) return;
+    const hasEmbedded = htmlHasEmbeddedSignature(
+      stripManagedSignature(editorRef.current?.innerHTML || draft.htmlBody)
+    );
+    if (hasEmbedded && includeSignature === false) {
+      const ok = window.confirm(
+        'Esta plantilla incluye una firma distinta. ¿Cambiar el remitente y mantener la firma de la plantilla?'
+      );
+      if (!ok) return;
+      patch({ fromKey: nextKey });
+      return;
+    }
+    if (includeSignature) {
+      const ok = window.confirm(
+        'Al cambiar el remitente se actualizará la firma. ¿Continuar?'
+      );
+      if (!ok) return;
+    }
+    patch({ fromKey: nextKey });
+    // Re-render firma gestionada
+    requestAnimationFrame(() => {
+      const el = editorRef.current;
+      if (!el) return;
+      const body = stripManagedSignature(el.innerHTML);
+      el.innerHTML = renderEditorHtml(body, nextKey, includeSignature);
+      syncEditorToDraft();
+    });
+  }
+
+  function onIncludeSignatureToggle(next: boolean) {
+    setIncludeSignature(next);
+    const el = editorRef.current;
+    if (!el) return;
+    const body = stripManagedSignature(el.innerHTML);
+    if (!next && htmlHasEmbeddedSignature(body)) {
+      // Usuario desactiva: dejamos la firma embebida de plantilla
+      el.innerHTML = body || '<p><br/></p>';
+    } else {
+      el.innerHTML = renderEditorHtml(body, draft.fromKey, next);
+    }
+    syncEditorToDraft();
   }
 
   function execCmd(command: string, value?: string) {
     editorRef.current?.focus();
     document.execCommand(command, false, value);
-    onEditorInput();
+    syncEditorToDraft();
   }
 
-  async function applyTemplate(templateIdOrSlug: string) {
-    if (!templateIdOrSlug) return;
+  async function applyTemplate(templateId: string) {
+    if (!templateId) {
+      // Sin plantilla
+      const blank = '<p><br/></p>';
+      if (editorRef.current) {
+        editorRef.current.innerHTML = renderEditorHtml(
+          blank,
+          draft.fromKey,
+          true
+        );
+      }
+      setIncludeSignature(true);
+      patch({
+        templateSlug: 'blank',
+        templateId: null,
+        subject: '',
+        htmlBody: blank,
+        textBody: '',
+        purpose: 'operational',
+      });
+      return;
+    }
+
+    const dbTpl = templates.find((t) => t.id === templateId);
+    if (!dbTpl) return;
     const confirmed =
       draft.subject || draft.htmlBody
         ? window.confirm(
@@ -182,73 +253,47 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
     if (!confirmed) return;
 
     setBusyTemplate(true);
-    const dbTpl = templates.find((t) => t.id === templateIdOrSlug);
-    if (dbTpl) {
-      const editable = extractComposerEditableHtml(dbTpl.htmlBody);
-      if (editorRef.current) {
-        editorRef.current.innerHTML = editable || '<p><br/></p>';
-      }
-      patch({
-        templateSlug: dbTpl.systemKey || 'custom',
-        templateId: dbTpl.id,
-        subject: dbTpl.subject,
-        htmlBody: editable,
-        textBody: dbTpl.textBody || htmlToPlainText(editable),
-        purpose: dbTpl.purpose,
-      });
-      setBusyTemplate(false);
-      return;
-    }
-
-    const result = await getComposeSeedAction(
-      templateIdOrSlug,
-      window.location.origin
-    );
-    setBusyTemplate(false);
-    if (!result.ok) {
-      toast.error(result.error);
-      return;
-    }
-    const editable = extractComposerEditableHtml(result.seed.htmlBody);
+    const editable = extractComposerEditableHtml(dbTpl.htmlBody);
+    const hasSig = htmlHasEmbeddedSignature(editable);
+    const useManagedSig =
+      dbTpl.includeSignature !== false && !hasSig ? true : !hasSig;
+    setIncludeSignature(useManagedSig);
     if (editorRef.current) {
-      editorRef.current.innerHTML = editable || '<p><br/></p>';
+      editorRef.current.innerHTML = renderEditorHtml(
+        editable,
+        draft.fromKey,
+        useManagedSig
+      );
     }
     patch({
-      templateSlug: result.seed.templateSlug,
-      templateId: null,
-      subject: result.seed.subject,
-      htmlBody: editable,
-      textBody: result.seed.textBody || htmlToPlainText(editable),
-      purpose: defaultPurposeForTemplate(result.seed.templateSlug),
+      templateSlug: dbTpl.systemKey || 'custom',
+      templateId: dbTpl.id,
+      subject: dbTpl.subject,
+      htmlBody: stripManagedSignature(editable),
+      textBody: dbTpl.textBody || htmlToPlainText(editable),
+      purpose: dbTpl.purpose,
     });
-  }
-
-  function currentEditableHtml(): string {
-    return sanitizeEmailHtml(
-      editorRef.current?.innerHTML || draft.htmlBody
-    );
+    setBusyTemplate(false);
   }
 
   async function onSave() {
     setSaveState('saving');
-    const editable = sanitizeEmailHtml(
-      editorRef.current?.innerHTML || draft.htmlBody
+    syncEditorToDraft();
+    const body = stripManagedSignature(
+      sanitizeEmailHtml(editorRef.current?.innerHTML || draft.htmlBody)
     );
     const result = await saveEmailDraftAction({
       id: draft.id,
-      templateSlug: draft.templateSlug,
+      templateSlug: draft.templateSlug || 'blank',
       templateId: draft.templateId,
       subject: draft.subject,
-      htmlBody: editable,
-      textBody: htmlToPlainText(editable),
+      htmlBody: body,
+      textBody: htmlToPlainText(body),
       recipientEmail: draft.recipientEmail,
       recipientName: draft.recipientName || null,
       ccEmails: draft.ccEmails,
       bccEmails: draft.bccEmails,
       purpose: draft.purpose,
-      legalBasis: draft.legalBasis || null,
-      commercialAuthAck: draft.commercialAuthAck,
-      oppositionChecked: draft.oppositionChecked,
       fromKey: draft.fromKey,
     });
     if (!result.ok) {
@@ -275,12 +320,13 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
 
   async function onDiscard() {
     if (draft.id) {
-      if (!window.confirm('¿Descartar y eliminar este borrador?')) return;
-      const result = await deleteEmailDraftAction(draft.id);
+      if (!window.confirm('¿Enviar este borrador a la papelera?')) return;
+      const result = await trashEmailDraftAction(draft.id);
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
+      toast.success('Borrador movido a la papelera.');
     }
     router.push('/emails/drafts');
     router.refresh();
@@ -291,15 +337,15 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       toast.error('Indica un nombre para la plantilla.');
       return;
     }
-    const editable = sanitizeEmailHtml(
-      editorRef.current?.innerHTML || draft.htmlBody
+    const body = stripManagedSignature(
+      sanitizeEmailHtml(editorRef.current?.innerHTML || draft.htmlBody)
     );
     const result = await saveEmailAsTemplateAction({
       name: tplName.trim(),
       subject: draft.subject,
-      htmlBody: editable,
-      textBody: htmlToPlainText(editable),
-      purpose: effectivePurpose,
+      htmlBody: body,
+      textBody: htmlToPlainText(body),
+      purpose: draft.purpose,
       category: 'personalizada',
     });
     if (!result.ok) {
@@ -310,7 +356,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
     setTplName('');
     toast.success('Plantilla guardada.');
     void listEmailTemplatesAction().then((r) => {
-      if (r.ok) setTemplates(r.templates.filter((t) => t.status === 'active'));
+      if (r.ok) setTemplates(r.templates);
     });
   }
 
@@ -322,18 +368,18 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       const fd = new FormData();
       fd.set('file', file);
       if (currentDraftId) fd.set('draftId', currentDraftId);
-      fd.set('templateSlug', draft.templateSlug);
+      fd.set('templateSlug', draft.templateSlug || 'blank');
       fd.set('subject', draft.subject);
-      fd.set('htmlBody', draft.htmlBody);
+      fd.set(
+        'htmlBody',
+        stripManagedSignature(editorRef.current?.innerHTML || draft.htmlBody)
+      );
       fd.set('textBody', draft.textBody);
       fd.set('recipientEmail', draft.recipientEmail);
       fd.set('recipientName', draft.recipientName);
       fd.set('ccEmails', draft.ccEmails);
       fd.set('bccEmails', draft.bccEmails);
       fd.set('purpose', draft.purpose);
-      fd.set('legalBasis', draft.legalBasis || '');
-      fd.set('commercialAuthAck', draft.commercialAuthAck ? '1' : '0');
-      fd.set('oppositionChecked', draft.oppositionChecked ? '1' : '0');
       fd.set('fromKey', draft.fromKey);
       const result = await uploadDraftAttachmentAction(fd);
       if (!result.ok) {
@@ -354,24 +400,31 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
 
   async function onConfirmSend() {
     setSending(true);
-    const editable = currentEditableHtml();
+    const body = stripManagedSignature(
+      sanitizeEmailHtml(editorRef.current?.innerHTML || draft.htmlBody)
+    );
+    const forSend = applySignaturePolicy({
+      htmlBody: body,
+      textBody: htmlToPlainText(body),
+      fromKey: draft.fromKey,
+      previewOrigin: origin,
+      includeSignature,
+    });
     const result = await sendCorporateEmailAction({
       draftId: draft.id,
       explicitConfirm: true,
       purpose: draft.purpose,
-      legalBasis: draft.legalBasis || null,
-      commercialAuthAck: draft.commercialAuthAck,
-      oppositionChecked: draft.oppositionChecked,
       fromKey: draft.fromKey,
       recipientEmail: draft.recipientEmail,
       recipientName: draft.recipientName || null,
       ccEmails: draft.ccEmails,
       bccEmails: draft.bccEmails,
       subject: draft.subject,
-      htmlBody: wrapComposerHtmlForSend(editable),
-      textBody: htmlToPlainText(editable),
+      htmlBody: wrapComposerHtmlForSend(forSend.html),
+      textBody: forSend.text,
       templateSlug: draft.templateSlug,
-      previewOrigin: window.location.origin,
+      previewOrigin: origin,
+      includeSignature: false, // ya aplicada en forSend
     });
     setSending(false);
     setConfirmOpen(false);
@@ -380,9 +433,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
       return;
     }
     toast.success(
-      result.dryRun
-        ? `Prueba registrada: ${result.historyLabel}`
-        : `Confirmado: ${result.historyLabel}`
+      result.dryRun ? 'Envío de prueba registrado.' : 'Correo enviado.'
     );
     router.push('/emails/sends');
     router.refresh();
@@ -391,70 +442,26 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
   const selectedSender =
     senders.find((s) => s.key === draft.fromKey) || senders[0];
 
-  const previewSig = appendSignatureIfNeeded({
-    htmlBody: '',
-    textBody: '',
-    fromKey: draft.fromKey,
-    previewOrigin:
-      typeof window !== 'undefined' ? window.location.origin : null,
-  });
-
   return (
     <div className="mx-auto w-full max-w-3xl space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <Link
-          href="/emails/drafts"
-          className="text-muted-foreground underline-offset-2 hover:underline"
-        >
-          ← Borradores
-        </Link>
-        <span className="text-xs text-muted-foreground">
-          {saveState === 'saving'
-            ? 'Guardando…'
-            : saveState === 'saved'
-              ? 'Guardado'
-              : saveState === 'dirty'
-                ? 'Sin guardar'
-                : draft.id
-                  ? 'Borrador'
-                  : 'Nuevo'}
-        </span>
-      </div>
-
-      {/* Caja única estilo Gmail */}
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
         <div className="border-b border-border px-4 py-3">
           <Label htmlFor="tpl" className="text-xs text-muted-foreground">
-            Plantilla (opcional)
+            Plantilla
           </Label>
           <select
             id="tpl"
             className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
             disabled={busyTemplate}
-            defaultValue=""
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v) void applyTemplate(v);
-              e.target.value = '';
-            }}
+            value={draft.templateId || ''}
+            onChange={(e) => void applyTemplate(e.target.value)}
           >
-            <option value="">Sin plantilla / elegir…</option>
-            <optgroup label="Sistema">
-              <option value="blank">En blanco</option>
-              <option value="lanzadera">Lanzadera</option>
-              <option value="imprentas">Presupuesto imprentas</option>
-              <option value="demo">Invitación demostración</option>
-              <option value="piloto">Invitación piloto</option>
-            </optgroup>
-            {templates.length > 0 ? (
-              <optgroup label="Guardadas">
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </optgroup>
-            ) : null}
+            <option value="">Sin plantilla</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -463,7 +470,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
             <select
               className="h-9 w-full bg-transparent text-sm outline-none"
               value={draft.fromKey}
-              onChange={(e) => patch({ fromKey: e.target.value })}
+              onChange={(e) => onFromKeyChange(e.target.value)}
             >
               {(senders.length
                 ? senders
@@ -521,7 +528,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
             <FieldRow label="CC">
               <Input
                 className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                placeholder="cc1@…, cc2@… (máx. 2)"
+                placeholder="cc@… (máx. 2)"
                 value={draft.ccEmails}
                 onChange={(e) => patch({ ccEmails: e.target.value })}
                 autoComplete="off"
@@ -533,7 +540,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
             <FieldRow label="CCO">
               <Input
                 className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                placeholder="cco1@…, cco2@… (máx. 2)"
+                placeholder="cco@… (máx. 2)"
                 value={draft.bccEmails}
                 onChange={(e) => patch({ bccEmails: e.target.value })}
                 autoComplete="off"
@@ -550,8 +557,7 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
           </FieldRow>
         </div>
 
-        {/* Toolbar + editor visual */}
-        <div className="flex flex-wrap gap-0.5 border-b border-border bg-muted/30 px-2 py-1">
+        <div className="flex flex-wrap items-center gap-0.5 border-b border-border bg-muted/30 px-2 py-1">
           <ToolBtn onClick={() => execCmd('bold')} title="Negrita">
             <Bold className="h-3.5 w-3.5" />
           </ToolBtn>
@@ -595,26 +601,21 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
           </ToolBtn>
           <ToolBtn
             onClick={() => {
-              const url = window.prompt(
-                'URL de imagen (https). Las remotas de seguimiento se bloquean al leer.'
-              );
+              const url = window.prompt('URL de imagen (https)');
               if (url) execCmd('insertImage', url);
             }}
             title="Imagen"
           >
             <ImageIcon className="h-3.5 w-3.5" />
           </ToolBtn>
-          <select
-            className="ml-1 h-7 rounded border border-transparent bg-transparent px-1 text-xs"
-            defaultValue="3"
-            onChange={(e) => execCmd('fontSize', e.target.value)}
-            title="Tamaño"
-          >
-            <option value="2">Pequeño</option>
-            <option value="3">Normal</option>
-            <option value="4">Grande</option>
-            <option value="5">Muy grande</option>
-          </select>
+          <label className="ml-auto flex items-center gap-2 px-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={includeSignature}
+              onChange={(e) => onIncludeSignatureToggle(e.target.checked)}
+            />
+            Incluir firma
+          </label>
         </div>
 
         <div
@@ -622,18 +623,11 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
           contentEditable
           role="textbox"
           aria-label="Cuerpo del mensaje"
-          className="min-h-[280px] px-4 py-3 text-sm leading-relaxed outline-none focus-visible:ring-0"
-          onInput={onEditorInput}
+          className="min-h-[320px] px-4 py-3 text-sm leading-relaxed outline-none"
+          onInput={syncEditorToDraft}
           suppressContentEditableWarning
         />
 
-        {/* Firma corporativa (vista) */}
-        <div
-          className="border-t border-border bg-muted/20 px-4 py-3 text-sm"
-          dangerouslySetInnerHTML={{ __html: previewSig.html }}
-        />
-
-        {/* Adjuntos */}
         <div className="space-y-2 border-t border-border px-4 py-3">
           <input
             ref={fileInputRef}
@@ -654,120 +648,37 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
               <Paperclip className="mr-1.5 h-3.5 w-3.5" />
               {uploading ? 'Subiendo…' : 'Adjuntar'}
             </Button>
-            <span className="text-xs text-muted-foreground">
-              PDF, Word, Excel, imágenes · máx. 5 · 5 MB
-            </span>
-          </div>
-          {attachments.length > 0 ? (
-            <ul className="space-y-1">
-              {attachments.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-center justify-between gap-2 text-sm"
-                >
-                  <span className="truncate">
-                    {a.fileName}{' '}
-                    <span className="text-xs text-muted-foreground">
-                      ({a.byteSizeLabel})
-                    </span>
-                  </span>
-                  <button
-                    type="button"
-                    className="text-xs text-destructive"
-                    onClick={() =>
-                      void deleteDraftAttachmentAction(a.id).then((r) => {
-                        if (r.ok) {
-                          setAttachments((p) => p.filter((x) => x.id !== a.id));
-                        } else toast.error(r.error);
-                      })
-                    }
-                  >
-                    Quitar
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </div>
-
-        {/* Cumplimiento comercial */}
-        <div className="space-y-2 border-t border-border px-4 py-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <Label htmlFor="purpose" className="text-xs">
-              Tipo
-            </Label>
-            <select
-              id="purpose"
-              className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-              value={commercialForced ? 'commercial' : draft.purpose}
-              disabled={
-                draft.templateSlug !== 'custom' &&
-                defaultPurposeForTemplate(draft.templateSlug) === 'commercial'
-              }
-              onChange={(e) =>
-                patch({ purpose: e.target.value as EmailPurpose })
-              }
-            >
-              <option value="operational">Operativa</option>
-              <option value="commercial">Comercial</option>
-            </select>
-          </div>
-          {effectivePurpose === 'commercial' || commercialForced ? (
-            <div className="space-y-2 rounded-lg bg-amber-500/5 p-3 text-sm">
-              <select
-                className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
-                value={draft.legalBasis}
-                onChange={(e) =>
-                  patch({
-                    legalBasis: e.target.value as EmailLegalBasis | '',
-                  })
-                }
+            {attachments.map((a) => (
+              <span
+                key={a.id}
+                className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
               >
-                <option value="">Base jurídica…</option>
-                <option value="consent">Consentimiento</option>
-                <option value="legitimate_interest_documented">
-                  Interés legítimo documentado
-                </option>
-                <option value="contractual">Relación contractual</option>
-              </select>
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={draft.commercialAuthAck}
-                  onChange={(e) =>
-                    patch({ commercialAuthAck: e.target.checked })
+                {a.fileName}
+                <button
+                  type="button"
+                  className="text-destructive"
+                  onClick={() =>
+                    void deleteDraftAttachmentAction(a.id).then((r) => {
+                      if (r.ok) {
+                        setAttachments((p) => p.filter((x) => x.id !== a.id));
+                      } else toast.error(r.error);
+                    })
                   }
-                />
-                <span>Autorización/base legal válida para este envío.</span>
-              </label>
-              <label className="flex items-start gap-2">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={draft.oppositionChecked}
-                  onChange={(e) =>
-                    patch({ oppositionChecked: e.target.checked })
-                  }
-                />
-                <span>
-                  He comprobado oposición/bajas (Para, CC y CCO).
-                </span>
-              </label>
-            </div>
-          ) : null}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
         </div>
 
-        {/* Acciones */}
         <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/20 px-4 py-3">
           <Button
             type="button"
             disabled={!sendStatus?.sendEnabled || sending}
             onClick={() => setConfirmOpen(true)}
           >
-            {!sendStatus?.sendEnabled
-              ? 'Enviar (desactivado)'
-              : 'Revisar y enviar'}
+            Enviar
           </Button>
           <Button
             type="button"
@@ -787,31 +698,22 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
           <Button type="button" variant="ghost" onClick={() => void onDiscard()}>
             Descartar
           </Button>
+          <span className="ml-auto text-xs text-muted-foreground">
+            {saveState === 'saving'
+              ? 'Guardando…'
+              : saveState === 'saved'
+                ? 'Guardado'
+                : saveState === 'dirty'
+                  ? 'Sin guardar'
+                  : null}
+          </span>
         </div>
       </div>
-
-      {sendStatus && !sendStatus.sendEnabled ? (
-        <p className="text-xs text-muted-foreground">
-          El envío está desactivado en servidor. Puedes redactar, adjuntar y
-          guardar borradores.
-        </p>
-      ) : sendStatus?.dryRun ? (
-        <p className="text-xs text-muted-foreground">
-          Modo de prueba: se registra el envío sin entregar correo real.
-        </p>
-      ) : null}
 
       {confirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-5 shadow-soft">
             <h2 className="text-lg font-semibold">Confirmar envío</h2>
-            <p className="text-sm text-muted-foreground">
-              Envío individual. CC/CCO cuentan como destinatarios y están sujetos
-              a las mismas restricciones.
-              {sendStatus?.dryRun
-                ? ' Se registrará en modo de prueba.'
-                : ' Se enviará de verdad.'}
-            </p>
             <dl className="space-y-1 text-sm">
               <div>
                 <dt className="text-muted-foreground">De</dt>
@@ -827,12 +729,6 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
                 <div>
                   <dt className="text-muted-foreground">CC</dt>
                   <dd className="font-medium">{draft.ccEmails}</dd>
-                </div>
-              ) : null}
-              {draft.bccEmails ? (
-                <div>
-                  <dt className="text-muted-foreground">CCO</dt>
-                  <dd className="font-medium">{draft.bccEmails}</dd>
                 </div>
               ) : null}
               <div>

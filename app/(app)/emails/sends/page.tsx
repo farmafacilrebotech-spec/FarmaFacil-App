@@ -10,10 +10,7 @@ export default async function EmailSendsPage() {
   const listed = await listEmailSendsAction();
 
   return (
-    <EmailsShell
-      title="Enviados"
-      description="Historial outbox. Aceptado por Resend ≠ entregado."
-    >
+    <EmailsShell title="Enviados">
       {!listed.ok ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
           <p className="font-medium">{listed.error}</p>

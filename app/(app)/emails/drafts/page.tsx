@@ -17,10 +17,7 @@ export default async function EmailDraftsPage() {
   const listed = await listEmailDraftsAction();
 
   return (
-    <EmailsShell
-      title="Borradores"
-      description="Recuperar, editar o eliminar borradores (con adjuntos y CC/CCO)."
-    >
+    <EmailsShell title="Borradores">
       {!listed.ok ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
           <p className="font-medium">{listed.error}</p>

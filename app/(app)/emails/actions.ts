@@ -54,7 +54,7 @@ import {
   sanitizeEmailHtml,
 } from '@/lib/email/html-sanitize';
 import { normalizeRecipients } from '@/lib/email/recipients';
-import { appendSignatureIfNeeded } from '@/lib/email/signature';
+import { applySignaturePolicy } from '@/lib/email/signature';
 import { createClient } from '@/lib/supabase/server';
 
 export type EmailTemplateRow = {
@@ -431,6 +431,7 @@ export async function listEmailDraftsAction(): Promise<
   const { data, error } = await supabase
     .from('email_drafts')
     .select(DRAFT_SELECT)
+    .is('trashed_at', null)
     .order('updated_at', { ascending: false })
     .limit(100);
 
@@ -444,6 +445,76 @@ export async function listEmailDraftsAction(): Promise<
     ok: true,
     drafts: (data ?? []).map((row) => mapDraftRow(row as Record<string, unknown>)),
   };
+}
+
+export async function listTrashedEmailDraftsAction(): Promise<
+  ActionOk<{ drafts: EmailDraftRow[] }> | ActionErr
+> {
+  const access = await requireEmailsAccess('read');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('email_drafts')
+    .select(DRAFT_SELECT)
+    .not('trashed_at', 'is', null)
+    .order('trashed_at', { ascending: false })
+    .limit(100);
+  if (error) {
+    if (isMissingRelation(error)) return migrationPendingError();
+    return { ok: false, error: 'No se pudo cargar la papelera.' };
+  }
+  return {
+    ok: true,
+    drafts: (data ?? []).map((row) => mapDraftRow(row as Record<string, unknown>)),
+  };
+}
+
+export async function trashEmailDraftAction(
+  draftId: string
+): Promise<{ ok: true } | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  if (!draftId) return { ok: false, error: 'Borrador no indicado.' };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('email_drafts')
+    .update({ trashed_at: new Date().toISOString(), updated_by: access.profile.id })
+    .eq('id', draftId);
+  if (error) {
+    if (isMissingRelation(error) || /trashed_at/i.test(error.message || '')) {
+      // Fallback: eliminar si aún no hay columna
+      return deleteEmailDraftAction(draftId);
+    }
+    return { ok: false, error: 'No se pudo mover a la papelera.' };
+  }
+  revalidatePath('/emails/drafts');
+  revalidatePath('/emails/trash');
+  return { ok: true };
+}
+
+export async function restoreEmailDraftAction(
+  draftId: string
+): Promise<{ ok: true } | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('email_drafts')
+    .update({ trashed_at: null, updated_by: access.profile.id })
+    .eq('id', draftId);
+  if (error) {
+    if (isMissingRelation(error)) return migrationPendingError();
+    return { ok: false, error: 'No se pudo restaurar el borrador.' };
+  }
+  revalidatePath('/emails/drafts');
+  revalidatePath('/emails/trash');
+  return { ok: true };
 }
 
 export async function listEmailSendsAction(): Promise<
@@ -859,21 +930,26 @@ export async function deleteDraftAttachmentAction(
  * Requiere FF_CORPORATE_EMAIL_SEND_ENABLED + platform.emails.send + confirmación.
  * Dry-run por defecto (no llama a Resend).
  */
-export async function listEmailTemplatesAction(): Promise<
-  ActionOk<{ templates: EmailTemplateRow[] }> | ActionErr
-> {
+export async function listEmailTemplatesAction(opts?: {
+  /** Por defecto solo activas (desplegable compositor). */
+  includeArchived?: boolean;
+}): Promise<ActionOk<{ templates: EmailTemplateRow[] }> | ActionErr> {
   const access = await requireEmailsAccess('read');
   if (!access.ok) {
     return { ok: false, code: 'forbidden', error: 'No autorizado.' };
   }
   const supabase = createClient();
-  const { data, error } = await supabase
+  let q = supabase
     .from('email_templates')
     .select(
       'id, slug, name, category, subject, html_body, text_body, purpose, variables, include_signature, status, system_key, updated_at'
     )
-    .order('updated_at', { ascending: false })
+    .order('name', { ascending: true })
     .limit(200);
+  if (!opts?.includeArchived) {
+    q = q.eq('status', 'active');
+  }
+  const { data, error } = await q;
   if (error) {
     if (isMissingRelation(error)) return migrationPendingError();
     console.error('[emails] list templates', error.message);
@@ -909,8 +985,9 @@ export async function listEmailTemplatesAction(): Promise<
 }
 
 /**
- * Siembra copias editables de plantillas de sistema (idempotente por system_key).
- * Editar la copia no altera el builder de código.
+ * Siembra inicial ÚNICA de plantillas corporativas.
+ * No sobrescribe ni regenera si ya existe cualquier fila con ese system_key
+ * (activa o archivada). Conserva ediciones del usuario.
  */
 export async function ensureSystemEmailTemplatesAction(previewOrigin?: string | null): Promise<
   ActionOk<{ seeded: number }> | ActionErr
@@ -919,6 +996,7 @@ export async function ensureSystemEmailTemplatesAction(previewOrigin?: string | 
   if (!access.ok) {
     return { ok: false, code: 'forbidden', error: 'No autorizado.' };
   }
+  const { htmlHasEmbeddedSignature } = await import('@/lib/email/signature');
   const supabase = createClient();
   const systemSlugs = ['lanzadera', 'imprentas', 'demo', 'piloto'] as const;
   let seeded = 0;
@@ -927,20 +1005,39 @@ export async function ensureSystemEmailTemplatesAction(previewOrigin?: string | 
       .from('email_templates')
       .select('id')
       .eq('system_key', slug)
+      .limit(1)
       .maybeSingle();
     if (existing?.id) continue;
+    // También evitar regenerar si ya hay una plantilla con el mismo nombre activo
     const seed = buildComposeSeed(slug, { previewOrigin });
+    const { data: byName } = await supabase
+      .from('email_templates')
+      .select('id')
+      .ilike('name', seed.title)
+      .eq('status', 'active')
+      .limit(1)
+      .maybeSingle();
+    if (byName?.id) {
+      // Vincular system_key a la existente sin tocar contenido
+      await supabase
+        .from('email_templates')
+        .update({ system_key: slug, updated_by: access.profile.id })
+        .eq('id', byName.id)
+        .is('system_key', null);
+      continue;
+    }
     const editable = extractComposerEditableHtml(seed.htmlBody);
+    const hasSig = htmlHasEmbeddedSignature(editable);
     const { error } = await supabase.from('email_templates').insert({
       slug: `system-${slug}`,
       name: seed.title,
-      category: 'sistema',
+      category: 'corporativa',
       subject: seed.subject,
       html_body: editable,
       text_body: seed.textBody,
       purpose: defaultPurposeForTemplate(slug),
       variables: [],
-      include_signature: true,
+      include_signature: !hasSig,
       status: 'active',
       system_key: slug,
       created_by: access.profile.id,
@@ -948,7 +1045,6 @@ export async function ensureSystemEmailTemplatesAction(previewOrigin?: string | 
     });
     if (error) {
       if (isMissingRelation(error)) return migrationPendingError();
-      // unique conflict → ya existe
       if (!/duplicate|unique/i.test(error.message || '')) {
         console.error('[emails] seed template', slug, error.message);
       }
@@ -958,6 +1054,89 @@ export async function ensureSystemEmailTemplatesAction(previewOrigin?: string | 
   }
   if (seeded > 0) revalidatePath('/emails/templates');
   return { ok: true, seeded };
+}
+
+export async function updateEmailTemplateAction(input: {
+  templateId: string;
+  name?: string;
+  subject?: string;
+  htmlBody?: string;
+  textBody?: string;
+  includeSignature?: boolean;
+  purpose?: EmailPurpose;
+}): Promise<ActionOk<{ template: EmailTemplateRow }> | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const patch: Record<string, unknown> = {
+    updated_by: access.profile.id,
+  };
+  if (input.name !== undefined) {
+    const name = input.name.trim();
+    if (!name || name.length > 200) {
+      return { ok: false, error: 'Nombre no válido.' };
+    }
+    patch.name = name;
+  }
+  if (input.subject !== undefined) {
+    patch.subject = input.subject.trim().slice(0, 500);
+  }
+  if (input.htmlBody !== undefined) {
+    patch.html_body = sanitizeEmailHtml(input.htmlBody);
+    patch.text_body =
+      input.textBody || htmlToPlainText(String(patch.html_body));
+  }
+  if (input.includeSignature !== undefined) {
+    patch.include_signature = input.includeSignature;
+  }
+  if (input.purpose !== undefined) {
+    patch.purpose = input.purpose;
+  }
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('email_templates')
+    .update(patch)
+    .eq('id', input.templateId)
+    .select('id')
+    .maybeSingle();
+  if (error || !data) {
+    if (error && isMissingRelation(error)) return migrationPendingError();
+    return { ok: false, error: 'No se pudo actualizar la plantilla.' };
+  }
+  revalidatePath('/emails/templates');
+  revalidatePath('/emails/compose');
+  const listed = await listEmailTemplatesAction({ includeArchived: true });
+  if (!listed.ok) return listed;
+  const tpl = listed.templates.find((t) => t.id === input.templateId);
+  if (!tpl) return { ok: false, error: 'Plantilla no encontrada.' };
+  return { ok: true, template: tpl };
+}
+
+export async function deleteEmailTemplateAction(
+  templateId: string
+): Promise<{ ok: true } | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const supabase = createClient();
+  // Desvincular borradores, no borrarlos
+  await supabase
+    .from('email_drafts')
+    .update({ template_id: null })
+    .eq('template_id', templateId);
+  const { error } = await supabase
+    .from('email_templates')
+    .delete()
+    .eq('id', templateId);
+  if (error) {
+    if (isMissingRelation(error)) return migrationPendingError();
+    return { ok: false, error: 'No se pudo eliminar la plantilla.' };
+  }
+  revalidatePath('/emails/templates');
+  revalidatePath('/emails/compose');
+  return { ok: true };
 }
 
 export async function saveEmailAsTemplateAction(input: {
@@ -1108,6 +1287,7 @@ export async function sendCorporateEmailAction(input: {
   textBody?: string;
   templateSlug?: string;
   previewOrigin?: string | null;
+  includeSignature?: boolean;
 }): Promise<
   | ActionOk<{
       sendId: string;
@@ -1207,11 +1387,12 @@ export async function sendCorporateEmailAction(input: {
   }
   const sender = senderCheck.sender;
 
-  const withSig = appendSignatureIfNeeded({
+  const withSig = applySignaturePolicy({
     htmlBody: htmlBodyRaw,
     textBody: textBodyRaw,
     fromKey: sender.key,
     previewOrigin: input.previewOrigin,
+    includeSignature: input.includeSignature !== false,
   });
   const htmlBody = withSig.html;
   const textBody = withSig.text;
@@ -1246,6 +1427,19 @@ export async function sendCorporateEmailAction(input: {
     textBody,
   });
   if (!policy.ok) {
+    if (
+      purpose === 'commercial' &&
+      (policy.code === 'commercial_ack_required' ||
+        policy.code === 'legal_basis_required' ||
+        policy.code === 'opposition_not_checked')
+    ) {
+      return {
+        ok: false,
+        code: 'blocked',
+        error:
+          'Las comunicaciones comerciales están bloqueadas hasta registrar autorizaciones en Cartera de farmacias.',
+      };
+    }
     return { ok: false, code: 'blocked', error: policy.error };
   }
 
