@@ -49,7 +49,7 @@ export default async function EmailsHubPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <PageHeader
           title="Emails corporativos"
-          description="Plantillas FarmaFácil, redacción y borradores. Envío bloqueado hasta autorización expresa."
+          description="Plantillas, redacción 1:1, borradores e historial. Envío controlado por flag de servidor."
         />
         <div className="flex flex-wrap gap-2">
           <Button asChild>
@@ -64,15 +64,23 @@ export default async function EmailsHubPage() {
               Borradores
             </Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link href="/emails/sends" className="gap-1.5">
+              <Mail className="h-4 w-4" />
+              Historial
+            </Link>
+          </Button>
         </div>
       </div>
 
       <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
-        <p className="font-medium">Envío bloqueado en todas las plantillas</p>
+        <p className="font-medium">Fase B · envío 1:1 con confirmación</p>
         <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
-          Remitente: Pilar Reyes · FarmaFácil &lt;pilar@farmafacil.solutions&gt; ·
-          Reply-To: pilar@farmafacil.solutions. Persistencia de borradores
-          requiere migración 075 (no aplicada automáticamente).
+          Remitente corporativo: Pilar Reyes · FarmaFácil
+          &lt;pilar@farmafacil.solutions&gt; · Reply-To:
+          pilar@farmafacil.solutions. Por defecto el envío está desactivado
+          (`FF_CORPORATE_EMAIL_SEND_ENABLED`); con flag ON el modo seguro es
+          dry-run (outbox sin Resend) hasta autorizar envío real.
         </p>
       </div>
 

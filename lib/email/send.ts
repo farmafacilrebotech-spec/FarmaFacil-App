@@ -8,6 +8,13 @@ export type SendEmailResult =
   | { ok: true; id?: string }
   | { ok: false; error: string; code?: 'not_configured' | 'send_failed' };
 
+export type ResendAttachment = {
+  /** Nombre de archivo visible. */
+  filename: string;
+  /** Contenido en base64 (Resend). */
+  content: string;
+};
+
 export async function sendTransactionalEmail(input: {
   to: string;
   subject: string;
@@ -17,6 +24,8 @@ export async function sendTransactionalEmail(input: {
   from?: string;
   /** Reply-To opcional. */
   replyTo?: string;
+  /** Adjuntos opcionales (PDF/imagen/DOCX ya validados). */
+  attachments?: ResendAttachment[];
 }): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = input.from?.trim() || process.env.EMAIL_FROM?.trim() || '';
@@ -54,6 +63,12 @@ export async function sendTransactionalEmail(input: {
     const replyTo = input.replyTo?.trim();
     if (replyTo) {
       payload.reply_to = replyTo;
+    }
+    if (input.attachments && input.attachments.length > 0) {
+      payload.attachments = input.attachments.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+      }));
     }
 
     const res = await fetch('https://api.resend.com/emails', {

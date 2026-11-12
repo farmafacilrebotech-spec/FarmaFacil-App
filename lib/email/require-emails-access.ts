@@ -16,13 +16,14 @@ export type EmailsAccessDenied = {
   message?: string;
 };
 
+export type EmailsAccessMode = 'read' | 'write' | 'send';
+
 /**
- * Acceso al hub de emails: solo PLATFORM_SUPERADMIN.
- * Tras 075, SuperAdmin tiene platform.emails.*; Support nunca.
- * mode write/read se documenta para Fase B (send) — hoy el gate es el rol SA.
+ * Acceso hub emails: SuperAdmin + permiso platform.emails.*.
+ * mode=send exige platform.emails.send de forma estricta.
  */
 export async function requireEmailsAccess(
-  mode: 'read' | 'write' = 'read'
+  mode: EmailsAccessMode = 'read'
 ): Promise<EmailsAccessOk | EmailsAccessDenied> {
   const { profile, authenticated, error } = await getCurrentProfile();
   if (!authenticated) {
@@ -37,17 +38,29 @@ export async function requireEmailsAccess(
     return { ok: false, reason: 'forbidden' };
   }
 
-  // Defensa en profundidad si 075 ya está aplicada: exigir permiso concreto.
-  // Si el permiso no existe aún (false sin error de RPC tipico), SuperAdmin sigue.
   const permissionKey =
-    mode === 'write' ? 'platform.emails.write' : 'platform.emails.read';
+    mode === 'send'
+      ? 'platform.emails.send'
+      : mode === 'write'
+        ? 'platform.emails.write'
+        : 'platform.emails.read';
+
   const perm = await hasPlatformPermission(permissionKey);
-  if (perm.error) {
-    // fallo de infra → no bloquear SuperAdmin en Fase A
+  if (mode === 'send') {
+    if (perm.error || !perm.ok) {
+      return {
+        ok: false,
+        reason: 'forbidden',
+        message: 'Falta permiso platform.emails.send.',
+      };
+    }
     return { ok: true, profile };
   }
-  // Si el permiso existe en BD y el grant está, ok=true; si falta 075, ok=false
-  // pero el rol SA ya autorizó arriba. No denegamos por false: evita bloqueo pre-075.
+
+  if (perm.error) {
+    // fallo infra en read/write: SuperAdmin no bloqueado
+    return { ok: true, profile };
+  }
   void perm;
   return { ok: true, profile };
 }

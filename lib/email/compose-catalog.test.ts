@@ -65,6 +65,6 @@ describe('draft-validation', () => {
     assert.equal(CORPORATE_EMAIL_SEND_ENABLED, false);
     const blocked = assertCorporateSendBlocked();
     assert.equal(blocked.ok, false);
-    assert.match(blocked.error, /bloqueado/i);
+    assert.match(blocked.error, /desactivado|bloqueado|FF_CORPORATE_EMAIL_SEND_ENABLED/i);
   });
 });

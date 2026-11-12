@@ -4,7 +4,11 @@ import { headers } from 'next/headers';
 import { EmailComposer } from '@/components/email/email-composer';
 import { PageHeader } from '@/components/shared/page-header';
 import { getEmailDraftAction } from '@/app/(app)/emails/actions';
-import { buildComposeSeed, type EmailTemplateSlug } from '@/lib/email/compose-catalog';
+import {
+  buildComposeSeed,
+  type EmailTemplateSlug,
+} from '@/lib/email/compose-catalog';
+import { defaultPurposeForTemplate } from '@/lib/email/corporate-send-policy';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
 import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
@@ -29,9 +33,23 @@ export default async function EmailComposePage({
   const draftId = searchParams?.draft?.trim() || null;
   const templateParam = searchParams?.template?.trim() || 'blank';
 
-  let initial = {
-    id: null as string | null,
-    templateSlug: 'blank' as EmailTemplateSlug,
+  let initial: {
+    id: string | null;
+    templateSlug: EmailTemplateSlug;
+    subject: string;
+    htmlBody: string;
+    textBody: string;
+    recipientEmail: string;
+    recipientName: string;
+    from: string;
+    replyTo: string;
+    purpose: 'operational' | 'commercial';
+    legalBasis: '' | 'consent' | 'legitimate_interest_documented' | 'contractual';
+    commercialAuthAck: boolean;
+    oppositionChecked: boolean;
+  } = {
+    id: null,
+    templateSlug: 'blank',
     subject: '',
     htmlBody: '',
     textBody: '',
@@ -39,6 +57,10 @@ export default async function EmailComposePage({
     recipientName: '',
     from: '',
     replyTo: '',
+    purpose: 'operational',
+    legalBasis: '',
+    commercialAuthAck: false,
+    oppositionChecked: false,
   };
 
   if (draftId) {
@@ -57,9 +79,11 @@ export default async function EmailComposePage({
         recipientName: loaded.draft.recipientName ?? '',
         from: seed.from,
         replyTo: seed.replyTo,
+        purpose: loaded.draft.purpose,
+        legalBasis: loaded.draft.legalBasis ?? '',
+        commercialAuthAck: loaded.draft.commercialAuthAck,
+        oppositionChecked: loaded.draft.oppositionChecked,
       };
-    } else if (loaded.code !== 'migration_pending') {
-      // draft missing → blank with message via empty state
     }
   } else {
     const slug = (
@@ -78,6 +102,10 @@ export default async function EmailComposePage({
       recipientName: '',
       from: seed.from,
       replyTo: seed.replyTo,
+      purpose: defaultPurposeForTemplate(slug),
+      legalBasis: '',
+      commercialAuthAck: false,
+      oppositionChecked: false,
     };
   }
 
@@ -93,7 +121,7 @@ export default async function EmailComposePage({
       </div>
       <PageHeader
         title={initial.id ? 'Editar borrador' : 'Nuevo email'}
-        description="Redacción y vista previa. Envío bloqueado hasta autorización."
+        description="Redacción, vista previa y envío 1:1 (flag servidor; dry-run por defecto)."
       />
       <EmailComposer initial={initial} />
     </div>

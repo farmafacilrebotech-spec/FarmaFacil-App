@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import {
   deleteEmailDraftAction,
   getComposeSeedAction,
+  getCorporateEmailSendStatusAction,
   saveEmailDraftAction,
   sendCorporateEmailAction,
 } from '@/app/(app)/emails/actions';
@@ -15,6 +16,11 @@ import {
   EMAIL_TEMPLATE_OPTIONS,
   type EmailTemplateSlug,
 } from '@/lib/email/compose-catalog';
+import {
+  defaultPurposeForTemplate,
+  type EmailLegalBasis,
+  type EmailPurpose,
+} from '@/lib/email/corporate-send-policy';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +36,10 @@ type ComposerDraft = {
   recipientName: string;
   from: string;
   replyTo: string;
+  purpose: EmailPurpose;
+  legalBasis: EmailLegalBasis | '';
+  commercialAuthAck: boolean;
+  oppositionChecked: boolean;
 };
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
@@ -46,6 +56,29 @@ export function EmailComposer({
   const [previewTab, setPreviewTab] = React.useState<'html' | 'text'>('html');
   const [busyTemplate, setBusyTemplate] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
+  const [sending, setSending] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [sendStatus, setSendStatus] = React.useState<{
+    sendEnabled: boolean;
+    dryRun: boolean;
+    resendConfigured: boolean;
+    fromConfigured: boolean;
+    missing: string[];
+  } | null>(null);
+
+  React.useEffect(() => {
+    void getCorporateEmailSendStatusAction().then((r) => {
+      if (r.ok) {
+        setSendStatus({
+          sendEnabled: r.sendEnabled,
+          dryRun: r.dryRun,
+          resendConfigured: r.resendConfigured,
+          fromConfigured: r.fromConfigured,
+          missing: r.missing,
+        });
+      }
+    });
+  }, []);
 
   function patch(partial: Partial<ComposerDraft>) {
     setDraft((d) => ({ ...d, ...partial }));
@@ -77,6 +110,7 @@ export function EmailComposer({
       textBody: result.seed.textBody,
       from: result.seed.from,
       replyTo: result.seed.replyTo,
+      purpose: defaultPurposeForTemplate(slug),
     });
   }
 
@@ -91,6 +125,10 @@ export function EmailComposer({
       textBody: draft.textBody,
       recipientEmail: draft.recipientEmail,
       recipientName: draft.recipientName || null,
+      purpose: draft.purpose,
+      legalBasis: draft.legalBasis || null,
+      commercialAuthAck: draft.commercialAuthAck,
+      oppositionChecked: draft.oppositionChecked,
     });
     if (!result.ok) {
       setSaveState('error');
@@ -107,6 +145,10 @@ export function EmailComposer({
       recipientEmail: result.draft.recipientEmail,
       recipientName: result.draft.recipientName ?? '',
       templateSlug: result.draft.templateSlug,
+      purpose: result.draft.purpose,
+      legalBasis: result.draft.legalBasis ?? '',
+      commercialAuthAck: result.draft.commercialAuthAck,
+      oppositionChecked: result.draft.oppositionChecked,
     }));
     setSaveState('saved');
     toast.success('Borrador guardado.');
@@ -131,9 +173,35 @@ export function EmailComposer({
     router.refresh();
   }
 
-  async function onSendBlocked() {
-    const result = await sendCorporateEmailAction({ draftId: draft.id });
-    toast.error(result.error);
+  async function onConfirmSend() {
+    setSending(true);
+    const result = await sendCorporateEmailAction({
+      draftId: draft.id,
+      explicitConfirm: true,
+      purpose: draft.purpose,
+      legalBasis: draft.legalBasis || null,
+      commercialAuthAck: draft.commercialAuthAck,
+      oppositionChecked: draft.oppositionChecked,
+      recipientEmail: draft.recipientEmail,
+      recipientName: draft.recipientName || null,
+      subject: draft.subject,
+      htmlBody: draft.htmlBody,
+      textBody: draft.textBody,
+      templateSlug: draft.templateSlug,
+    });
+    setSending(false);
+    setConfirmOpen(false);
+    if (!result.ok) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(
+      result.dryRun
+        ? `Dry-run OK (outbox ${result.sendId.slice(0, 8)}…). No se llamó a Resend.`
+        : `Enviado (${result.sendId.slice(0, 8)}…).`
+    );
+    router.push('/emails/sends');
+    router.refresh();
   }
 
   const statusLabel =
@@ -149,13 +217,24 @@ export function EmailComposer({
               ? 'Borrador cargado'
               : 'Nuevo borrador';
 
+  const sendBanner = !sendStatus
+    ? 'Comprobando configuración de envío…'
+    : !sendStatus.sendEnabled
+      ? 'Envío desactivado en servidor (FF_CORPORATE_EMAIL_SEND_ENABLED). Puedes guardar borradores.'
+      : sendStatus.dryRun
+        ? 'Envío en modo dry-run: registra outbox sin llamar a Resend.'
+        : 'Envío real habilitado (DRY_RUN=0). Confirma antes de enviar.';
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
         <div>
-          <p className="font-medium">Envío bloqueado · Fase A</p>
+          <p className="font-medium">Emails corporativos · Fase B (1:1)</p>
           <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
             Remitente: {draft.from} · Reply-To: {draft.replyTo}
+          </p>
+          <p className="mt-1 text-amber-900/90 dark:text-amber-100/90">
+            {sendBanner}
           </p>
         </div>
         <p className="text-xs font-medium uppercase tracking-wide">{statusLabel}</p>
@@ -187,6 +266,74 @@ export function EmailComposer({
               ))}
             </select>
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="purpose">Tipo de comunicación</Label>
+            <select
+              id="purpose"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={draft.purpose}
+              onChange={(e) =>
+                patch({ purpose: e.target.value as EmailPurpose })
+              }
+            >
+              <option value="operational">Operativa (servicio)</option>
+              <option value="commercial">Comercial (marketing/prospección)</option>
+            </select>
+          </div>
+
+          {draft.purpose === 'commercial' ? (
+            <div className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+              <div className="space-y-2">
+                <Label htmlFor="legal">Base jurídica</Label>
+                <select
+                  id="legal"
+                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={draft.legalBasis}
+                  onChange={(e) =>
+                    patch({
+                      legalBasis: e.target.value as EmailLegalBasis | '',
+                    })
+                  }
+                >
+                  <option value="">Seleccionar…</option>
+                  <option value="consent">Consentimiento</option>
+                  <option value="legitimate_interest_documented">
+                    Interés legítimo documentado
+                  </option>
+                  <option value="contractual">Relación contractual</option>
+                </select>
+              </div>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={draft.commercialAuthAck}
+                  onChange={(e) =>
+                    patch({ commercialAuthAck: e.target.checked })
+                  }
+                />
+                <span>
+                  Confirmo autorización/base legal válida para este envío
+                  comercial individual.
+                </span>
+              </label>
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={draft.oppositionChecked}
+                  onChange={(e) =>
+                    patch({ oppositionChecked: e.target.checked })
+                  }
+                />
+                <span>
+                  He comprobado oposición/bajas (lista de exclusión) para este
+                  destinatario.
+                </span>
+              </label>
+            </div>
+          ) : null}
 
           <div className="space-y-2">
             <Label htmlFor="to">Destinatario (individual)</Label>
@@ -239,12 +386,31 @@ export function EmailComposer({
             />
           </div>
 
+          <p className="text-xs text-muted-foreground">
+            Adjuntos: preparados en Fase B (PDF/PNG/JPG/DOCX ≤5&nbsp;MB, máx. 5).
+            La UI de subida se activará tras validar Storage en staging; el
+            envío actual es sin adjuntos.
+          </p>
+
           <div className="flex flex-wrap gap-2 pt-2">
-            <Button type="button" onClick={() => void onSave()} disabled={saveState === 'saving'}>
+            <Button
+              type="button"
+              onClick={() => void onSave()}
+              disabled={saveState === 'saving'}
+            >
               {saveState === 'saving' ? 'Guardando…' : 'Guardar borrador'}
             </Button>
-            <Button type="button" variant="outline" onClick={() => void onSendBlocked()}>
-              Enviar (bloqueado)
+            <Button
+              type="button"
+              variant="default"
+              disabled={!sendStatus?.sendEnabled || sending}
+              onClick={() => setConfirmOpen(true)}
+            >
+              {sendStatus?.sendEnabled
+                ? sendStatus.dryRun
+                  ? 'Enviar (dry-run)…'
+                  : 'Enviar…'
+                : 'Enviar (desactivado)'}
             </Button>
             {draft.id ? (
               <Button
@@ -258,6 +424,9 @@ export function EmailComposer({
             ) : null}
             <Button type="button" variant="ghost" asChild>
               <Link href="/emails/drafts">Ver borradores</Link>
+            </Button>
+            <Button type="button" variant="ghost" asChild>
+              <Link href="/emails/sends">Historial</Link>
             </Button>
           </div>
         </div>
@@ -296,6 +465,12 @@ export function EmailComposer({
                 {draft.recipientName ? ` (${draft.recipientName})` : ''}
               </dd>
             </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Tipo</dt>
+              <dd className="font-medium">
+                {draft.purpose === 'commercial' ? 'Comercial' : 'Operativa'}
+              </dd>
+            </div>
           </dl>
           {previewTab === 'html' ? (
             <iframe
@@ -311,6 +486,53 @@ export function EmailComposer({
           )}
         </div>
       </div>
+
+      {confirmOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-lg space-y-4 rounded-xl border border-border bg-card p-5 shadow-soft">
+            <h2 className="text-lg font-semibold">Confirmar envío individual</h2>
+            <p className="text-sm text-muted-foreground">
+              Revisa la vista previa. Este flujo es 1:1 (sin envíos masivos).
+              {sendStatus?.dryRun
+                ? ' Se registrará en outbox en dry-run, sin Resend.'
+                : ' Se enviará de verdad vía Resend.'}
+            </p>
+            <dl className="space-y-1 text-sm">
+              <div>
+                <dt className="text-muted-foreground">Para</dt>
+                <dd className="font-medium">{draft.recipientEmail || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Asunto</dt>
+                <dd className="font-medium">{draft.subject || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground">Tipo</dt>
+                <dd className="font-medium">
+                  {draft.purpose === 'commercial' ? 'Comercial' : 'Operativa'}
+                </dd>
+              </div>
+            </dl>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={sending}
+                onClick={() => setConfirmOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                disabled={sending}
+                onClick={() => void onConfirmSend()}
+              >
+                {sending ? 'Enviando…' : 'Confirmar envío'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
