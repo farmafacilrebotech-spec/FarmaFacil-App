@@ -2,7 +2,8 @@
 
 **Entorno:** staging preview `http://127.0.0.1:3023` (worktree `pharmacy-clients-qr`)  
 **Fecha:** 2026-11-12  
-**Estado global:** `prueba_tecnica_pendiente_browser` / sin SQL prod / sin merge / sin deploy
+**Commit:** `7c84e56` (`fix/pr23-pharmacy-list-logos`)  
+**Estado global:** `prueba_tecnica_ok` (código) / `pendiente_browser` autenticado / sin SQL prod / sin push / sin merge / sin deploy
 
 ## Incidencia
 
