@@ -1,20 +1,26 @@
 import Link from 'next/link';
 
-import { listEmailDraftsAction } from '@/app/(app)/emails/actions';
+import {
+  listEmailDraftsAction,
+  listEmailTemplatesAction,
+} from '@/app/(app)/emails/actions';
 import { DraftsMailbox } from '@/components/email/drafts-mailbox';
 import { EmailsShell } from '@/components/email/emails-shell';
-import { EMAIL_TEMPLATE_OPTIONS } from '@/lib/email/compose-catalog';
+import { buildDraftTemplateTitleMap } from '@/lib/email/draft-template-titles';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 
 export const dynamic = 'force-dynamic';
 
-function templateTitle(slug: string): string {
-  return EMAIL_TEMPLATE_OPTIONS.find((t) => t.slug === slug)?.title ?? slug;
-}
-
 export default async function EmailDraftsPage() {
   await assertEmailsPageAccess();
-  const listed = await listEmailDraftsAction();
+  const [listed, templatesListed] = await Promise.all([
+    listEmailDraftsAction(),
+    listEmailTemplatesAction({ includeArchived: true }),
+  ]);
+
+  const templates = templatesListed.ok ? templatesListed.templates : [];
+  const drafts = listed.ok ? listed.drafts : [];
+  const templateTitles = buildDraftTemplateTitleMap(drafts, templates);
 
   return (
     <EmailsShell title="Borradores">
@@ -31,10 +37,7 @@ export default async function EmailDraftsPage() {
           .
         </p>
       ) : (
-        <DraftsMailbox
-          drafts={listed.drafts}
-          templateTitle={templateTitle}
-        />
+        <DraftsMailbox drafts={listed.drafts} templateTitles={templateTitles} />
       )}
     </EmailsShell>
   );

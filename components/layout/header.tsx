@@ -69,7 +69,9 @@ export function Header({ onMobileMenu, user, pharmacies }: HeaderProps) {
       />
 
       <div className="hidden min-w-0 flex-1 overflow-hidden lg:block">
-        <Breadcrumbs className="min-w-0" />
+        <React.Suspense fallback={null}>
+          <Breadcrumbs className="min-w-0" />
+        </React.Suspense>
       </div>
 
       <div className="relative ml-auto hidden min-w-0 max-w-[220px] flex-1 md:block lg:max-w-xs xl:max-w-sm">

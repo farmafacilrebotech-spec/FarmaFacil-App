@@ -27,6 +27,7 @@ import {
   saveEmailDraftAction,
   sendCorporateEmailAction,
   trashEmailDraftAction,
+  updateEmailTemplateAction,
   uploadDraftAttachmentAction,
   type EmailDraftAttachmentRow,
   type EmailTemplateRow,
@@ -51,6 +52,7 @@ type ComposerDraft = {
   id: string | null;
   templateSlug: string;
   templateId: string | null;
+  templateName?: string;
   subject: string;
   htmlBody: string;
   textBody: string;
@@ -63,21 +65,31 @@ type ComposerDraft = {
   replyTo: string;
   /** Metadato interno (no se muestra en UI). */
   purpose: 'operational' | 'commercial';
+  includeSignature?: boolean;
 };
+
+type ComposerMode = 'compose' | 'edit-template' | 'new-template';
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
 export function EmailComposer({
   initial,
   initialTemplates = [],
+  mode = 'compose',
 }: {
   initial: ComposerDraft;
   initialTemplates?: EmailTemplateRow[];
+  mode?: ComposerMode;
 }) {
   const router = useRouter();
+  const isTemplateEditor =
+    mode === 'edit-template' || mode === 'new-template';
   const editorRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const [draft, setDraft] = React.useState<ComposerDraft>(initial);
+  const [templateName, setTemplateName] = React.useState(
+    initial.templateName ?? ''
+  );
   const [attachments, setAttachments] = React.useState<
     EmailDraftAttachmentRow[]
   >([]);
@@ -96,7 +108,7 @@ export function EmailComposer({
   const [saveAsTplOpen, setSaveAsTplOpen] = React.useState(false);
   const [tplName, setTplName] = React.useState('');
   const [includeSignature, setIncludeSignature] = React.useState(
-    !htmlHasEmbeddedSignature(initial.htmlBody)
+    initial.includeSignature ?? !htmlHasEmbeddedSignature(initial.htmlBody)
   );
   const [sendStatus, setSendStatus] = React.useState<{
     sendEnabled: boolean;
@@ -367,6 +379,67 @@ export function EmailComposer({
     });
   }
 
+  async function onSaveTemplateEditor() {
+    const name = templateName.trim();
+    if (!name) {
+      toast.error('Indica el nombre interno de la plantilla.');
+      return;
+    }
+    setSaveState('saving');
+    const body = stripManagedSignature(
+      sanitizeEmailHtml(editorRef.current?.innerHTML || draft.htmlBody)
+    );
+    const hasEmbedded = htmlHasEmbeddedSignature(body);
+    const persistIncludeSig = includeSignature && !hasEmbedded;
+
+    if (mode === 'edit-template' && draft.templateId) {
+      const result = await updateEmailTemplateAction({
+        templateId: draft.templateId,
+        name,
+        subject: draft.subject,
+        htmlBody: body,
+        textBody: htmlToPlainText(body),
+        includeSignature: persistIncludeSig,
+        purpose: draft.purpose,
+      });
+      if (!result.ok) {
+        setSaveState('error');
+        toast.error(result.error);
+        return;
+      }
+      setSaveState('saved');
+      toast.success('Cambios guardados en la plantilla.');
+      router.push('/emails/templates');
+      router.refresh();
+      return;
+    }
+
+    const result = await saveEmailAsTemplateAction({
+      name,
+      subject: draft.subject,
+      htmlBody: body,
+      textBody: htmlToPlainText(body),
+      purpose: draft.purpose,
+      category: 'personalizada',
+    });
+    if (!result.ok) {
+      setSaveState('error');
+      toast.error(result.error);
+      return;
+    }
+    // Persistir preferencia de firma en la nueva plantilla
+    if (result.template.includeSignature !== persistIncludeSig) {
+      await updateEmailTemplateAction({
+        templateId: result.template.id,
+        includeSignature: persistIncludeSig,
+      });
+    }
+    setSaveState('saved');
+    toast.success('Plantilla creada.');
+    router.push('/emails/templates');
+    router.refresh();
+  }
+
   async function onFilesSelected(files: FileList | null) {
     if (!files?.length) return;
     setUploading(true);
@@ -452,25 +525,50 @@ export function EmailComposer({
   return (
     <div className="mx-auto w-full max-w-3xl space-y-3">
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
-        <div className="border-b border-border px-4 py-3">
-          <Label htmlFor="tpl" className="text-xs text-muted-foreground">
-            Plantilla
-          </Label>
-          <select
-            id="tpl"
-            className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-            disabled={busyTemplate}
-            value={draft.templateId || ''}
-            onChange={(e) => void applyTemplate(e.target.value)}
-          >
-            <option value="">Sin plantilla</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        {isTemplateEditor ? (
+          <div className="space-y-3 border-b border-border px-4 py-3">
+            <div>
+              <Label htmlFor="tpl-name" className="text-xs text-muted-foreground">
+                Nombre interno
+              </Label>
+              <Input
+                id="tpl-name"
+                className="mt-1 h-9"
+                value={templateName}
+                onChange={(e) => {
+                  setTemplateName(e.target.value);
+                  setSaveState('dirty');
+                }}
+                placeholder="Nombre de la plantilla"
+              />
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {mode === 'edit-template'
+                ? 'Estás editando la plantilla original. Guardar cambios conserva el mismo ID.'
+                : 'Se creará una plantilla nueva independiente.'}
+            </p>
+          </div>
+        ) : (
+          <div className="border-b border-border px-4 py-3">
+            <Label htmlFor="tpl" className="text-xs text-muted-foreground">
+              Plantilla
+            </Label>
+            <select
+              id="tpl"
+              className="mt-1 flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+              disabled={busyTemplate}
+              value={draft.templateId || ''}
+              onChange={(e) => void applyTemplate(e.target.value)}
+            >
+              <option value="">Sin plantilla</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="divide-y divide-border">
           <FieldRow label="De">
@@ -496,63 +594,67 @@ export function EmailComposer({
             </select>
           </FieldRow>
 
-          <FieldRow
-            label="Para"
-            trailing={
-              <div className="flex gap-2 text-xs">
-                {!showCc ? (
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowCc(true)}
-                  >
-                    CC
-                  </button>
-                ) : null}
-                {!showBcc ? (
-                  <button
-                    type="button"
-                    className="text-muted-foreground hover:text-foreground"
-                    onClick={() => setShowBcc(true)}
-                  >
-                    CCO
-                  </button>
-                ) : null}
-              </div>
-            }
-          >
-            <Input
-              className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-              type="email"
-              placeholder="destinatario@ejemplo.com"
-              value={draft.recipientEmail}
-              onChange={(e) => patch({ recipientEmail: e.target.value })}
-              autoComplete="off"
-            />
-          </FieldRow>
+          {!isTemplateEditor ? (
+            <>
+              <FieldRow
+                label="Para"
+                trailing={
+                  <div className="flex gap-2 text-xs">
+                    {!showCc ? (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => setShowCc(true)}
+                      >
+                        CC
+                      </button>
+                    ) : null}
+                    {!showBcc ? (
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground"
+                        onClick={() => setShowBcc(true)}
+                      >
+                        CCO
+                      </button>
+                    ) : null}
+                  </div>
+                }
+              >
+                <Input
+                  className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                  type="email"
+                  placeholder="destinatario@ejemplo.com"
+                  value={draft.recipientEmail}
+                  onChange={(e) => patch({ recipientEmail: e.target.value })}
+                  autoComplete="off"
+                />
+              </FieldRow>
 
-          {showCc ? (
-            <FieldRow label="CC">
-              <Input
-                className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                placeholder="cc@… (máx. 2)"
-                value={draft.ccEmails}
-                onChange={(e) => patch({ ccEmails: e.target.value })}
-                autoComplete="off"
-              />
-            </FieldRow>
-          ) : null}
+              {showCc ? (
+                <FieldRow label="CC">
+                  <Input
+                    className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                    placeholder="cc@… (máx. 2)"
+                    value={draft.ccEmails}
+                    onChange={(e) => patch({ ccEmails: e.target.value })}
+                    autoComplete="off"
+                  />
+                </FieldRow>
+              ) : null}
 
-          {showBcc ? (
-            <FieldRow label="CCO">
-              <Input
-                className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
-                placeholder="cco@… (máx. 2)"
-                value={draft.bccEmails}
-                onChange={(e) => patch({ bccEmails: e.target.value })}
-                autoComplete="off"
-              />
-            </FieldRow>
+              {showBcc ? (
+                <FieldRow label="CCO">
+                  <Input
+                    className="h-9 border-0 bg-transparent px-0 shadow-none focus-visible:ring-0"
+                    placeholder="cco@… (máx. 2)"
+                    value={draft.bccEmails}
+                    onChange={(e) => patch({ bccEmails: e.target.value })}
+                    autoComplete="off"
+                  />
+                </FieldRow>
+              ) : null}
+            </>
           ) : null}
 
           <FieldRow label="Asunto">
@@ -635,76 +737,107 @@ export function EmailComposer({
           suppressContentEditableWarning
         />
 
-        <div className="space-y-2 border-t border-border px-4 py-3">
-          <input
-            ref={fileInputRef}
-            type="file"
-            className="hidden"
-            multiple
-            accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*"
-            onChange={(e) => void onFilesSelected(e.target.files)}
-          />
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Paperclip className="mr-1.5 h-3.5 w-3.5" />
-              {uploading ? 'Subiendo…' : 'Adjuntar'}
-            </Button>
-            {attachments.map((a) => (
-              <span
-                key={a.id}
-                className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
+        {!isTemplateEditor ? (
+          <div className="space-y-2 border-t border-border px-4 py-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx,image/*"
+              onChange={(e) => void onFilesSelected(e.target.files)}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={uploading}
+                onClick={() => fileInputRef.current?.click()}
               >
-                {a.fileName}
-                <button
-                  type="button"
-                  className="text-destructive"
-                  onClick={() =>
-                    void deleteDraftAttachmentAction(a.id).then((r) => {
-                      if (r.ok) {
-                        setAttachments((p) => p.filter((x) => x.id !== a.id));
-                      } else toast.error(r.error);
-                    })
-                  }
+                <Paperclip className="mr-1.5 h-3.5 w-3.5" />
+                {uploading ? 'Subiendo…' : 'Adjuntar'}
+              </Button>
+              {attachments.map((a) => (
+                <span
+                  key={a.id}
+                  className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs"
                 >
-                  ×
-                </button>
-              </span>
-            ))}
+                  {a.fileName}
+                  <button
+                    type="button"
+                    className="text-destructive"
+                    onClick={() =>
+                      void deleteDraftAttachmentAction(a.id).then((r) => {
+                        if (r.ok) {
+                          setAttachments((p) =>
+                            p.filter((x) => x.id !== a.id)
+                          );
+                        } else toast.error(r.error);
+                      })
+                    }
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/20 px-4 py-3">
-          <Button
-            type="button"
-            disabled={!sendStatus?.sendEnabled || sending}
-            onClick={() => setConfirmOpen(true)}
-          >
-            Enviar
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => void onSave()}
-            disabled={saveState === 'saving'}
-          >
-            Guardar borrador
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setSaveAsTplOpen(true)}
-          >
-            Guardar como plantilla
-          </Button>
-          <Button type="button" variant="ghost" onClick={() => void onDiscard()}>
-            Descartar
-          </Button>
+          {isTemplateEditor ? (
+            <>
+              <Button
+                type="button"
+                disabled={saveState === 'saving'}
+                onClick={() => void onSaveTemplateEditor()}
+              >
+                {mode === 'edit-template'
+                  ? 'Guardar cambios'
+                  : 'Crear plantilla'}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => router.push('/emails/templates')}
+              >
+                Cancelar
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                type="button"
+                disabled={!sendStatus?.sendEnabled || sending}
+                onClick={() => setConfirmOpen(true)}
+              >
+                Enviar
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void onSave()}
+                disabled={saveState === 'saving'}
+              >
+                Guardar borrador
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setSaveAsTplOpen(true)}
+              >
+                Guardar como plantilla
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => void onDiscard()}
+              >
+                Descartar
+              </Button>
+            </>
+          )}
           <span className="ml-auto text-xs text-muted-foreground">
             {saveState === 'saving'
               ? 'Guardando…'

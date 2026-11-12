@@ -22,16 +22,6 @@ const NAV = [
   { href: '/emails/trash', label: 'Papelera', icon: Trash2 },
 ] as const;
 
-const CRUMBS: Record<string, string> = {
-  '/emails': 'Emails',
-  '/emails/inbox': 'Recibidos',
-  '/emails/sends': 'Enviados',
-  '/emails/drafts': 'Borradores',
-  '/emails/templates': 'Plantillas',
-  '/emails/trash': 'Papelera',
-  '/emails/compose': 'Nuevo email',
-};
-
 export function EmailsShell({
   children,
   title,
@@ -44,9 +34,6 @@ export function EmailsShell({
   searchSlot?: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const crumb =
-    CRUMBS[pathname] ||
-    (pathname.startsWith('/emails/compose') ? 'Nuevo email' : title);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl min-w-0 flex-col gap-4 lg:flex-row lg:gap-6">
@@ -86,13 +73,6 @@ export function EmailsShell({
       <div className="min-w-0 flex-1 space-y-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <nav className="mb-1 text-xs text-muted-foreground">
-              <Link href="/emails/inbox" className="hover:text-foreground">
-                Emails
-              </Link>
-              <span className="mx-1.5">›</span>
-              <span className="text-foreground">{crumb}</span>
-            </nav>
             <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
             {description ? (
               <p className="mt-1 text-sm text-muted-foreground">{description}</p>

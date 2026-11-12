@@ -14,7 +14,12 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-type SearchParams = { draft?: string; templateId?: string };
+type SearchParams = {
+  draft?: string;
+  templateId?: string;
+  editTemplate?: string;
+  newTemplate?: string;
+};
 
 export default async function EmailComposePage({
   searchParams,
@@ -25,14 +30,24 @@ export default async function EmailComposePage({
 
   const draftId = searchParams?.draft?.trim() || null;
   const templateIdParam = searchParams?.templateId?.trim() || null;
+  const editTemplateId = searchParams?.editTemplate?.trim() || null;
+  const newTemplate = searchParams?.newTemplate === '1';
   const defaultSender = getCorporateSender(defaultCorporateSenderKey());
-  const listedTemplates = await listEmailTemplatesAction();
-  const activeTemplates = listedTemplates.ok ? listedTemplates.templates : [];
+  const listedTemplates = await listEmailTemplatesAction({
+    includeArchived: Boolean(editTemplateId),
+  });
+  const allTemplates = listedTemplates.ok ? listedTemplates.templates : [];
+  const activeTemplates = allTemplates.filter((t) => t.status === 'active');
+
+  let mode: 'compose' | 'edit-template' | 'new-template' = 'compose';
+  if (editTemplateId) mode = 'edit-template';
+  else if (newTemplate) mode = 'new-template';
 
   let initial = {
     id: null as string | null,
     templateSlug: 'blank',
     templateId: null as string | null,
+    templateName: '',
     subject: '',
     htmlBody: '<p><br/></p>',
     textBody: '',
@@ -44,20 +59,50 @@ export default async function EmailComposePage({
     from: defaultSender.fromHeader,
     replyTo: defaultSender.replyTo,
     purpose: 'operational' as 'operational' | 'commercial',
+    includeSignature: true,
   };
 
-  if (draftId) {
+  let title = 'Nuevo email';
+
+  if (mode === 'edit-template' && editTemplateId) {
+    const tpl = allTemplates.find((t) => t.id === editTemplateId);
+    if (tpl) {
+      const body = extractComposerEditableHtml(tpl.htmlBody || '<p><br/></p>');
+      const hasEmbedded = htmlHasEmbeddedSignature(body);
+      initial = {
+        ...initial,
+        templateSlug: tpl.systemKey || 'custom',
+        templateId: tpl.id,
+        templateName: tpl.name,
+        subject: tpl.subject,
+        htmlBody: body,
+        textBody: tpl.textBody,
+        purpose: tpl.purpose,
+        includeSignature: hasEmbedded ? false : tpl.includeSignature !== false,
+      };
+      title = 'Editar plantilla';
+    }
+  } else if (mode === 'new-template') {
+    title = 'Nueva plantilla';
+    initial = {
+      ...initial,
+      templateName: '',
+      includeSignature: true,
+    };
+  } else if (draftId) {
     const loaded = await getEmailDraftAction(draftId);
     if (loaded.ok) {
       const sender = getCorporateSender(loaded.draft.fromKey);
+      const body = extractComposerEditableHtml(
+        loaded.draft.htmlBody || '<p><br/></p>'
+      );
       initial = {
+        ...initial,
         id: loaded.draft.id,
         templateSlug: loaded.draft.templateSlug,
         templateId: loaded.draft.templateId,
         subject: loaded.draft.subject,
-        htmlBody: extractComposerEditableHtml(
-          loaded.draft.htmlBody || '<p><br/></p>'
-        ),
+        htmlBody: body,
         textBody: loaded.draft.textBody,
         recipientEmail: loaded.draft.recipientEmail,
         recipientName: loaded.draft.recipientName ?? '',
@@ -67,30 +112,37 @@ export default async function EmailComposePage({
         from: sender.fromHeader,
         replyTo: sender.replyTo,
         purpose: loaded.draft.purpose,
+        includeSignature: !htmlHasEmbeddedSignature(body),
       };
+      title = 'Editar borrador';
     }
   } else if (templateIdParam) {
     const tpl = activeTemplates.find((t) => t.id === templateIdParam);
     if (tpl) {
-      const body = extractComposerEditableHtml(
-        tpl.htmlBody || '<p><br/></p>'
-      );
+      const body = extractComposerEditableHtml(tpl.htmlBody || '<p><br/></p>');
       initial = {
         ...initial,
         templateSlug: tpl.systemKey || 'custom',
         templateId: tpl.id,
+        templateName: tpl.name,
         subject: tpl.subject,
         htmlBody: body,
         textBody: tpl.textBody,
         purpose: tpl.purpose,
+        includeSignature: htmlHasEmbeddedSignature(body)
+          ? false
+          : tpl.includeSignature !== false,
       };
-      void htmlHasEmbeddedSignature(body);
     }
   }
 
   return (
-    <EmailsShell title={initial.id ? 'Editar borrador' : 'Nuevo email'}>
-      <EmailComposer initial={initial} initialTemplates={activeTemplates} />
+    <EmailsShell title={title}>
+      <EmailComposer
+        mode={mode}
+        initial={initial}
+        initialTemplates={activeTemplates}
+      />
     </EmailsShell>
   );
 }
