@@ -1,26 +1,20 @@
 # Pruebas — Logos en listado de Farmacias (follow-up independiente)
 
-**Fecha:** 2026-11-12  
-**Rama:** `fix/pr23-pharmacy-list-logos`  
-**Worktree:** `.worktrees/pharmacy-clients-qr`  
-**Base:** `origin/main` (`9a445dd`) · **sin migraciones SQL nuevas**  
-**Estado:** `prueba_tecnica_ok` · validación visual listado **aprobada por usuaria** · **pendiente merge/deploy**  
-**Alcance:** solo listado/dashboard + docs. Sin Emails ni otros módulos.
+**Fecha:** 12/11/2026  
+**Versión publicada:** `5d61f8b` (Merge PR #26 → `main`)  
+**Deploy producción:** Vercel Production Ready · `https://app.farmafacil.solutions`  
+**Rollback:** `9a445dd` (Merge PR #24) · deploy previo `farmafacil-jizcfchp7-…`  
+**Rama origen:** `fix/pr23-pharmacy-list-logos`  
+**Estado:** **publicado en producción** · smoke post-deploy OK (solo lectura)  
+**Alcance:** solo listado/dashboard + docs. Sin Emails ni otros módulos. Sin migraciones SQL.
 
 ## Incidencia
 
 | ID | Incidencia | Estado |
 |----|------------|--------|
-| INC-LOGO-001 | Listado `/farmacias` mostraba iniciales pese a logo en ficha | **Corregida** (código) · visual listado **aprobada** |
+| INC-LOGO-001 | Listado `/farmacias` mostraba iniciales pese a logo en ficha | **Corregida y publicada** |
 
-## Preview de aceptación
-
-http://127.0.0.1:3050/farmacias  
-(alternativa: http://127.0.0.1:3041/farmacias)
-
-**No usar** `:3040` (Emails).
-
-## Casos ejecutados (staging)
+## Casos ejecutados (staging pre-merge)
 
 | ID | Caso | Resultado | Estado |
 |----|------|-----------|--------|
@@ -32,20 +26,22 @@ http://127.0.0.1:3050/farmacias
 | TC-LOGO-LST-007 | Restaurar logo de prueba | Logo Piloto restaurado + fetch 200 | `prueba_tecnica_ok` |
 | TC-LOGO-UI-001 | Sin deformar/recortar | `object-contain` en `PharmacyLogo` | `prueba_tecnica_ok` |
 
-Smoke JSON: `tmp/logo-list-acceptance-smoke.json` (local).  
-Captura: `_review_pharmacies/09-farmacias-list-logos-3050.png`.
+Captura pre-merge: `_review_pharmacies/09-farmacias-list-logos-3050.png`.
 
-## Compatibilidad / publicación
+## Smoke producción (12/11/2026) — sin mutar datos
 
 | Check | Resultado |
 |-------|-----------|
-| Diff vs `main` | Solo farmacias/logo/docs (11 archivos) |
-| Migraciones | **Ninguna** |
-| Emails / otros módulos | **No incluidos** |
-| Prod | Aún sin el fix hasta merge+deploy de esta PR |
+| Commit en Production | `5d61f8b` |
+| Vercel Production | Ready · alias `app.farmafacil.solutions` |
+| Dashboard · últimas farmacias | Logos reales + iniciales FP |
+| Listado `/farmacias` | Logos reales cuando existen; sin logo → iniciales |
+| Ficha farmacia | Logo correcto |
+| Personalización (SA) | Controles Reemplazar / Eliminar visibles |
+| Owner | Sin controles de gestión de logo en ficha |
+| Migraciones / Emails / PR #25 | No incluidos |
 
 ## Permisos
 
 - App: `requirePharmacyLogoManageAccess` → `platform.pharmacies.write` (SA).
 - Tenant: `roleCanManagePharmacyLogo` siempre `false`.
-- Staging identity RLS: smoke Owner DENY confirmado en esta corrida.

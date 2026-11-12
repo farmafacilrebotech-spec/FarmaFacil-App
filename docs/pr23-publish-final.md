@@ -1,8 +1,9 @@
 # PR #23 — Informe final de preparación (sin ejecutar)
 
 **Fecha:** 2026-11-12  
-**Veredicto:** **GO condicionado** a (1) aterrizar el follow-up de logos en listado, (2) confirmar backup recuperable, (3) tu autorización explícita de SQL prod + deploy.  
-**No ejecutado en esta sesión:** SQL producción · merge · deploy · copia staging→prod.
+**Actualización 12/11/2026:** follow-up logos listado **publicado** vía **PR #26** → `main` `5d61f8b` · Vercel Production Ready · https://app.farmafacil.solutions · **sin SQL/migraciones** · sin Emails (#25).  
+**Veredicto histórico:** **GO condicionado** a (1) aterrizar el follow-up de logos en listado, (2) confirmar backup recuperable, (3) tu autorización explícita de SQL prod + deploy.  
+**No ejecutado en esta sesión (histórico):** SQL producción · copia staging→prod.
 
 ---
 
@@ -91,11 +92,12 @@ Preflight solo lectura previo (`tmp/prod-pr23-preflight-readonly.json`, proyecto
 ## 5. Checklist autorización final (responde GO por ítem)
 
 - [ ] Confirmar backup/PITR prod recuperable **o** aceptar riesgo DOWN-only  
-- [ ] Merge/push del follow-up logos listado  
-- [ ] Ejecutar SQL prod 1→5  
-- [ ] Deploy app (Vercel `main`)  
-- [ ] Post-check listado + ficha + permisos + cartel  
-- [ ] No mezclar Emails (#25) ni Cartera no autorizada  
+- [x] Merge/push del follow-up logos listado → **PR #26** merged `5d61f8b` (12/11/2026)  
+- [ ] Ejecutar SQL prod 1→5 *(no requerido para logos listado)*  
+- [x] Deploy app (Vercel `main`) → Production Ready  
+- [x] Post-check listado + ficha + permisos (logos) — sin mutar datos  
+- [x] No mezclar Emails (#25) ni Cartera no autorizada  
+
 
 ---
 

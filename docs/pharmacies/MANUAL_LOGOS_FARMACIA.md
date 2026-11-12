@@ -1,20 +1,14 @@
 # Manual de usuario — Logos de farmacia (SuperAdmin)
 
-**Estado:** validación visual del listado **aprobada** · PR independiente pendiente de merge/deploy  
-**Actualizado:** 2026-11-12  
-**Audiencia:** SuperAdmin con `platform.pharmacies.write`  
-**Rama:** `fix/pr23-pharmacy-list-logos`
+**Estado:** **publicado en producción**  
+**Versión:** `5d61f8b` (PR #26)  
+**Actualizado:** 12/11/2026  
+**URL:** https://app.farmafacil.solutions  
+**Audiencia:** SuperAdmin con `platform.pharmacies.write`
 
 ## Objetivo
 
 Ver y gestionar el logo de cada farmacia en el panel. El logo alimenta la ficha, el listado, el selector de farmacia y el cartel QR.
-
-## Preview local (validación)
-
-Para ver el listado con logos reales (staging):  
-http://127.0.0.1:3050/farmacias  
-
-No usar el puerto `:3040` (módulo Emails / otra rama).
 
 ## Dónde se ve
 
@@ -32,7 +26,7 @@ Las imágenes se muestran con **proporciones originales** (`object-contain`), si
 
 1. Abra la ficha de la farmacia.
 2. Vaya a **Personalización**.
-3. Suba, reemplace o elimine el logo (PNG / JPEG / WebP, límite documentado en UI).
+3. Suba, reemplace o elimine el logo (PNG / JPEG / WebP, máx. 2 MB).
 4. Tras guardar, el listado `/farmacias` y el dashboard se actualizan (revalidación de servidor).
 
 ## Permisos
