@@ -1245,6 +1245,7 @@ export async function updateEmailTemplateStatusAction(input: {
     return { ok: false, error: 'No se pudo actualizar el estado.' };
   }
   revalidatePath('/emails/templates');
+  revalidatePath('/emails/compose');
   return { ok: true };
 }
 

@@ -67,7 +67,13 @@ type ComposerDraft = {
 
 type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 
-export function EmailComposer({ initial }: { initial: ComposerDraft }) {
+export function EmailComposer({
+  initial,
+  initialTemplates = [],
+}: {
+  initial: ComposerDraft;
+  initialTemplates?: EmailTemplateRow[];
+}) {
   const router = useRouter();
   const editorRef = React.useRef<HTMLDivElement>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -75,7 +81,8 @@ export function EmailComposer({ initial }: { initial: ComposerDraft }) {
   const [attachments, setAttachments] = React.useState<
     EmailDraftAttachmentRow[]
   >([]);
-  const [templates, setTemplates] = React.useState<EmailTemplateRow[]>([]);
+  const [templates, setTemplates] =
+    React.useState<EmailTemplateRow[]>(initialTemplates);
   const [senders, setSenders] = React.useState<CorporateSender[]>([]);
   const [saveState, setSaveState] = React.useState<SaveState>('idle');
   const [showCc, setShowCc] = React.useState(Boolean(initial.ccEmails?.trim()));

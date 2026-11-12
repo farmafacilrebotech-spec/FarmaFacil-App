@@ -26,6 +26,8 @@ export default async function EmailComposePage({
   const draftId = searchParams?.draft?.trim() || null;
   const templateIdParam = searchParams?.templateId?.trim() || null;
   const defaultSender = getCorporateSender(defaultCorporateSenderKey());
+  const listedTemplates = await listEmailTemplatesAction();
+  const activeTemplates = listedTemplates.ok ? listedTemplates.templates : [];
 
   let initial = {
     id: null as string | null,
@@ -68,31 +70,27 @@ export default async function EmailComposePage({
       };
     }
   } else if (templateIdParam) {
-    const listed = await listEmailTemplatesAction();
-    if (listed.ok) {
-      const tpl = listed.templates.find((t) => t.id === templateIdParam);
-      if (tpl) {
-        const body = extractComposerEditableHtml(
-          tpl.htmlBody || '<p><br/></p>'
-        );
-        initial = {
-          ...initial,
-          templateSlug: tpl.systemKey || 'custom',
-          templateId: tpl.id,
-          subject: tpl.subject,
-          htmlBody: body,
-          textBody: tpl.textBody,
-          purpose: tpl.purpose,
-        };
-        // includeSignature se decide en el cliente según htmlHasEmbeddedSignature
-        void htmlHasEmbeddedSignature(body);
-      }
+    const tpl = activeTemplates.find((t) => t.id === templateIdParam);
+    if (tpl) {
+      const body = extractComposerEditableHtml(
+        tpl.htmlBody || '<p><br/></p>'
+      );
+      initial = {
+        ...initial,
+        templateSlug: tpl.systemKey || 'custom',
+        templateId: tpl.id,
+        subject: tpl.subject,
+        htmlBody: body,
+        textBody: tpl.textBody,
+        purpose: tpl.purpose,
+      };
+      void htmlHasEmbeddedSignature(body);
     }
   }
 
   return (
     <EmailsShell title={initial.id ? 'Editar borrador' : 'Nuevo email'}>
-      <EmailComposer initial={initial} />
+      <EmailComposer initial={initial} initialTemplates={activeTemplates} />
     </EmailsShell>
   );
 }

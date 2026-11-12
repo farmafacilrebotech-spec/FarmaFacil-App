@@ -1,0 +1,23 @@
+{
+  "unit_tests_pass": 31,
+  "preview_payload_html_equal": true,
+  "managed_sig_once": true,
+  "commercial_blocked_without_ack": true,
+  "operational_ok_with_confirm": true,
+  "embedded_detects_photo": true,
+  "ui": {
+    "single_template_list": true,
+    "sin_plantilla": true,
+    "archive_removes_from_dropdown": true,
+    "archive_restore_ok": true,
+    "eight_senders": true,
+    "no_legal_ui": true,
+    "breadcrumbs_es": true,
+    "no_double_signature_on_lanzadera": true,
+    "sender_change_confirm": true,
+    "actions": ["Adjuntar", "Enviar", "Guardar borrador", "Guardar como plantilla", "Descartar"]
+  },
+  "migration_088_stg": true,
+  "push": false,
+  "preview_url": "http://127.0.0.1:3040"
+}

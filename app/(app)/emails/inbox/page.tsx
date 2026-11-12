@@ -1,14 +1,9 @@
-import Link from 'next/link';
-
 import { EmailsShell } from '@/components/email/emails-shell';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 
 export const dynamic = 'force-dynamic';
 
-/**
- * Recibidos: sin bandeja ficticia.
- * La recepción IMAP/SiteGround requiere arquitectura aparte (ver docs).
- */
+/** Recibidos: la recepción IMAP se activará en una fase posterior. */
 export default async function EmailsInboxPage() {
   await assertEmailsPageAccess();
 

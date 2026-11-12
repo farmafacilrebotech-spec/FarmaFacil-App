@@ -23,6 +23,13 @@ const labels: Record<string, string> = {
   nueva: 'Nueva',
   login: 'Acceso',
   qr: 'QR de mi farmacia',
+  emails: 'Emails',
+  compose: 'Nuevo email',
+  inbox: 'Recibidos',
+  sends: 'Enviados',
+  drafts: 'Borradores',
+  templates: 'Plantillas',
+  trash: 'Papelera',
 };
 
 export function Breadcrumbs({ className }: { className?: string }) {
