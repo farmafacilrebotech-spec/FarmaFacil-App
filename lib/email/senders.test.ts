@@ -12,8 +12,10 @@ describe('corporate senders', () => {
     const list = listAuthorizedSenders({
       EMAIL_FROM: 'Pilar <pilar@farmafacil.solutions>',
     });
-    assert.ok(list.length >= 8);
+    assert.equal(list.length, 8);
     assert.ok(list.some((s) => s.key === 'pilar' && s.isDefault));
+    assert.ok(list.some((s) => s.key === 'demo'));
+    assert.ok(list.some((s) => s.key === 'facturacion'));
     assert.equal(
       list.every((s) => s.email.endsWith('@farmafacil.solutions')),
       true
@@ -30,12 +32,9 @@ describe('corporate senders', () => {
   it('respeta allowlist de claves', () => {
     const list = listAuthorizedSenders({
       EMAIL_FROM: 'pilar@farmafacil.solutions',
-      FF_CORPORATE_EMAIL_ALLOWED_FROM_KEYS: 'pilar,pruebas',
+      FF_CORPORATE_EMAIL_ALLOWED_FROM_KEYS: 'pilar,demo',
     });
-    assert.deepEqual(
-      list.map((s) => s.key).sort(),
-      ['pilar', 'pruebas']
-    );
+    assert.deepEqual(list.map((s) => s.key).sort(), ['demo', 'pilar']);
   });
 
   it('dominio desde EMAIL_FROM', () => {

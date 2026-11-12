@@ -47,8 +47,26 @@ import {
   type CorporateSender,
   type CorporateSenderKey,
 } from '@/lib/email/senders';
+import { sanitizeEmailHtml, htmlToPlainText } from '@/lib/email/html-sanitize';
+import { normalizeRecipients } from '@/lib/email/recipients';
 import { appendSignatureIfNeeded } from '@/lib/email/signature';
 import { createClient } from '@/lib/supabase/server';
+
+export type EmailTemplateRow = {
+  id: string;
+  slug: string;
+  name: string;
+  category: string;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  purpose: EmailPurpose;
+  variables: unknown[];
+  includeSignature: boolean;
+  status: 'active' | 'archived' | 'disabled';
+  systemKey: string | null;
+  updatedAt: string;
+};
 
 export type EmailDraftAttachmentRow = {
   id: string;
@@ -67,11 +85,14 @@ export type EmailDraftAttachmentRow = {
 export type EmailDraftRow = {
   id: string;
   templateSlug: EmailTemplateSlug;
+  templateId: string | null;
   subject: string;
   htmlBody: string;
   textBody: string;
   recipientEmail: string;
   recipientName: string | null;
+  ccEmails: string[];
+  bccEmails: string[];
   purpose: EmailPurpose;
   legalBasis: EmailLegalBasis | null;
   commercialAuthAck: boolean;
@@ -114,7 +135,7 @@ type ActionErr = {
 };
 
 const DRAFT_SELECT =
-  'id, template_slug, subject, html_body, text_body, recipient_email, recipient_name, purpose, legal_basis, commercial_auth_ack, opposition_checked, from_key, created_by, created_at, updated_at';
+  'id, template_slug, template_id, subject, html_body, text_body, recipient_email, recipient_name, cc_emails, bcc_emails, purpose, legal_basis, commercial_auth_ack, opposition_checked, from_key, created_by, created_at, updated_at';
 
 const ATTACH_SELECT =
   'id, draft_id, file_name, content_type, byte_size, storage_path, sha256, source_kind, created_at';
@@ -142,13 +163,26 @@ function mapDraftRow(row: Record<string, unknown>): EmailDraftRow {
       'ventas',
       'admin',
       'privacidad',
+      'demo',
+      'comercial',
+      'facturacion',
     ] as const
   ).includes(fromRaw as EmailFromKey)
     ? (fromRaw as EmailFromKey)
     : 'pilar';
+  const ccEmails = Array.isArray(row.cc_emails)
+    ? (row.cc_emails as string[]).map((e) => String(e).toLowerCase())
+    : [];
+  const bccEmails = Array.isArray(row.bcc_emails)
+    ? (row.bcc_emails as string[]).map((e) => String(e).toLowerCase())
+    : [];
   return {
     id: String(row.id),
     templateSlug: isEmailTemplateSlug(slug) ? slug : 'blank',
+    templateId:
+      row.template_id == null || row.template_id === ''
+        ? null
+        : String(row.template_id),
     subject: String(row.subject ?? ''),
     htmlBody: String(row.html_body ?? ''),
     textBody: String(row.text_body ?? ''),
@@ -157,6 +191,8 @@ function mapDraftRow(row: Record<string, unknown>): EmailDraftRow {
       row.recipient_name == null || row.recipient_name === ''
         ? null
         : String(row.recipient_name),
+    ccEmails,
+    bccEmails,
     purpose,
     legalBasis,
     commercialAuthAck: Boolean(row.commercial_auth_ack),
@@ -256,6 +292,8 @@ function isMissingRelation(
     msg.includes('email_drafts') ||
     msg.includes('email_sends') ||
     msg.includes('email_draft_attachments') ||
+    msg.includes('email_templates') ||
+    msg.includes('cc_emails') ||
     msg.includes('schema cache') ||
     msg.includes('does not exist')
   );
@@ -535,15 +573,21 @@ export async function saveEmailDraftAction(
   if (!senderCheck.ok) return { ok: false, error: senderCheck.error };
 
   const { draft } = validated;
-  const purpose = resolveEffectivePurpose(draft.templateSlug, draft.purpose);
+  const purpose = resolveEffectivePurpose(
+    draft.templateSlug === 'custom' ? 'blank' : draft.templateSlug,
+    draft.purpose
+  );
   const supabase = createClient();
   const payload = {
     template_slug: draft.templateSlug,
+    template_id: draft.templateId,
     subject: draft.subject,
-    html_body: draft.htmlBody,
-    text_body: draft.textBody,
+    html_body: sanitizeEmailHtml(draft.htmlBody),
+    text_body: draft.textBody || htmlToPlainText(draft.htmlBody),
     recipient_email: draft.recipientEmail,
     recipient_name: draft.recipientName,
+    cc_emails: draft.ccEmails,
+    bcc_emails: draft.bccEmails,
     purpose,
     legal_basis: draft.legalBasis,
     commercial_auth_ack: draft.commercialAuthAck,
@@ -658,6 +702,8 @@ export async function uploadDraftAttachmentAction(formData: FormData): Promise<
       textBody: String(formData.get('textBody') || ''),
       recipientEmail: String(formData.get('recipientEmail') || ''),
       recipientName: String(formData.get('recipientName') || '') || null,
+      ccEmails: String(formData.get('ccEmails') || ''),
+      bccEmails: String(formData.get('bccEmails') || ''),
       purpose: String(formData.get('purpose') || 'operational'),
       legalBasis: String(formData.get('legalBasis') || '') || null,
       commercialAuthAck: formData.get('commercialAuthAck') === '1',
@@ -808,6 +854,185 @@ export async function deleteDraftAttachmentAction(
  * Requiere FF_CORPORATE_EMAIL_SEND_ENABLED + platform.emails.send + confirmación.
  * Dry-run por defecto (no llama a Resend).
  */
+export async function listEmailTemplatesAction(): Promise<
+  ActionOk<{ templates: EmailTemplateRow[] }> | ActionErr
+> {
+  const access = await requireEmailsAccess('read');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('email_templates')
+    .select(
+      'id, slug, name, category, subject, html_body, text_body, purpose, variables, include_signature, status, system_key, updated_at'
+    )
+    .order('updated_at', { ascending: false })
+    .limit(200);
+  if (error) {
+    if (isMissingRelation(error)) return migrationPendingError();
+    console.error('[emails] list templates', error.message);
+    return { ok: false, error: 'No se pudieron cargar las plantillas.' };
+  }
+  const templates = (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const statusRaw = String(r.status ?? 'active');
+    const status =
+      statusRaw === 'archived' || statusRaw === 'disabled'
+        ? statusRaw
+        : 'active';
+    return {
+      id: String(r.id),
+      slug: String(r.slug ?? ''),
+      name: String(r.name ?? ''),
+      category: String(r.category ?? 'general'),
+      subject: String(r.subject ?? ''),
+      htmlBody: String(r.html_body ?? ''),
+      textBody: String(r.text_body ?? ''),
+      purpose:
+        String(r.purpose) === 'commercial'
+          ? ('commercial' as const)
+          : ('operational' as const),
+      variables: Array.isArray(r.variables) ? (r.variables as unknown[]) : [],
+      includeSignature: Boolean(r.include_signature ?? true),
+      status: status as EmailTemplateRow['status'],
+      systemKey: r.system_key == null ? null : String(r.system_key),
+      updatedAt: String(r.updated_at ?? ''),
+    };
+  });
+  return { ok: true, templates };
+}
+
+export async function saveEmailAsTemplateAction(input: {
+  name: string;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  purpose: EmailPurpose;
+  category?: string;
+  templateId?: string | null;
+}): Promise<ActionOk<{ template: EmailTemplateRow }> | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const name = input.name.trim();
+  if (!name || name.length > 200) {
+    return { ok: false, error: 'Nombre de plantilla no válido.' };
+  }
+  const html = sanitizeEmailHtml(input.htmlBody);
+  const text = input.textBody || htmlToPlainText(html);
+  const slugBase = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 60);
+  const slug = `${slugBase || 'plantilla'}-${randomUUID().slice(0, 8)}`;
+  const supabase = createClient();
+
+  if (input.templateId) {
+    const { data, error } = await supabase
+      .from('email_templates')
+      .update({
+        name,
+        subject: input.subject.trim().slice(0, 500),
+        html_body: html,
+        text_body: text,
+        purpose: input.purpose,
+        category: input.category || 'personalizada',
+        updated_by: access.profile.id,
+      })
+      .eq('id', input.templateId)
+      .select(
+        'id, slug, name, category, subject, html_body, text_body, purpose, variables, include_signature, status, system_key, updated_at'
+      )
+      .maybeSingle();
+    if (error || !data) {
+      if (error && isMissingRelation(error)) return migrationPendingError();
+      return { ok: false, error: 'No se pudo actualizar la plantilla.' };
+    }
+    revalidatePath('/emails/templates');
+    const listed = await listEmailTemplatesAction();
+    if (!listed.ok) return listed;
+    const tpl = listed.templates.find((t) => t.id === String(data.id));
+    if (!tpl) return { ok: false, error: 'Plantilla no encontrada tras guardar.' };
+    return { ok: true, template: tpl };
+  }
+
+  const { data, error } = await supabase
+    .from('email_templates')
+    .insert({
+      slug,
+      name,
+      category: input.category || 'personalizada',
+      subject: input.subject.trim().slice(0, 500),
+      html_body: html,
+      text_body: text,
+      purpose: input.purpose,
+      variables: [],
+      include_signature: true,
+      status: 'active',
+      system_key: null,
+      created_by: access.profile.id,
+      updated_by: access.profile.id,
+    })
+    .select('id')
+    .maybeSingle();
+  if (error || !data) {
+    if (error && isMissingRelation(error)) return migrationPendingError();
+    console.error('[emails] insert template', error?.message);
+    return { ok: false, error: 'No se pudo guardar la plantilla.' };
+  }
+  revalidatePath('/emails/templates');
+  const listed = await listEmailTemplatesAction();
+  if (!listed.ok) return listed;
+  const tpl = listed.templates.find((t) => t.id === String(data.id));
+  if (!tpl) return { ok: false, error: 'Plantilla no encontrada tras guardar.' };
+  return { ok: true, template: tpl };
+}
+
+export async function updateEmailTemplateStatusAction(input: {
+  templateId: string;
+  status: 'active' | 'archived' | 'disabled';
+}): Promise<{ ok: true } | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('email_templates')
+    .update({ status: input.status, updated_by: access.profile.id })
+    .eq('id', input.templateId);
+  if (error) {
+    if (isMissingRelation(error)) return migrationPendingError();
+    return { ok: false, error: 'No se pudo actualizar el estado.' };
+  }
+  revalidatePath('/emails/templates');
+  return { ok: true };
+}
+
+export async function duplicateEmailTemplateAction(
+  templateId: string
+): Promise<ActionOk<{ template: EmailTemplateRow }> | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const listed = await listEmailTemplatesAction();
+  if (!listed.ok) return listed;
+  const src = listed.templates.find((t) => t.id === templateId);
+  if (!src) return { ok: false, error: 'Plantilla no encontrada.' };
+  return saveEmailAsTemplateAction({
+    name: `${src.name} (copia)`,
+    subject: src.subject,
+    htmlBody: src.htmlBody,
+    textBody: src.textBody,
+    purpose: src.purpose,
+    category: src.category,
+  });
+}
+
 export async function sendCorporateEmailAction(input: {
   draftId?: string | null;
   idempotencyKey?: string | null;
@@ -819,6 +1044,8 @@ export async function sendCorporateEmailAction(input: {
   fromKey?: string | null;
   recipientEmail?: string;
   recipientName?: string | null;
+  ccEmails?: string | string[] | null;
+  bccEmails?: string | string[] | null;
   subject?: string;
   htmlBody?: string;
   textBody?: string;
@@ -872,12 +1099,41 @@ export async function sendCorporateEmailAction(input: {
     input.recipientName !== undefined
       ? input.recipientName
       : draft?.recipientName ?? null;
+  const ccRaw =
+    input.ccEmails !== undefined
+      ? input.ccEmails
+      : draft?.ccEmails ?? [];
+  const bccRaw =
+    input.bccEmails !== undefined
+      ? input.bccEmails
+      : draft?.bccEmails ?? [];
+  const recipients = normalizeRecipients({
+    to: recipientEmail,
+    cc: ccRaw,
+    bcc: bccRaw,
+  });
+  if (!recipients.ok) {
+    return { ok: false, code: 'blocked', error: recipients.error };
+  }
+  if (recipients.recipients.to.length !== 1) {
+    return {
+      ok: false,
+      code: 'blocked',
+      error: 'Indica exactamente un destinatario en Para.',
+    };
+  }
   const subject = (input.subject ?? draft?.subject ?? '').trim();
-  const htmlBodyRaw = input.htmlBody ?? draft?.htmlBody ?? '';
-  const textBodyRaw = input.textBody ?? draft?.textBody ?? '';
+  const htmlBodyRaw = sanitizeEmailHtml(
+    input.htmlBody ?? draft?.htmlBody ?? ''
+  );
+  const textBodyRaw =
+    input.textBody ?? draft?.textBody ?? htmlToPlainText(htmlBodyRaw);
   const requestedPurpose: EmailPurpose =
     input.purpose ?? draft?.purpose ?? 'operational';
-  const purpose = resolveEffectivePurpose(templateSlug, requestedPurpose);
+  const purpose = resolveEffectivePurpose(
+    templateSlug === 'custom' ? 'blank' : templateSlug,
+    requestedPurpose
+  );
   const legalBasis =
     input.legalBasis !== undefined
       ? input.legalBasis
@@ -903,20 +1159,25 @@ export async function sendCorporateEmailAction(input: {
   const htmlBody = withSig.html;
   const textBody = withSig.text;
 
-  const emailNorm = recipientEmail.toLowerCase();
-  const { data: suppressedRow, error: suppErr } = await supabase
+  const emailNorm = recipients.recipients.to[0];
+  const allRecipients = recipients.recipients.all;
+  const { data: suppressedRows, error: suppErr } = await supabase
     .from('email_suppression_list')
-    .select('id')
-    .eq('email', emailNorm)
-    .maybeSingle();
+    .select('email')
+    .in('email', allRecipients);
   if (suppErr && !isMissingRelation(suppErr)) {
     console.error('[emails] suppression check', suppErr.message);
   }
-  const recipientSuppressed = Boolean(suppressedRow?.id);
+  const suppressedSet = new Set(
+    (suppressedRows ?? []).map((r) =>
+      String((r as { email: string }).email).toLowerCase()
+    )
+  );
+  const recipientSuppressed = allRecipients.some((e) => suppressedSet.has(e));
 
   const policy = assertCorporateSendPolicy({
     purpose,
-    templateSlug,
+    templateSlug: templateSlug === 'custom' ? 'blank' : templateSlug,
     legalBasis,
     commercialAuthAck,
     oppositionChecked,
@@ -980,6 +1241,8 @@ export async function sendCorporateEmailAction(input: {
       p_attachment_count: attachments.length,
       p_confirmation_ack_at: new Date().toISOString(),
       p_from_key: sender.key,
+      p_cc_emails: recipients.recipients.cc,
+      p_bcc_emails: recipients.recipients.bcc,
     }
   );
 
@@ -1155,6 +1418,8 @@ export async function sendCorporateEmailAction(input: {
     text: textBody,
     from: fromAddress,
     replyTo,
+    cc: recipients.recipients.cc,
+    bcc: recipients.recipients.bcc,
     attachments: resendAttachments,
   });
 

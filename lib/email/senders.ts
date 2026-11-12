@@ -1,7 +1,6 @@
 /**
- * Catálogo cerrado de remitentes corporativos FarmaFácil.
- * No se permiten direcciones arbitrarias; solo claves autorizadas
- * cuyo dominio coincide con el dominio verificado/configurado.
+ * Cuentas / remitentes corporativos FarmaFácil (catálogo cerrado).
+ * No se permiten direcciones arbitrarias.
  */
 
 export const CORPORATE_SENDER_DOMAIN = 'farmafacil.solutions';
@@ -11,8 +10,12 @@ export type CorporateSenderKey =
   | 'contacto'
   | 'info'
   | 'soporte'
-  | 'pruebas'
+  | 'demo'
   | 'ventas'
+  | 'comercial'
+  | 'facturacion'
+  // legado (086); siguen válidos en BD
+  | 'pruebas'
   | 'admin'
   | 'privacidad';
 
@@ -20,16 +23,17 @@ export type CorporateSender = {
   key: CorporateSenderKey;
   email: string;
   displayName: string;
-  /** Nombre visible en cabecera From: "Nombre <email>" */
   fromHeader: string;
   replyTo: string;
-  /** Texto firma (nombre completo) */
   signatureName: string;
   signatureTitle: string;
   isDefault: boolean;
+  /** Visible en selector de cuentas activas */
+  managed: boolean;
 };
 
-export const CORPORATE_SENDERS: readonly CorporateSender[] = [
+/** Cuentas gestionadas (UI). */
+export const CORPORATE_MANAGED_SENDERS: readonly CorporateSender[] = [
   {
     key: 'pilar',
     email: 'pilar@farmafacil.solutions',
@@ -39,6 +43,7 @@ export const CORPORATE_SENDERS: readonly CorporateSender[] = [
     signatureName: 'Pilar Reyes Bononat',
     signatureTitle: 'Fundadora de FarmaFácil',
     isDefault: true,
+    managed: true,
   },
   {
     key: 'contacto',
@@ -49,6 +54,7 @@ export const CORPORATE_SENDERS: readonly CorporateSender[] = [
     signatureName: 'FarmaFácil',
     signatureTitle: 'Contacto',
     isDefault: false,
+    managed: true,
   },
   {
     key: 'info',
@@ -59,6 +65,7 @@ export const CORPORATE_SENDERS: readonly CorporateSender[] = [
     signatureName: 'FarmaFácil',
     signatureTitle: 'Información',
     isDefault: false,
+    managed: true,
   },
   {
     key: 'soporte',
@@ -69,16 +76,18 @@ export const CORPORATE_SENDERS: readonly CorporateSender[] = [
     signatureName: 'FarmaFácil',
     signatureTitle: 'Soporte',
     isDefault: false,
+    managed: true,
   },
   {
-    key: 'pruebas',
-    email: 'pruebas@farmafacil.solutions',
-    displayName: 'Pruebas · FarmaFácil',
-    fromHeader: 'Pruebas · FarmaFácil <pruebas@farmafacil.solutions>',
-    replyTo: 'pruebas@farmafacil.solutions',
+    key: 'demo',
+    email: 'demo@farmafacil.solutions',
+    displayName: 'Demo · FarmaFácil',
+    fromHeader: 'Demo · FarmaFácil <demo@farmafacil.solutions>',
+    replyTo: 'demo@farmafacil.solutions',
     signatureName: 'FarmaFácil',
-    signatureTitle: 'Entorno de pruebas',
+    signatureTitle: 'Demostraciones',
     isDefault: false,
+    managed: true,
   },
   {
     key: 'ventas',
@@ -89,6 +98,43 @@ export const CORPORATE_SENDERS: readonly CorporateSender[] = [
     signatureName: 'FarmaFácil',
     signatureTitle: 'Ventas',
     isDefault: false,
+    managed: true,
+  },
+  {
+    key: 'comercial',
+    email: 'comercial@farmafacil.solutions',
+    displayName: 'Comercial · FarmaFácil',
+    fromHeader: 'Comercial · FarmaFácil <comercial@farmafacil.solutions>',
+    replyTo: 'comercial@farmafacil.solutions',
+    signatureName: 'FarmaFácil',
+    signatureTitle: 'Comercial',
+    isDefault: false,
+    managed: true,
+  },
+  {
+    key: 'facturacion',
+    email: 'facturacion@farmafacil.solutions',
+    displayName: 'Facturación · FarmaFácil',
+    fromHeader: 'Facturación · FarmaFácil <facturacion@farmafacil.solutions>',
+    replyTo: 'facturacion@farmafacil.solutions',
+    signatureName: 'FarmaFácil',
+    signatureTitle: 'Facturación',
+    isDefault: false,
+    managed: true,
+  },
+] as const;
+
+const LEGACY_SENDERS: readonly CorporateSender[] = [
+  {
+    key: 'pruebas',
+    email: 'pruebas@farmafacil.solutions',
+    displayName: 'Pruebas · FarmaFácil',
+    fromHeader: 'Pruebas · FarmaFácil <pruebas@farmafacil.solutions>',
+    replyTo: 'pruebas@farmafacil.solutions',
+    signatureName: 'FarmaFácil',
+    signatureTitle: 'Entorno de pruebas',
+    isDefault: false,
+    managed: false,
   },
   {
     key: 'admin',
@@ -99,6 +145,7 @@ export const CORPORATE_SENDERS: readonly CorporateSender[] = [
     signatureName: 'FarmaFácil',
     signatureTitle: 'Administración',
     isDefault: false,
+    managed: false,
   },
   {
     key: 'privacidad',
@@ -109,8 +156,14 @@ export const CORPORATE_SENDERS: readonly CorporateSender[] = [
     signatureName: 'FarmaFácil',
     signatureTitle: 'Privacidad y protección de datos',
     isDefault: false,
+    managed: false,
   },
-] as const;
+];
+
+export const CORPORATE_SENDERS: readonly CorporateSender[] = [
+  ...CORPORATE_MANAGED_SENDERS,
+  ...LEGACY_SENDERS,
+];
 
 const BY_KEY = new Map(CORPORATE_SENDERS.map((s) => [s.key, s]));
 
@@ -131,10 +184,6 @@ export function defaultCorporateSenderKey(): CorporateSenderKey {
   return 'pilar';
 }
 
-/**
- * Dominio autorizado para From.
- * Preferencia: FF_CORPORATE_EMAIL_VERIFIED_DOMAIN → dominio de EMAIL_FROM → catálogo.
- */
 export function resolveAuthorizedSenderDomain(
   env: NodeJS.ProcessEnv = process.env
 ): string {
@@ -148,10 +197,6 @@ export function resolveAuthorizedSenderDomain(
   return CORPORATE_SENDER_DOMAIN;
 }
 
-/**
- * Allowlist opcional de claves: FF_CORPORATE_EMAIL_ALLOWED_FROM_KEYS=pilar,contacto
- * Si vacío → todas las del dominio autorizado.
- */
 export function parseAllowedSenderKeys(
   env: NodeJS.ProcessEnv = process.env
 ): Set<CorporateSenderKey> | null {
@@ -164,17 +209,13 @@ export function parseAllowedSenderKeys(
   return new Set(keys);
 }
 
-/**
- * Remitentes mostrables: catálogo ∩ dominio autorizado ∩ allowlist opcional.
- * Resend permite cualquier dirección @dominio si el dominio está verificado;
- * sin API de dominios en runtime, filtramos por dominio de configuración.
- */
+/** Remitentes mostrables en UI (cuentas managed ∩ dominio ∩ allowlist). */
 export function listAuthorizedSenders(
   env: NodeJS.ProcessEnv = process.env
 ): CorporateSender[] {
   const domain = resolveAuthorizedSenderDomain(env);
   const allow = parseAllowedSenderKeys(env);
-  return CORPORATE_SENDERS.filter((s) => {
+  return CORPORATE_MANAGED_SENDERS.filter((s) => {
     const senderDomain = s.email.split('@')[1]?.toLowerCase();
     if (senderDomain !== domain) return false;
     if (allow && !allow.has(s.key)) return false;
@@ -191,13 +232,22 @@ export function assertAuthorizedSenderKey(
   if (!isCorporateSenderKey(key)) {
     return { ok: false, error: 'Remitente no autorizado.' };
   }
-  const authorized = listAuthorizedSenders(env);
-  const sender = authorized.find((s) => s.key === key);
-  if (!sender) {
+  const sender = getCorporateSender(key);
+  const domain = resolveAuthorizedSenderDomain(env);
+  const senderDomain = sender.email.split('@')[1]?.toLowerCase();
+  if (senderDomain !== domain) {
     return {
       ok: false,
       error: 'Ese remitente no está habilitado para el dominio configurado.',
     };
+  }
+  const allow = parseAllowedSenderKeys(env);
+  if (allow && !allow.has(key)) {
+    return { ok: false, error: 'Remitente no autorizado para tu usuario.' };
+  }
+  // Solo managed en selector nuevo; legado solo si ya estaba en borrador
+  if (!sender.managed && !(allow && allow.has(key))) {
+    return { ok: false, error: 'Esa cuenta no está disponible en el selector.' };
   }
   return { ok: true, sender };
 }

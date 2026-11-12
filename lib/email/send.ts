@@ -16,7 +16,7 @@ export type ResendAttachment = {
 };
 
 export async function sendTransactionalEmail(input: {
-  to: string;
+  to: string | string[];
   subject: string;
   html: string;
   text: string;
@@ -24,6 +24,10 @@ export async function sendTransactionalEmail(input: {
   from?: string;
   /** Reply-To opcional. */
   replyTo?: string;
+  /** CC opcionales (ya validados; límites en app). */
+  cc?: string[];
+  /** CCO opcionales (ya validados). */
+  bcc?: string[];
   /** Adjuntos opcionales (PDF/imagen/DOCX ya validados). */
   attachments?: ResendAttachment[];
 }): Promise<SendEmailResult> {
@@ -53,9 +57,10 @@ export async function sendTransactionalEmail(input: {
   }
 
   try {
+    const toList = Array.isArray(input.to) ? input.to : [input.to];
     const payload: Record<string, unknown> = {
       from,
-      to: [input.to],
+      to: toList,
       subject: input.subject,
       html: input.html,
       text: input.text,
@@ -63,6 +68,12 @@ export async function sendTransactionalEmail(input: {
     const replyTo = input.replyTo?.trim();
     if (replyTo) {
       payload.reply_to = replyTo;
+    }
+    if (input.cc && input.cc.length > 0) {
+      payload.cc = input.cc;
+    }
+    if (input.bcc && input.bcc.length > 0) {
+      payload.bcc = input.bcc;
     }
     if (input.attachments && input.attachments.length > 0) {
       payload.attachments = input.attachments.map((a) => ({

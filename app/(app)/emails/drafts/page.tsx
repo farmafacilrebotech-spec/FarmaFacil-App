@@ -2,7 +2,7 @@ import Link from 'next/link';
 
 import { listEmailDraftsAction } from '@/app/(app)/emails/actions';
 import { DraftsDeleteButton } from '@/components/email/drafts-delete-button';
-import { PageHeader } from '@/components/shared/page-header';
+import { EmailsShell } from '@/components/email/emails-shell';
 import { Button } from '@/components/ui/button';
 import { EMAIL_TEMPLATE_OPTIONS } from '@/lib/email/compose-catalog';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
@@ -18,43 +18,17 @@ export default async function EmailDraftsPage() {
   const listed = await listEmailDraftsAction();
 
   return (
-    <div className="mx-auto w-full max-w-5xl min-w-0 space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-sm">
-            <Link
-              href="/emails"
-              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              ← Emails corporativos
-            </Link>
-          </div>
-          <PageHeader
-            title="Borradores"
-            description="Recuperar, editar o eliminar borradores corporativos."
-          />
-        </div>
-        <Button asChild>
-          <Link href="/emails/compose">Nuevo email</Link>
-        </Button>
-      </div>
-
+    <EmailsShell
+      title="Borradores"
+      description="Recuperar, editar o eliminar borradores (con adjuntos)."
+    >
       {!listed.ok ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
           <p className="font-medium">{listed.error}</p>
-          {listed.code === 'migration_pending' ? (
-            <p className="mt-2 text-muted-foreground">
-              La UI de redacción en{' '}
-              <Link href="/emails/compose" className="underline">
-                /emails/compose
-              </Link>{' '}
-              funciona sin persistencia hasta aplicar 075.
-            </p>
-          ) : null}
         </div>
       ) : listed.drafts.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          No hay borradores guardados.{' '}
+          No hay borradores.{' '}
           <Link href="/emails/compose" className="underline">
             Crear uno
           </Link>
@@ -76,6 +50,9 @@ export default async function EmailDraftsPage() {
                   {d.recipientEmail
                     ? ` · ${d.recipientEmail}`
                     : ' · sin destinatario'}
+                  {d.ccEmails.length
+                    ? ` · CC ${d.ccEmails.length}`
+                    : ''}
                   {' · '}
                   {new Date(d.updatedAt).toLocaleString('es-ES')}
                 </p>
@@ -90,6 +67,6 @@ export default async function EmailDraftsPage() {
           ))}
         </ul>
       )}
-    </div>
+    </EmailsShell>
   );
 }

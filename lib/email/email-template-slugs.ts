@@ -6,6 +6,7 @@ export const EMAIL_TEMPLATE_SLUGS = [
   'imprentas',
   'demo',
   'piloto',
+  'custom',
 ] as const;
 
 export type EmailTemplateSlug = (typeof EMAIL_TEMPLATE_SLUGS)[number];

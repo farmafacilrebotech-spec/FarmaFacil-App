@@ -1,9 +1,11 @@
-import Link from 'next/link';
 import { headers } from 'next/headers';
 
 import { EmailComposer } from '@/components/email/email-composer';
-import { PageHeader } from '@/components/shared/page-header';
-import { getEmailDraftAction } from '@/app/(app)/emails/actions';
+import { EmailsShell } from '@/components/email/emails-shell';
+import {
+  getEmailDraftAction,
+  listEmailTemplatesAction,
+} from '@/app/(app)/emails/actions';
 import {
   buildComposeSeed,
   type EmailTemplateSlug,
@@ -20,7 +22,7 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-type SearchParams = { draft?: string; template?: string };
+type SearchParams = { draft?: string; template?: string; templateId?: string };
 
 export default async function EmailComposePage({
   searchParams,
@@ -36,36 +38,29 @@ export default async function EmailComposePage({
 
   const draftId = searchParams?.draft?.trim() || null;
   const templateParam = searchParams?.template?.trim() || 'blank';
+  const templateIdParam = searchParams?.templateId?.trim() || null;
   const defaultSender = getCorporateSender(defaultCorporateSenderKey());
 
-  let initial: {
-    id: string | null;
-    templateSlug: EmailTemplateSlug;
-    subject: string;
-    htmlBody: string;
-    textBody: string;
-    recipientEmail: string;
-    recipientName: string;
-    fromKey: string;
-    from: string;
-    replyTo: string;
-    purpose: 'operational' | 'commercial';
-    legalBasis: '' | 'consent' | 'legitimate_interest_documented' | 'contractual';
-    commercialAuthAck: boolean;
-    oppositionChecked: boolean;
-  } = {
-    id: null,
+  let initial = {
+    id: null as string | null,
     templateSlug: 'blank',
+    templateId: null as string | null,
     subject: '',
-    htmlBody: '',
+    htmlBody: '<p><br/></p>',
     textBody: '',
     recipientEmail: '',
     recipientName: '',
+    ccEmails: '',
+    bccEmails: '',
     fromKey: defaultSender.key,
     from: defaultSender.fromHeader,
     replyTo: defaultSender.replyTo,
-    purpose: 'operational',
-    legalBasis: '',
+    purpose: 'operational' as 'operational' | 'commercial',
+    legalBasis: '' as
+      | ''
+      | 'consent'
+      | 'legitimate_interest_documented'
+      | 'contractual',
     commercialAuthAck: false,
     oppositionChecked: false,
   };
@@ -77,11 +72,14 @@ export default async function EmailComposePage({
       initial = {
         id: loaded.draft.id,
         templateSlug: loaded.draft.templateSlug,
+        templateId: loaded.draft.templateId,
         subject: loaded.draft.subject,
-        htmlBody: loaded.draft.htmlBody,
+        htmlBody: loaded.draft.htmlBody || '<p><br/></p>',
         textBody: loaded.draft.textBody,
         recipientEmail: loaded.draft.recipientEmail,
         recipientName: loaded.draft.recipientName ?? '',
+        ccEmails: loaded.draft.ccEmails.join(', '),
+        bccEmails: loaded.draft.bccEmails.join(', '),
         fromKey: sender.key,
         from: sender.fromHeader,
         replyTo: sender.replyTo,
@@ -91,46 +89,47 @@ export default async function EmailComposePage({
         oppositionChecked: loaded.draft.oppositionChecked,
       };
     }
-  } else {
+  } else if (templateIdParam) {
+    const listed = await listEmailTemplatesAction();
+    if (listed.ok) {
+      const tpl = listed.templates.find((t) => t.id === templateIdParam);
+      if (tpl) {
+        initial = {
+          ...initial,
+          templateSlug: tpl.systemKey || 'custom',
+          templateId: tpl.id,
+          subject: tpl.subject,
+          htmlBody: tpl.htmlBody || '<p><br/></p>',
+          textBody: tpl.textBody,
+          purpose: tpl.purpose,
+        };
+      }
+    }
+  } else if (templateParam && templateParam !== 'blank') {
     const slug = (
-      ['blank', 'lanzadera', 'imprentas', 'demo', 'piloto'] as const
+      ['lanzadera', 'imprentas', 'demo', 'piloto'] as const
     ).includes(templateParam as EmailTemplateSlug)
       ? (templateParam as EmailTemplateSlug)
       : 'blank';
-    const seed = buildComposeSeed(slug, { previewOrigin: origin });
-    initial = {
-      id: null,
-      templateSlug: seed.templateSlug,
-      subject: seed.subject,
-      htmlBody: seed.htmlBody,
-      textBody: seed.textBody,
-      recipientEmail: '',
-      recipientName: '',
-      fromKey: defaultSender.key,
-      from: defaultSender.fromHeader,
-      replyTo: defaultSender.replyTo,
-      purpose: defaultPurposeForTemplate(slug),
-      legalBasis: '',
-      commercialAuthAck: false,
-      oppositionChecked: false,
-    };
+    if (slug !== 'blank') {
+      const seed = buildComposeSeed(slug, { previewOrigin: origin });
+      initial = {
+        ...initial,
+        templateSlug: seed.templateSlug,
+        subject: seed.subject,
+        htmlBody: seed.htmlBody,
+        textBody: seed.textBody,
+        purpose: defaultPurposeForTemplate(slug),
+      };
+    }
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl min-w-0 space-y-6">
-      <div className="text-sm">
-        <Link
-          href="/emails"
-          className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          ← Emails corporativos
-        </Link>
-      </div>
-      <PageHeader
-        title={initial.id ? 'Editar borrador' : 'Nuevo email'}
-        description="Remitente autorizado, redacción, adjuntos, vista previa y confirmación de envío 1:1."
-      />
+    <EmailsShell
+      title={initial.id ? 'Editar borrador' : 'Nuevo email'}
+      description="Redacción compacta · confirmación antes de enviar"
+    >
       <EmailComposer initial={initial} />
-    </div>
+    </EmailsShell>
   );
 }

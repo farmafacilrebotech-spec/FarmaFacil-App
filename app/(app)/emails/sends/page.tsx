@@ -1,8 +1,5 @@
-import Link from 'next/link';
-
 import { listEmailSendsAction } from '@/app/(app)/emails/actions';
-import { PageHeader } from '@/components/shared/page-header';
-import { Button } from '@/components/ui/button';
+import { EmailsShell } from '@/components/email/emails-shell';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
 import { getCorporateSender } from '@/lib/email/senders';
 
@@ -13,27 +10,10 @@ export default async function EmailSendsPage() {
   const listed = await listEmailSendsAction();
 
   return (
-    <div className="mx-auto w-full max-w-5xl min-w-0 space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-sm">
-            <Link
-              href="/emails"
-              className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              ← Emails corporativos
-            </Link>
-          </div>
-          <PageHeader
-            title="Historial de envíos"
-            description="Estados: borrador (en lista de borradores), pendiente, enviado a Resend, entregado (solo con confirmación del proveedor), error, rebotado o bloqueado. Aceptado por Resend no implica entregado."
-          />
-        </div>
-        <Button asChild>
-          <Link href="/emails/compose">Nuevo email</Link>
-        </Button>
-      </div>
-
+    <EmailsShell
+      title="Enviados"
+      description="Outbox Resend/SMTP de prueba. Aceptado por el proveedor ≠ entregado."
+    >
       {!listed.ok ? (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm">
           <p className="font-medium">{listed.error}</p>
@@ -69,9 +49,6 @@ export default async function EmailSendsPage() {
                   Enviado por: {s.createdByLabel || '—'}
                   {' · '}
                   Adjuntos: {s.attachmentCount}
-                  {s.providerStatus
-                    ? ` · Proveedor: ${s.providerStatus}`
-                    : ''}
                 </p>
                 {s.error ? (
                   <p className="text-sm text-destructive">{s.error}</p>
@@ -81,6 +58,6 @@ export default async function EmailSendsPage() {
           })}
         </ul>
       )}
-    </div>
+    </EmailsShell>
   );
 }
