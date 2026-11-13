@@ -32,13 +32,13 @@ import {
 
 const ACTION_CONSEQUENCES: Record<CommercialAction, string> = {
   cancel_at_period_end:
-    'El acceso se mantiene hasta el fin del periodo facturado. Después la suscripción quedará cancelada. No archiva la farmacia ni borra datos.',
+    'El acceso se mantiene hasta el fin del periodo facturado. Después la suscripción quedará cancelada. No archiva la farmacia ni borra datos. No libera plazas de lanzamiento.',
   cancel_now:
-    'Cancelación inmediata: el acceso operativo queda bloqueado ya. Los datos y usuarios se conservan. No archiva la farmacia.',
+    'Cancelación inmediata: el acceso operativo queda bloqueado ya. Los datos y usuarios se conservan. No archiva la farmacia. No libera plazas de lanzamiento.',
   start_nonpayment_grace:
     'Se registra impago y se abre una gracia de 7 días con acceso operativo. Tras la gracia puede procederse a suspensión.',
   suspend_for_nonpayment:
-    'La farmacia queda suspendida por impago y sin acceso operativo. Datos, usuarios y configuración se conservan.',
+    'La farmacia queda suspendida por impago y sin acceso operativo. Datos, usuarios y configuración se conservan. No libera plazas de lanzamiento.',
   reactivate:
     'Se restablece la suscripción y el acceso operativo según el estado comercial vigente.',
 };

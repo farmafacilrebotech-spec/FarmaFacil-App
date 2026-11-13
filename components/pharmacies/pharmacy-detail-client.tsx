@@ -57,6 +57,12 @@ import { PharmacyLogo } from '@/components/brand';
 import { PharmacyLogoManager } from '@/components/pharmacies/pharmacy-logo-manager';
 import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
 import { PharmacySubscriptionPanel } from '@/components/pharmacies/pharmacy-subscription-panel';
+import { LaunchPromoPharmacyBlock } from '@/components/pharmacies/launch-promo-2027-panel';
+import type {
+  LaunchSeatDetail,
+  LaunchSeatEvent,
+  LaunchSeatsSummary,
+} from '@/lib/pharmacies/launch-seats';
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
 import { CatalogoTab } from '@/components/pharmacies/tabs/catalogo-tab';
 import { QrTab } from '@/components/pharmacies/tabs/qr-tab';
@@ -199,6 +205,9 @@ export function PharmacyDetailClient({
   pharmacy: initialPharmacy,
   plans,
   launchSeats,
+  launchSeatDetail = null,
+  launchSeatEvents = [],
+  canManageLaunchSeats = false,
   members,
   roles,
   usersCapabilities,
@@ -225,13 +234,10 @@ export function PharmacyDetailClient({
 }: {
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
-  launchSeats?: {
-    cohortKey: 'launch_2027';
-    maxSlots: number;
-    usedSlots: number;
-    remaining: number;
-    pharmacyHasActiveSeat: boolean;
-  };
+  launchSeats?: LaunchSeatsSummary;
+  launchSeatDetail?: LaunchSeatDetail | null;
+  launchSeatEvents?: LaunchSeatEvent[];
+  canManageLaunchSeats?: boolean;
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
   usersCapabilities: PharmacyUsersCapabilities;
@@ -259,7 +265,11 @@ export function PharmacyDetailClient({
 }) {
   const router = useRouter();
   const [pharmacy, setPharmacy] = React.useState(initialPharmacy);
-  const [activeTab, setActiveTab] = React.useState('general');
+  const [activeTab, setActiveTab] = React.useState(() => {
+    if (typeof window === 'undefined') return 'general';
+    const tab = new URLSearchParams(window.location.search).get('tab');
+    return tab && tabs.some((t) => t.id === tab) ? tab : 'general';
+  });
   const [editingGeneral, setEditingGeneral] = React.useState(false);
   const [editingPersonalization, setEditingPersonalization] =
     React.useState(false);
@@ -1241,7 +1251,22 @@ export function PharmacyDetailClient({
         )}
 
         {activeTab === 'contrato' && (
-          <PharmacySubscriptionPanel pharmacy={pharmacy} />
+          <div className="space-y-6">
+            {launchSeats ? (
+              <LaunchPromoPharmacyBlock
+                pharmacyId={pharmacy.id}
+                currentPlanKey={pharmacy.plan?.key ?? null}
+                summary={launchSeats}
+                seat={launchSeatDetail}
+                events={launchSeatEvents}
+                canManage={canManageLaunchSeats}
+              />
+            ) : null}
+            <PharmacySubscriptionPanel
+              pharmacy={pharmacy}
+              launchSeatActive={Boolean(launchSeats?.pharmacyHasActiveSeat)}
+            />
+          </div>
         )}
 
         {activeTab === 'pedidos' &&

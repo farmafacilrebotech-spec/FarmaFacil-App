@@ -3,22 +3,43 @@ import { FileText } from 'lucide-react';
 
 import { PageHeader } from '@/components/shared/page-header';
 import { listSaSubscriptions } from '@/lib/platform/sa-subscriptions';
+import { getLaunchPromoDashboard } from '@/lib/pharmacies/launch-seats';
+import { LaunchPromoGlobalPanel } from '@/components/pharmacies/launch-promo-2027-panel';
+import {
+  getCurrentProfile,
+  hasPlatformSuperAdminRole,
+} from '@/lib/auth/platform';
 
 export const dynamic = 'force-dynamic';
 
 /**
- * Separación A/B:
- * A) Contratos legales PDF — requieren migración 069 + gates jurídicos (no inventados).
+ * Separación A/B + promoción lanzamiento 2027:
+ * A) Contratos legales PDF — requieren migración 069 + gates jurídicos.
  * B) Suscripción/facturación — listado real desde subscriptions.
+ * C) Plazas launch_2027 — misma fuente que la ficha de farmacia.
  */
 export default async function ContratosPage() {
-  const subs = await listSaSubscriptions(100);
+  const [subs, launch, profileResult] = await Promise.all([
+    listSaSubscriptions(100),
+    getLaunchPromoDashboard(),
+    getCurrentProfile(),
+  ]);
+  const saTotal = profileResult.profile?.id
+    ? await hasPlatformSuperAdminRole(profileResult.profile.id)
+    : { ok: false };
 
   return (
     <div className="mx-auto max-w-7xl space-y-8">
       <PageHeader
         title="Contratos y suscripciones"
         description="Documento contractual ≠ estado del servicio. Firmas no activadas."
+      />
+
+      <LaunchPromoGlobalPanel
+        summary={launch.summary}
+        seats={launch.seats}
+        events={launch.events}
+        canManage={saTotal.ok}
       />
 
       <section className="space-y-3">

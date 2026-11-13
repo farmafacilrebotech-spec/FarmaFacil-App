@@ -48,8 +48,11 @@ function pilotStatusLabel(status: string): string {
 
 export function PharmacySubscriptionPanel({
   pharmacy,
+  launchSeatActive = false,
 }: {
   pharmacy: PharmacyDetail;
+  /** Si hay plaza launch activa no confirmada, avisar al suspender/cancelar. */
+  launchSeatActive?: boolean;
 }) {
   const router = useRouter();
   const [manageOpen, setManageOpen] = React.useState(false);
@@ -115,6 +118,15 @@ export function PharmacySubscriptionPanel({
           </div>
         </div>
       </div>
+
+      {launchSeatActive ? (
+        <div className="mt-4 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+          Esta farmacia tiene una <strong>plaza de lanzamiento 2027</strong>{' '}
+          reservada. Suspender o cancelar la suscripción{' '}
+          <strong>no libera la plaza automáticamente</strong>. Si procede,
+          libérela de forma explícita en el bloque superior (con motivo).
+        </div>
+      ) : null}
 
       {feedback ? (
         <div

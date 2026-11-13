@@ -6,7 +6,15 @@ import {
   listPharmacyMembers,
   listPharmacyRoles,
 } from '@/lib/pharmacies/queries';
-import { getLaunch2027SeatsSummary } from '@/lib/pharmacies/launch-seats';
+import {
+  getLaunch2027SeatsSummary,
+  getPharmacyLaunchSeatDetail,
+  listLaunchSeatEvents,
+} from '@/lib/pharmacies/launch-seats';
+import {
+  getCurrentProfile,
+  hasPlatformSuperAdminRole,
+} from '@/lib/auth/platform';
 import { listPharmacyProducts } from '@/lib/pharmacies/products';
 import {
   getPharmacyCatalogMode,
@@ -18,7 +26,6 @@ import { getPharmacyAssistantEntitlement } from '@/lib/kiosk/assistant/entitleme
 import { getPharmacyAssistantUsageCurrentMonth } from '@/lib/kiosk/assistant/settings';
 import { loadOrEnsurePharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
 import { PharmacyDetailClient } from '@/components/pharmacies/pharmacy-detail-client';
-import { getCurrentProfile } from '@/lib/auth/platform';
 import { buildPharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 import { requireOrdersView } from '@/lib/orders/authz';
 import { listPharmacyOrders } from '@/lib/orders/queries';
@@ -39,6 +46,8 @@ export default async function PharmacyDetailPage({
     pharmacy,
     plans,
     launchSeats,
+    launchSeatDetail,
+    launchSeatEvents,
     members,
     roles,
     catalog,
@@ -56,6 +65,8 @@ export default async function PharmacyDetailPage({
     getPharmacyById(pharmacyId),
     listActivePlans(),
     getLaunch2027SeatsSummary(pharmacyId),
+    getPharmacyLaunchSeatDetail(pharmacyId),
+    listLaunchSeatEvents(30, pharmacyId),
     listPharmacyMembers(pharmacyId),
     listPharmacyRoles(),
     listPharmacyProducts(pharmacyId, { status: 'all' }),
@@ -101,12 +112,18 @@ export default async function PharmacyDetailPage({
     actor: { kind: 'platform', profileId: actorProfileId },
     roles,
   });
+  const saTotal = actorProfileId
+    ? await hasPlatformSuperAdminRole(actorProfileId)
+    : { ok: false };
 
   return (
     <PharmacyDetailClient
       pharmacy={pharmacy}
       plans={plans}
       launchSeats={launchSeats}
+      launchSeatDetail={launchSeatDetail}
+      launchSeatEvents={launchSeatEvents}
+      canManageLaunchSeats={saTotal.ok}
       members={members}
       roles={roles}
       usersCapabilities={usersCapabilities}
