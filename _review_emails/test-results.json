@@ -1,0 +1,22 @@
+{
+  "date": "2026-11-12",
+  "preview": "http://127.0.0.1:3040",
+  "branch": "feature/emails-phase-b-send",
+  "commit": "d526d2c",
+  "cases": {
+    "TC-EML-NAV-001": "prueba_tecnica_ok",
+    "TC-EML-NAV-002": "prueba_tecnica_ok",
+    "TC-EML-NAV-003": "prueba_tecnica_ok",
+    "TC-EML-NAV-005": "prueba_tecnica_ok",
+    "TC-EML-DRF-020": "prueba_tecnica_ok",
+    "TC-EML-TRH-010": "prueba_tecnica_ok"
+  },
+  "first_real_send": {
+    "executed": false,
+    "resend_key_present": true,
+    "email_from_present": true,
+    "ff_corporate_send_enabled": false,
+    "ff_corporate_dry_run_live": false
+  },
+  "notes": "Drafts icons Pencil/Trash2; trash moves to Papelera; restore works. No real send."
+}

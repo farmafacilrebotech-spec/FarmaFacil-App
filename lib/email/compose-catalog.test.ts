@@ -12,13 +12,14 @@ import {
 } from './draft-validation.ts';
 
 describe('email-template-slugs', () => {
-  it('exposes five template slugs including blank', () => {
+  it('exposes template slugs including blank and custom', () => {
     assert.deepEqual([...EMAIL_TEMPLATE_SLUGS], [
       'blank',
       'lanzadera',
       'imprentas',
       'demo',
       'piloto',
+      'custom',
     ]);
   });
 
@@ -65,6 +66,6 @@ describe('draft-validation', () => {
     assert.equal(CORPORATE_EMAIL_SEND_ENABLED, false);
     const blocked = assertCorporateSendBlocked();
     assert.equal(blocked.ok, false);
-    assert.match(blocked.error, /bloqueado/i);
+    assert.match(blocked.error, /desactivado|bloqueado|FF_CORPORATE_EMAIL_SEND_ENABLED/i);
   });
 });

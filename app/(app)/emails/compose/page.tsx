@@ -1,18 +1,25 @@
-import Link from 'next/link';
-import { headers } from 'next/headers';
-
 import { EmailComposer } from '@/components/email/email-composer';
-import { PageHeader } from '@/components/shared/page-header';
-import { getEmailDraftAction } from '@/app/(app)/emails/actions';
-import { buildComposeSeed, type EmailTemplateSlug } from '@/lib/email/compose-catalog';
+import { EmailsShell } from '@/components/email/emails-shell';
+import {
+  getEmailDraftAction,
+  listEmailTemplatesAction,
+} from '@/app/(app)/emails/actions';
+import { extractComposerEditableHtml } from '@/lib/email/html-sanitize';
+import { htmlHasEmbeddedSignature } from '@/lib/email/signature';
 import { assertEmailsPageAccess } from '@/lib/email/emails-page-gate';
-import { requestPublicOriginFromHeaders } from '@/lib/auth/request-origin';
-import { CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
-import { normalizeFfPreviewOrigin } from '@/lib/email/corporate-templates';
+import {
+  defaultCorporateSenderKey,
+  getCorporateSender,
+} from '@/lib/email/senders';
 
 export const dynamic = 'force-dynamic';
 
-type SearchParams = { draft?: string; template?: string };
+type SearchParams = {
+  draft?: string;
+  templateId?: string;
+  editTemplate?: string;
+  newTemplate?: string;
+};
 
 export default async function EmailComposePage({
   searchParams,
@@ -21,81 +28,121 @@ export default async function EmailComposePage({
 }) {
   await assertEmailsPageAccess();
 
-  const h = headers();
-  const origin = normalizeFfPreviewOrigin(
-    requestPublicOriginFromHeaders(h, CANONICAL_PRODUCTION_APP_URL)
-  );
-
   const draftId = searchParams?.draft?.trim() || null;
-  const templateParam = searchParams?.template?.trim() || 'blank';
+  const templateIdParam = searchParams?.templateId?.trim() || null;
+  const editTemplateId = searchParams?.editTemplate?.trim() || null;
+  const newTemplate = searchParams?.newTemplate === '1';
+  const defaultSender = getCorporateSender(defaultCorporateSenderKey());
+  const listedTemplates = await listEmailTemplatesAction({
+    includeArchived: Boolean(editTemplateId),
+  });
+  const allTemplates = listedTemplates.ok ? listedTemplates.templates : [];
+  const activeTemplates = allTemplates.filter((t) => t.status === 'active');
+
+  let mode: 'compose' | 'edit-template' | 'new-template' = 'compose';
+  if (editTemplateId) mode = 'edit-template';
+  else if (newTemplate) mode = 'new-template';
 
   let initial = {
     id: null as string | null,
-    templateSlug: 'blank' as EmailTemplateSlug,
+    templateSlug: 'blank',
+    templateId: null as string | null,
+    templateName: '',
     subject: '',
-    htmlBody: '',
+    htmlBody: '<p><br/></p>',
     textBody: '',
     recipientEmail: '',
     recipientName: '',
-    from: '',
-    replyTo: '',
+    ccEmails: '',
+    bccEmails: '',
+    fromKey: defaultSender.key,
+    from: defaultSender.fromHeader,
+    replyTo: defaultSender.replyTo,
+    purpose: 'operational' as 'operational' | 'commercial',
+    includeSignature: true,
   };
 
-  if (draftId) {
+  let title = 'Nuevo email';
+
+  if (mode === 'edit-template' && editTemplateId) {
+    const tpl = allTemplates.find((t) => t.id === editTemplateId);
+    if (tpl) {
+      const body = extractComposerEditableHtml(tpl.htmlBody || '<p><br/></p>');
+      const hasEmbedded = htmlHasEmbeddedSignature(body);
+      initial = {
+        ...initial,
+        templateSlug: tpl.systemKey || 'custom',
+        templateId: tpl.id,
+        templateName: tpl.name,
+        subject: tpl.subject,
+        htmlBody: body,
+        textBody: tpl.textBody,
+        purpose: tpl.purpose,
+        includeSignature: hasEmbedded ? false : tpl.includeSignature !== false,
+      };
+      title = 'Editar plantilla';
+    }
+  } else if (mode === 'new-template') {
+    title = 'Nueva plantilla';
+    initial = {
+      ...initial,
+      templateName: '',
+      includeSignature: true,
+    };
+  } else if (draftId) {
     const loaded = await getEmailDraftAction(draftId);
     if (loaded.ok) {
-      const seed = buildComposeSeed(loaded.draft.templateSlug, {
-        previewOrigin: origin,
-      });
+      const sender = getCorporateSender(loaded.draft.fromKey);
+      const body = extractComposerEditableHtml(
+        loaded.draft.htmlBody || '<p><br/></p>'
+      );
       initial = {
+        ...initial,
         id: loaded.draft.id,
         templateSlug: loaded.draft.templateSlug,
+        templateId: loaded.draft.templateId,
         subject: loaded.draft.subject,
-        htmlBody: loaded.draft.htmlBody,
+        htmlBody: body,
         textBody: loaded.draft.textBody,
         recipientEmail: loaded.draft.recipientEmail,
         recipientName: loaded.draft.recipientName ?? '',
-        from: seed.from,
-        replyTo: seed.replyTo,
+        ccEmails: loaded.draft.ccEmails.join(', '),
+        bccEmails: loaded.draft.bccEmails.join(', '),
+        fromKey: sender.key,
+        from: sender.fromHeader,
+        replyTo: sender.replyTo,
+        purpose: loaded.draft.purpose,
+        includeSignature: !htmlHasEmbeddedSignature(body),
       };
-    } else if (loaded.code !== 'migration_pending') {
-      // draft missing → blank with message via empty state
+      title = 'Editar borrador';
     }
-  } else {
-    const slug = (
-      ['blank', 'lanzadera', 'imprentas', 'demo', 'piloto'] as const
-    ).includes(templateParam as EmailTemplateSlug)
-      ? (templateParam as EmailTemplateSlug)
-      : 'blank';
-    const seed = buildComposeSeed(slug, { previewOrigin: origin });
-    initial = {
-      id: null,
-      templateSlug: seed.templateSlug,
-      subject: seed.subject,
-      htmlBody: seed.htmlBody,
-      textBody: seed.textBody,
-      recipientEmail: '',
-      recipientName: '',
-      from: seed.from,
-      replyTo: seed.replyTo,
-    };
+  } else if (templateIdParam) {
+    const tpl = activeTemplates.find((t) => t.id === templateIdParam);
+    if (tpl) {
+      const body = extractComposerEditableHtml(tpl.htmlBody || '<p><br/></p>');
+      initial = {
+        ...initial,
+        templateSlug: tpl.systemKey || 'custom',
+        templateId: tpl.id,
+        templateName: tpl.name,
+        subject: tpl.subject,
+        htmlBody: body,
+        textBody: tpl.textBody,
+        purpose: tpl.purpose,
+        includeSignature: htmlHasEmbeddedSignature(body)
+          ? false
+          : tpl.includeSignature !== false,
+      };
+    }
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl min-w-0 space-y-6">
-      <div className="text-sm">
-        <Link
-          href="/emails"
-          className="text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          ← Emails corporativos
-        </Link>
-      </div>
-      <PageHeader
-        title={initial.id ? 'Editar borrador' : 'Nuevo email'}
-        description="Redacción y vista previa. Envío bloqueado hasta autorización."
+    <EmailsShell title={title}>
+      <EmailComposer
+        mode={mode}
+        initial={initial}
+        initialTemplates={activeTemplates}
       />
-      <EmailComposer initial={initial} />
-    </div>
+    </EmailsShell>
   );
 }

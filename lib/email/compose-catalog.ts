@@ -181,6 +181,15 @@ export function buildComposeSeed(
         mail
       );
     }
+    case 'custom': {
+      return fromContent('custom', 'Plantilla personalizada', 'custom', {
+        subject: '',
+        html: '',
+        text: '',
+        from: FF_EMAIL_FROM,
+        replyTo: FF_EMAIL_REPLY_TO,
+      });
+    }
     default: {
       const _exhaustive: never = slug;
       return _exhaustive;

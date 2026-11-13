@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { ChevronRight } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
@@ -23,16 +23,34 @@ const labels: Record<string, string> = {
   nueva: 'Nueva',
   login: 'Acceso',
   qr: 'QR de mi farmacia',
+  emails: 'Emails',
+  compose: 'Nuevo email',
+  inbox: 'Recibidos',
+  sends: 'Enviados',
+  drafts: 'Borradores',
+  templates: 'Plantillas',
+  trash: 'Papelera',
 };
+
+function composeLabel(search: URLSearchParams): string {
+  if (search.get('editTemplate')) return 'Editar plantilla';
+  if (search.get('newTemplate') === '1') return 'Nueva plantilla';
+  if (search.get('draft')) return 'Editar borrador';
+  return 'Nuevo email';
+}
 
 export function Breadcrumbs({ className }: { className?: string }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const segments = pathname.split('/').filter(Boolean);
 
   if (segments.length === 0) return null;
 
   const items = segments.map((seg, i) => ({
-    label: labels[seg] ?? seg,
+    label:
+      seg === 'compose'
+        ? composeLabel(searchParams)
+        : labels[seg] ?? seg,
     href: '/' + segments.slice(0, i + 1).join('/'),
     last: i === segments.length - 1,
   }));
