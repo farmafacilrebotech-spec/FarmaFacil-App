@@ -15,7 +15,7 @@ export function parseCorporateEmailTestRecipients(
     .split(/[,;\s]+/)
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  return list.length ? [...new Set(list)] : null;
+  return list.length ? Array.from(new Set(list)) : null;
 }
 
 export function assertCorporateEmailRecipientsAllowed(

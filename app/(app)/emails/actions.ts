@@ -542,13 +542,13 @@ export async function listEmailSendsAction(): Promise<
   }
 
   const rows = (data ?? []) as Record<string, unknown>[];
-  const userIds = [
-    ...new Set(
+  const userIds = Array.from(
+    new Set(
       rows
         .map((r) => (r.created_by == null ? null : String(r.created_by)))
         .filter((v): v is string => Boolean(v))
-    ),
-  ];
+    )
+  );
   const labelById = new Map<string, string>();
   if (userIds.length > 0) {
     const { data: profiles } = await supabase

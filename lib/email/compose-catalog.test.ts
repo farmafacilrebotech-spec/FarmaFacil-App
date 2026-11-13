@@ -12,13 +12,14 @@ import {
 } from './draft-validation.ts';
 
 describe('email-template-slugs', () => {
-  it('exposes five template slugs including blank', () => {
+  it('exposes template slugs including blank and custom', () => {
     assert.deepEqual([...EMAIL_TEMPLATE_SLUGS], [
       'blank',
       'lanzadera',
       'imprentas',
       'demo',
       'piloto',
+      'custom',
     ]);
   });
 

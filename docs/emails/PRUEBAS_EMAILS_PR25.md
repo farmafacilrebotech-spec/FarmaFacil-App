@@ -1,92 +1,62 @@
 # Pruebas Emails — PR #25 (documento vivo)
 
-**Entorno:** staging preview `http://127.0.0.1:3040`  
-**Fecha:** 2026-11-12  
-**Rama:** `feature/emails-phase-b-send`  
-**Estado global:** UI aprobada · **primera prueba real preparada (sin auto-envío)** · sin push/merge/deploy
+**Fecha:** 12/11/2026  
+**Rama:** `feature/emails-phase-b-send` → `main`  
+**Estado global:** preflight técnico OK · **publicado / en publicación** · **aceptación manual pendiente (usuaria)**
 
-## Incidencias y resolución
+## Publicación
 
-| ID | Incidencia | Estado | Resolución |
-|----|------------|--------|------------|
-| INC-EML-001 | `/emails/drafts` rompía con templateTitle función | **Resuelta** | Mapa serializable en servidor |
-| INC-EML-002 | Botones Plantillas cortaban nombres | **Resuelta** | Iconos + tooltips |
-| INC-EML-003 | Renombrar ≠ edición WYSIWYG | **Resuelta** | Modo editTemplate |
-| INC-EML-004 | Migas duplicadas | **Resuelta** | Solo cabecera |
-| INC-EML-005 | Botones grandes Abrir/Eliminar | **Resuelta** | Iconos; trash → Papelera |
+| Campo | Valor |
+|-------|--------|
+| Rollback app | tip `main` previo al merge #25 (docs logos `c34eeab` / app logos `5d61f8b`) |
+| Migraciones prod | `085` → `086` → `087` → `088` (sobre `075` ya presente) |
+| Backup pre-SQL | dump local `email_drafts`+`email_sends` (0 filas) + `wal_level=logical` |
+| Datos staging→prod | **No** (borradores/destinatarios/adjuntos) |
+| IMAP | Fuera de alcance |
 
-## Controles de seguridad para envío real (staging)
+## Controles de seguridad (producción)
 
 | Control | Valor / comportamiento |
 |---------|------------------------|
-| Supabase | Staging `dazfdcjscnpfvhcyjddt` (`.env.local` local del worktree emails; **no** prod) |
-| `FF_CORPORATE_EMAIL_SEND_ENABLED` | `1` (solo preview :3040) |
-| `FF_CORPORATE_EMAIL_DRY_RUN` | `0` (live Resend) |
-| `FF_CORPORATE_EMAIL_TEST_RECIPIENTS` | `pilar.reyesbononat@gmail.com` (To/CC/CCO) |
-| `FF_CORPORATE_EMAIL_ALLOWED_FROM_KEYS` | `pilar` (primera prueba) |
-| Comercial | Sigue bloqueado sin Cartera / ack |
-| Masivo / campañas | No existen en este módulo |
-| Producción Vercel / `.env` prod | **No modificado** |
-| Auto-envío | **No** — solo botón Enviar de la usuaria |
+| `FF_CORPORATE_EMAIL_SEND_ENABLED` | `1` |
+| `FF_CORPORATE_EMAIL_DRY_RUN` | `0` (live Resend; solo tras click de usuaria) |
+| `FF_CORPORATE_EMAIL_TEST_RECIPIENTS` | allowlist de prueba (cuentas autorizadas de la usuaria) |
+| `FF_CORPORATE_EMAIL_ALLOWED_FROM_KEYS` | claves de remitente para pruebas (p. ej. `pilar` + otras corporativas) |
+| `RESEND_API_KEY` / `EMAIL_FROM` | ya existentes; no rotados en esta publicación |
+| Comercial | Bloqueado sin Cartera / ack |
+| Masivo / campañas / auto-envío | No |
+| Agente | **No** envía correos por iniciativa propia |
 
-Allowlist backend: `lib/email/send-recipient-allowlist.ts` (usado en `sendCorporateEmailAction`).
+## Pruebas técnicas (pre-merge)
 
-## Credenciales / dominio
+| ID / check | Resultado |
+|------------|-----------|
+| Firma en código (`applySignaturePolicy`) | PASS — con firma / sin firma / sin duplicar plantilla |
+| Allowlist destinatarios | PASS |
+| Rebase sobre `main` (incluye PR #26 logos) | PASS |
+| Typecheck | PASS (fixes Set/custom slug) |
+| Tests email unitarios | PASS |
+| Build Next | PASS |
+| Migraciones identificadas | `085`,`086`,`087`,`088` (prod tenía solo `075`) |
 
-| Comprobación | Resultado |
-|--------------|-----------|
-| `RESEND_API_KEY` presente | Sí (clave restringida a **solo envío**; `/domains` API → 401 restricted_api_key, esperado) |
-| `EMAIL_FROM` | `FarmaFácil <contacto@farmafacil.solutions>` (fallback; el From del mensaje usa `pilar@` del catálogo) |
-| Remitente prueba | `pilar@farmafacil.solutions` (catálogo cerrado) |
-| Firma Pilar (local preview) | `/images/email/firma-pilar.png` en app |
-| Firma Pilar (URL pública web) | Verificar en bandeja tras envío (foto puede resolverse vía origin del preview o URL pública) |
+## Pruebas de aceptación en producción (pendientes de la usuaria)
 
-## Borrador preparado — primera prueba
+| # | Caso | Estado |
+|---|------|--------|
+| 1 | Nuevo email sin plantilla, **con** firma | pendiente |
+| 2 | Nuevo email sin plantilla, **sin** firma | pendiente |
+| 3 | Plantilla Lanzadera sin firma duplicada | pendiente |
+| 4 | Cambio de remitente y firma correspondiente | pendiente |
+| 5 | Envío con dos adjuntos | pendiente |
+| 6 | Enviados / Borradores / Papelera | pendiente |
+| 7 | Recepción efectiva en Gmail | pendiente |
 
-| Campo | Valor |
-|-------|-------|
-| Draft ID | `07284d59-8a49-477f-8b21-f4f94e21ef92` |
-| URL | `http://127.0.0.1:3040/emails/compose?draft=07284d59-8a49-477f-8b21-f4f94e21ef92` |
-| De | `pilar@farmafacil.solutions` |
-| Para | `pilar.reyesbononat@gmail.com` |
-| Asunto | `FarmaFácil \| Primera prueba de envío` |
-| Tipo | `operational` |
-| Adjunto | `primera-prueba-envio.pdf` |
-| Firma | Activar **Incluir firma** en compositor antes de Enviar |
+## Incidencias previas (staging)
 
-**Acción pendiente de la usuaria:** abrir la URL y pulsar **Enviar**.
+| ID | Incidencia | Estado |
+|----|------------|--------|
+| INC-EML-001…005 | UI borradores/plantillas/migas/iconos | Resueltas en rama |
 
-## Checklist post-envío (cuando pulses Enviar)
+## Evidencias staging
 
-| # | Comprobación | Estado |
-|---|--------------|--------|
-| 1 | Aparece en `/emails/sends` | pendiente |
-| 2 | Historial = «Enviado a Resend» (aceptación) | pendiente |
-| 3 | `provider_message_id` (id Resend) visible en detalle | pendiente |
-| 4 | Distinguir aceptación vs entrega vs error | pendiente |
-| 5 | Adjunto PDF llega al buzón | pendiente |
-| 6 | Firma Pilar visible en el correo | pendiente |
-| 7 | Sin duplicados (reintento idempotente / no doble click) | pendiente |
-| 8 | Comercial sigue bloqueado | N/A (esta prueba es operativa) |
-
-## Próximas oleadas (después de esta)
-
-1. Otros remitentes corporativos (ampliar `ALLOWED_FROM_KEYS`).  
-2. CC / CCO (ampliar allowlist si hace falta).  
-3. Plantillas operativas (no comerciales).
-
-## Casos de navegación (previos)
-
-| ID | Estado |
-|----|--------|
-| TC-EML-NAV-001…006 | `prueba_tecnica_ok` |
-| TC-EML-DRF-020 / TRH-010 | `prueba_tecnica_ok` |
-| TC-EML-SEND-001 primera real | `preparado_pendiente_click_usuario` |
-
-## Evidencias
-
-`_review_emails/` + PDF `primera-prueba-envio.pdf`.
-
-## Validación
-
-Sin push / merge / deploy hasta tu OK tras la prueba real.
+`_review_emails/` (iconos, compositor, checklist primer envío staging).

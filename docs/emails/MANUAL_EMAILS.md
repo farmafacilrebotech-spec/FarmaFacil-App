@@ -1,11 +1,12 @@
 # Manual de usuario — Emails corporativos (SuperAdmin)
 
-**Estado:** pendiente de publicación (PR #25 · staging)  
-**Actualizado:** 2026-11-12  
+**Estado:** publicado en producción (PR #25) · aceptación manual pendiente  
+**Actualizado:** 12/11/2026  
 **Audiencia:** SuperAdmin Total  
-**Versión app:** preview local / rama `feature/emails-phase-b-send`
+**Versión app:** `main` post-PR #25 · https://app.farmafacil.solutions/emails  
+**Fuera de alcance:** recepción IMAP
 
-Documento vivo destinado al Centro de ayuda (solo SA Total). No describe envíos masivos ni recepción IMAP (aún no disponible).
+Documento vivo destinado al Centro de ayuda (solo SA Total). No describe envíos masivos ni recepción IMAP.
 
 ## Objetivo
 
@@ -19,23 +20,19 @@ Panel → **Emails** → menú lateral: Recibidos, Enviados, Borradores, Plantil
 
 1. Pulse **Nuevo email**.
 2. Elija **Plantilla** o **Sin plantilla**.
-3. Seleccione remitente (**De**): 8 cuentas corporativas (en prueba controlada puede estar limitada a `pilar@`).
+3. Seleccione remitente (**De**): cuentas corporativas autorizadas (en fase controlada puede estar limitada por configuración).
 4. Complete Para / CC / CCO, asunto y cuerpo (editor con formato).
 5. Active o desactive **Incluir firma** (no duplica firmas ya embebidas en plantillas).
 6. Acciones: **Adjuntar**, **Enviar**, **Guardar borrador**, **Guardar como plantilla**, **Descartar** (envía el borrador a Papelera si existía).
 
 No aparecen formularios jurídicos en la redacción; el backend sigue bloqueando comerciales sin habilitación (Cartera).
 
-### Primera prueba de envío real (staging)
+### Envíos en fase controlada (producción)
 
-Cuando el preview tenga flags de envío activos:
-
-1. Abra el borrador preparado (URL que indiquen en la sesión de prueba).
-2. Revise De / Para / asunto / adjunto / **Incluir firma**.
-3. Pulse **Enviar** usted misma (no hay envío automático).
-4. Compruebe **Enviados**: estado «Enviado a Resend» (aceptación proveedor). «Entregado» solo si llega webhook.
-
-Durante la fase controlada, el backend solo permite destinatarios de la allowlist de prueba.
+- Solo usted realiza el envío (botón **Enviar**); no hay envíos automáticos ni masivos.
+- Destinatarios restringidos a la allowlist de prueba configurada en el servidor.
+- Comercial no autorizado permanece bloqueado.
+- Tras enviar: revise **Enviados** (aceptación Resend) y su bandeja Gmail.
 
 ## Plantillas
 
@@ -79,26 +76,18 @@ Estados relevantes:
 | Entregado | Webhook de entrega (si está configurado) |
 | Error / Rebotado / Bloqueado | Fallo o rechazo |
 
-## Recibidos
-
-Bandeja de entrada aún no conectada (fase IMAP posterior).
-
 ## Papelera
 
-| Icono | Acción | Efecto |
-|-------|--------|--------|
-| ArchiveRestore | Restaurar | Vuelve a Borradores |
-| Trash2 (rojo) | Eliminar definitivamente | Confirmación; irreversible |
+Borradores descartados; se pueden restaurar o eliminar de forma definitiva según la UI.
 
-## Errores frecuentes
+## Firmas
 
-- Firma duplicada: desactivar «Incluir firma» o dejar la detección automática.
-- Envío comercial bloqueado: esperado hasta Cartera de farmacias.
-- Destinatario no permitido: allowlist de prueba activa en staging.
+- **Incluir firma** en correos sin plantilla: opcional.
+- Plantillas con firma embebida (p. ej. Lanzadera): el sistema **no duplica** la firma gestionada.
+- Al cambiar el remitente, la firma gestionada se actualiza a la identidad de esa cuenta (si aplica).
 
 ## FAQ
 
-**¿Usar modifica la plantilla?** No. Solo **Editar** + Guardar cambios.  
-**¿Eliminar en Borradores borra el correo?** No: lo mueve a Papelera.  
-**¿Se regeneran plantillas en cada despliegue?** No.  
-**¿Hay campañas masivas?** No en este módulo.
+**¿Puedo enviar a cualquier destinatario?** En fase controlada, solo a cuentas de la allowlist de prueba.  
+**¿Hay recepción en Recibidos?** IMAP queda fuera de esta publicación.  
+**¿Se copian borradores de staging?** No.
