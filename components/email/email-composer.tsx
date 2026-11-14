@@ -23,6 +23,7 @@ import {
   listCorporateSendersAction,
   listDraftAttachmentsAction,
   listEmailTemplatesAction,
+  listPharmacyPortfolioRecipientsAction,
   saveEmailAsTemplateAction,
   saveEmailDraftAction,
   sendCorporateEmailAction,
@@ -31,6 +32,7 @@ import {
   uploadDraftAttachmentAction,
   type EmailDraftAttachmentRow,
   type EmailTemplateRow,
+  type PharmacyPortfolioRecipientRow,
 } from '@/app/(app)/emails/actions';
 import {
   extractComposerEditableHtml,
@@ -38,15 +40,30 @@ import {
   sanitizeEmailHtml,
   wrapComposerHtmlForSend,
 } from '@/lib/email/html-sanitize';
+import {
+  buildComposerShellHtml,
+  composeTemplateSendBody,
+  extractComposerNoteHtml,
+  extractNoteAgainstLockedTemplate,
+} from '@/lib/email/composer-template-lock';
+import { COMMERCIAL_SEND_NOTICE_ES } from '@/lib/email/corporate-send-policy';
 import type { CorporateSender } from '@/lib/email/senders';
 import {
   applySignaturePolicy,
   htmlHasEmbeddedSignature,
   stripManagedSignature,
 } from '@/lib/email/signature';
+import { assertEmailHasAuthoredContent } from '@/lib/email/content-validation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 type ComposerDraft = {
   id: string | null;
@@ -64,7 +81,7 @@ type ComposerDraft = {
   from: string;
   replyTo: string;
   /** Metadato interno (no se muestra en UI). */
-  purpose: 'operational' | 'commercial';
+  purpose: 'operational' | 'commercial' | 'institutional' | 'procurement';
   includeSignature?: boolean;
 };
 
@@ -105,23 +122,65 @@ export function EmailComposer({
   const [sending, setSending] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  const [confirmMode, setConfirmMode] = React.useState<'send' | 'visual_test'>(
+    'send'
+  );
+  const [allowAttachmentsOnly, setAllowAttachmentsOnly] = React.useState(false);
   const [saveAsTplOpen, setSaveAsTplOpen] = React.useState(false);
   const [tplName, setTplName] = React.useState('');
   const [includeSignature, setIncludeSignature] = React.useState(
     initial.includeSignature ?? !htmlHasEmbeddedSignature(initial.htmlBody)
   );
+  /**
+   * Plantilla corporativa intacta (fuera del contentEditable libre).
+   * Se inicializa si el compose ya viene con plantilla (deep link / selector).
+   */
+  const [lockedTemplateHtml, setLockedTemplateHtml] = React.useState<
+    string | null
+  >(() => {
+    if (isTemplateEditor) return null;
+    const slug = initial.templateSlug || 'blank';
+    if (!initial.templateId || slug === 'blank') return null;
+    const body = extractComposerEditableHtml(initial.htmlBody || '');
+    return body.trim() ? body : null;
+  });
+  const [portfolioOpen, setPortfolioOpen] = React.useState(false);
+  const [portfolioBusy, setPortfolioBusy] = React.useState(false);
+  const [portfolioNotice, setPortfolioNotice] = React.useState<string | null>(
+    null
+  );
+  const [portfolioRows, setPortfolioRows] = React.useState<
+    PharmacyPortfolioRecipientRow[]
+  >([]);
+  const [portfolioQuery, setPortfolioQuery] = React.useState('');
   const [sendStatus, setSendStatus] = React.useState<{
     sendEnabled: boolean;
     dryRun: boolean;
+    disabledReason: string | null;
+    testAllowlistConfigured: boolean;
+    testAllowlistCount: number;
   } | null>(null);
 
   const origin =
     typeof window !== 'undefined' ? window.location.origin : null;
 
-  function renderEditorHtml(body: string, fromKey: string, withSig: boolean) {
+  function renderEditorHtml(
+    body: string,
+    fromKey: string,
+    withSig: boolean,
+    locked: string | null = lockedTemplateHtml
+  ) {
     const editable = extractComposerEditableHtml(body);
+    const shell =
+      locked && !isTemplateEditor
+        ? buildComposerShellHtml(
+            extractNoteAgainstLockedTemplate(editable, locked) ||
+              '<p><br/></p>',
+            locked
+          )
+        : editable;
     const applied = applySignaturePolicy({
-      htmlBody: editable,
+      htmlBody: shell,
       textBody: '',
       fromKey,
       previewOrigin: origin,
@@ -132,7 +191,15 @@ export function EmailComposer({
 
   React.useEffect(() => {
     void getCorporateEmailSendStatusAction().then((r) => {
-      if (r.ok) setSendStatus({ sendEnabled: r.sendEnabled, dryRun: r.dryRun });
+      if (r.ok) {
+        setSendStatus({
+          sendEnabled: r.sendEnabled,
+          dryRun: r.dryRun,
+          disabledReason: r.disabledReason,
+          testAllowlistConfigured: r.testAllowlistConfigured,
+          testAllowlistCount: r.testAllowlistCount,
+        });
+      }
     });
     void listCorporateSendersAction().then((r) => {
       if (r.ok) setSenders(r.senders);
@@ -163,8 +230,18 @@ export function EmailComposer({
 
   function syncEditorToDraft() {
     const raw = sanitizeEmailHtml(editorRef.current?.innerHTML ?? '');
-    // Guardamos el cuerpo sin la firma gestionada (se re-aplica al render/envío)
-    const bodyOnly = stripManagedSignature(raw);
+    const withoutSig = stripManagedSignature(raw);
+    // Con plantilla bloqueada: persistir nota + plantilla (estado), no el DOM mangled
+    const bodyOnly =
+      lockedTemplateHtml && !isTemplateEditor
+        ? composeTemplateSendBody({
+            noteHtml: extractNoteAgainstLockedTemplate(
+              withoutSig,
+              lockedTemplateHtml
+            ),
+            lockedTemplateHtml,
+          })
+        : withoutSig;
     setDraft((d) => ({
       ...d,
       htmlBody: bodyOnly,
@@ -193,27 +270,26 @@ export function EmailComposer({
     const hasEmbedded = htmlHasEmbeddedSignature(
       stripManagedSignature(editorRef.current?.innerHTML || draft.htmlBody)
     );
-    if (hasEmbedded && includeSignature === false) {
+    if (hasEmbedded) {
       const ok = window.confirm(
-        'Esta plantilla incluye una firma distinta. ¿Cambiar el remitente y mantener la firma de la plantilla?'
+        'Esta plantilla incluye una firma. ¿Cambiar el remitente y conservar la firma de la plantilla (sin duplicar)?'
       );
       if (!ok) return;
       patch({ fromKey: nextKey });
+      setIncludeSignature(false);
       return;
     }
-    if (includeSignature) {
-      const ok = window.confirm(
-        'Al cambiar el remitente se actualizará la firma. ¿Continuar?'
-      );
-      if (!ok) return;
-    }
+    const ok = window.confirm(
+      'Al cambiar el remitente se aplicará la firma corporativa de esa cuenta. ¿Continuar?'
+    );
+    if (!ok) return;
     patch({ fromKey: nextKey });
-    // Re-render firma gestionada
+    setIncludeSignature(true);
     requestAnimationFrame(() => {
       const el = editorRef.current;
       if (!el) return;
       const body = stripManagedSignature(el.innerHTML);
-      el.innerHTML = renderEditorHtml(body, nextKey, includeSignature);
+      el.innerHTML = renderEditorHtml(body, nextKey, true);
       syncEditorToDraft();
     });
   }
@@ -240,13 +316,14 @@ export function EmailComposer({
 
   async function applyTemplate(templateId: string) {
     if (!templateId) {
-      // Sin plantilla
       const blank = '<p><br/></p>';
+      setLockedTemplateHtml(null);
       if (editorRef.current) {
         editorRef.current.innerHTML = renderEditorHtml(
           blank,
           draft.fromKey,
-          true
+          true,
+          null
         );
       }
       setIncludeSignature(true);
@@ -272,24 +349,27 @@ export function EmailComposer({
     if (!confirmed) return;
 
     setBusyTemplate(true);
-    const editable = extractComposerEditableHtml(dbTpl.htmlBody);
-    const hasSig = htmlHasEmbeddedSignature(editable);
+    // Conservar HTML original íntegro. No stripLegacy: destruía tablas de layout.
+    const locked = extractComposerEditableHtml(dbTpl.htmlBody);
+    const hasSig = htmlHasEmbeddedSignature(locked);
     const useManagedSig =
-      dbTpl.includeSignature !== false && !hasSig ? true : !hasSig;
+      dbTpl.includeSignature !== false && !hasSig;
     setIncludeSignature(useManagedSig);
+    setLockedTemplateHtml(locked);
     if (editorRef.current) {
       editorRef.current.innerHTML = renderEditorHtml(
-        editable,
+        '<p><br/></p>',
         draft.fromKey,
-        useManagedSig
+        useManagedSig,
+        locked
       );
     }
     patch({
       templateSlug: dbTpl.systemKey || 'custom',
       templateId: dbTpl.id,
       subject: dbTpl.subject,
-      htmlBody: stripManagedSignature(editable),
-      textBody: dbTpl.textBody || htmlToPlainText(editable),
+      htmlBody: locked,
+      textBody: dbTpl.textBody || htmlToPlainText(locked),
       purpose: dbTpl.purpose,
     });
     setBusyTemplate(false);
@@ -478,18 +558,90 @@ export function EmailComposer({
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
 
-  async function onConfirmSend() {
-    setSending(true);
-    const body = stripManagedSignature(
-      sanitizeEmailHtml(editorRef.current?.innerHTML || draft.htmlBody)
+  function editorBodyForSend(): string {
+    const raw = sanitizeEmailHtml(
+      editorRef.current?.innerHTML || draft.htmlBody
     );
-    const forSend = applySignaturePolicy({
+    // Solo quitar firma gestionada del DOM; la plantilla bloqueada va intacta.
+    const withoutManaged = stripManagedSignature(raw);
+    if (lockedTemplateHtml && !isTemplateEditor) {
+      return composeTemplateSendBody({
+        noteHtml: extractNoteAgainstLockedTemplate(
+          withoutManaged,
+          lockedTemplateHtml
+        ),
+        lockedTemplateHtml,
+      });
+    }
+    return withoutManaged;
+  }
+
+  async function openPortfolioPicker() {
+    setPortfolioOpen(true);
+    setPortfolioBusy(true);
+    setPortfolioNotice(null);
+    setPortfolioRows([]);
+    const result = await listPharmacyPortfolioRecipientsAction({
+      query: portfolioQuery,
+    });
+    setPortfolioBusy(false);
+    if (result.ok === false) {
+      setPortfolioNotice(result.error);
+      return;
+    }
+    setPortfolioNotice(result.notice);
+    setPortfolioRows(result.recipients);
+  }
+
+  function openConfirm(mode: 'send' | 'visual_test') {
+    const body = editorBodyForSend();
+    const gate = assertEmailHasAuthoredContent({
       htmlBody: body,
       textBody: htmlToPlainText(body),
-      fromKey: draft.fromKey,
-      previewOrigin: origin,
-      includeSignature,
+      attachmentCount: attachments.length,
     });
+    if (!gate.ok && gate.code === 'empty_body') {
+      toast.error(gate.error);
+      return;
+    }
+    setAllowAttachmentsOnly(false);
+    setConfirmMode(mode);
+    setConfirmOpen(true);
+    if (!gate.ok && gate.code === 'attachments_only') {
+      toast.message(gate.error);
+    }
+  }
+
+  async function onConfirmSend() {
+    if (sending) return;
+    const body = editorBodyForSend();
+    const gate = assertEmailHasAuthoredContent({
+      htmlBody: body,
+      textBody: htmlToPlainText(body),
+      attachmentCount: attachments.length,
+    });
+    if (!gate.ok && gate.code === 'empty_body') {
+      toast.error(gate.error);
+      return;
+    }
+    if (
+      !gate.ok &&
+      gate.code === 'attachments_only' &&
+      !allowAttachmentsOnly
+    ) {
+      toast.error(
+        'Marca la casilla de confirmación: envío solo con adjuntos (sin texto).'
+      );
+      return;
+    }
+
+    const isTemplate =
+      Boolean(draft.templateSlug) &&
+      draft.templateSlug !== 'blank' &&
+      draft.templateSlug !== 'custom';
+    const visualTest = confirmMode === 'visual_test';
+
+    setSending(true);
     const result = await sendCorporateEmailAction({
       draftId: draft.id,
       explicitConfirm: true,
@@ -497,14 +649,17 @@ export function EmailComposer({
       fromKey: draft.fromKey,
       recipientEmail: draft.recipientEmail,
       recipientName: draft.recipientName || null,
-      ccEmails: draft.ccEmails,
-      bccEmails: draft.bccEmails,
+      ccEmails: visualTest ? '' : draft.ccEmails,
+      bccEmails: visualTest ? '' : draft.bccEmails,
       subject: draft.subject,
-      htmlBody: wrapComposerHtmlForSend(forSend.html),
-      textBody: forSend.text,
+      htmlBody: wrapComposerHtmlForSend(body, isTemplate ? 'template' : 'plain'),
+      textBody: htmlToPlainText(body),
       templateSlug: draft.templateSlug,
-      previewOrigin: origin,
-      includeSignature: false, // ya aplicada en forSend
+      includeSignature,
+      visualTestSend: visualTest,
+      allowAttachmentsOnly:
+        allowAttachmentsOnly ||
+        (gate.ok === false && gate.code === 'attachments_only'),
     });
     setSending(false);
     setConfirmOpen(false);
@@ -513,11 +668,20 @@ export function EmailComposer({
       return;
     }
     toast.success(
-      result.dryRun ? 'Envío de prueba registrado.' : 'Correo enviado.'
+      visualTest
+        ? 'Prueba visual enviada (asunto [PRUEBA]).'
+        : result.dryRun
+          ? 'Envío de prueba (dry-run) registrado.'
+          : 'Correo enviado.'
     );
     router.push('/emails/sends');
     router.refresh();
   }
+
+  const isCommercialTemplate =
+    draft.purpose === 'commercial' ||
+    draft.templateSlug === 'demo' ||
+    draft.templateSlug === 'piloto';
 
   const selectedSender =
     senders.find((s) => s.key === draft.fromKey) || senders[0];
@@ -599,7 +763,14 @@ export function EmailComposer({
               <FieldRow
                 label="Para"
                 trailing={
-                  <div className="flex gap-2 text-xs">
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <button
+                      type="button"
+                      className="text-primary hover:underline"
+                      onClick={() => void openPortfolioPicker()}
+                    >
+                      Seleccionar de Cartera de farmacias
+                    </button>
                     {!showCc ? (
                       <button
                         type="button"
@@ -727,11 +898,27 @@ export function EmailComposer({
           </label>
         </div>
 
+        {lockedTemplateHtml && !isTemplateEditor ? (
+          <div className="border-b border-border bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
+            <p className="font-medium text-foreground">
+              Nota adicional (editable) · Plantilla corporativa bloqueada debajo
+            </p>
+            <p className="mt-0.5">
+              Escribe solo en la zona superior. El HTML original de la plantilla
+              no se modifica al cambiar asunto, destinatario o firma.
+            </p>
+          </div>
+        ) : null}
+
         <div
           ref={editorRef}
           contentEditable
           role="textbox"
-          aria-label="Cuerpo del mensaje"
+          aria-label={
+            lockedTemplateHtml && !isTemplateEditor
+              ? 'Nota adicional y plantilla corporativa'
+              : 'Cuerpo del mensaje'
+          }
           className="min-h-[320px] px-4 py-3 text-sm leading-relaxed outline-none"
           onInput={syncEditorToDraft}
           suppressContentEditableWarning
@@ -785,6 +972,35 @@ export function EmailComposer({
           </div>
         ) : null}
 
+        {!isTemplateEditor && sendStatus ? (
+          <div
+            className={
+              sendStatus.sendEnabled
+                ? 'border-t border-border bg-emerald-500/10 px-4 py-2 text-sm text-emerald-900 dark:text-emerald-100'
+                : 'border-t border-border bg-amber-500/10 px-4 py-2 text-sm text-amber-950 dark:text-amber-100'
+            }
+          >
+            {sendStatus.sendEnabled ? (
+              <>
+                Envío{' '}
+                {sendStatus.dryRun
+                  ? 'en modo prueba (no sale a Resend).'
+                  : 'real habilitado vía Resend.'}{' '}
+                {sendStatus.testAllowlistConfigured
+                  ? `Destinatarios restringidos a la allowlist de prueba (${sendStatus.testAllowlistCount}).`
+                  : 'Falta allowlist de prueba: el backend bloqueará envíos reales.'}{' '}
+                No se envía nada hasta que pulses Confirmar.
+              </>
+            ) : (
+              <>
+                Enviar deshabilitado.{' '}
+                {sendStatus.disabledReason ||
+                  'Revisa la configuración del servidor.'}
+              </>
+            )}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center gap-2 border-t border-border bg-muted/20 px-4 py-3">
           {isTemplateEditor ? (
             <>
@@ -810,9 +1026,23 @@ export function EmailComposer({
               <Button
                 type="button"
                 disabled={!sendStatus?.sendEnabled || sending}
-                onClick={() => setConfirmOpen(true)}
+                title={
+                  !sendStatus?.sendEnabled
+                    ? sendStatus?.disabledReason || 'Envío no disponible'
+                    : undefined
+                }
+                onClick={() => openConfirm('send')}
               >
                 Enviar
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!sendStatus?.sendEnabled || sending}
+                title="Prueba visual SA: allowlist interna, asunto [PRUEBA]"
+                onClick={() => openConfirm('visual_test')}
+              >
+                Enviar prueba
               </Button>
               <Button
                 type="button"
@@ -853,7 +1083,29 @@ export function EmailComposer({
       {confirmOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="w-full max-w-md space-y-4 rounded-xl border border-border bg-card p-5 shadow-soft">
-            <h2 className="text-lg font-semibold">Confirmar envío</h2>
+            <h2 className="text-lg font-semibold">
+              {confirmMode === 'visual_test'
+                ? 'Confirmar envío de prueba'
+                : 'Confirmar envío'}
+            </h2>
+            {confirmMode === 'visual_test' ? (
+              <p className="text-sm text-muted-foreground">
+                Asunto con prefijo [PRUEBA]. Solo destinatarios de la allowlist
+                interna. No registra consentimiento comercial ni contacta
+                farmacias. Usa un asunto único para evitar agrupación de Gmail.
+              </p>
+            ) : null}
+            {confirmMode !== 'visual_test' && isCommercialTemplate ? (
+              <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-950 dark:text-amber-100">
+                {COMMERCIAL_SEND_NOTICE_ES}
+              </p>
+            ) : null}
+            {lockedTemplateHtml ? (
+              <p className="text-xs text-muted-foreground">
+                La plantilla corporativa se envía intacta. El texto de la nota
+                superior se antepone sin sustituir el diseño.
+              </p>
+            ) : null}
             <dl className="space-y-1 text-sm">
               <div>
                 <dt className="text-muted-foreground">De</dt>
@@ -865,7 +1117,7 @@ export function EmailComposer({
                 <dt className="text-muted-foreground">Para</dt>
                 <dd className="font-medium">{draft.recipientEmail || '—'}</dd>
               </div>
-              {draft.ccEmails ? (
+              {confirmMode !== 'visual_test' && draft.ccEmails ? (
                 <div>
                   <dt className="text-muted-foreground">CC</dt>
                   <dd className="font-medium">{draft.ccEmails}</dd>
@@ -873,13 +1125,45 @@ export function EmailComposer({
               ) : null}
               <div>
                 <dt className="text-muted-foreground">Asunto</dt>
-                <dd className="font-medium">{draft.subject || '—'}</dd>
+                <dd className="font-medium">
+                  {confirmMode === 'visual_test' &&
+                  !/^\[PRUEBA\]/i.test(draft.subject)
+                    ? `[PRUEBA] ${draft.subject || 'Plantilla comercial'}`
+                    : draft.subject || '—'}
+                </dd>
               </div>
               <div>
                 <dt className="text-muted-foreground">Adjuntos</dt>
                 <dd className="font-medium">{attachments.length}</dd>
               </div>
+              <div>
+                <dt className="text-muted-foreground">Firma</dt>
+                <dd className="font-medium">
+                  {includeSignature
+                    ? `Sí — ${selectedSender?.signatureName || selectedSender?.displayName || 'corporativa'}`
+                    : 'No'}
+                </dd>
+              </div>
             </dl>
+            {attachments.length > 0 &&
+            !assertEmailHasAuthoredContent({
+              htmlBody: editorBodyForSend(),
+              textBody: htmlToPlainText(editorBodyForSend()),
+              attachmentCount: attachments.length,
+            }).ok ? (
+              <label className="flex items-start gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={allowAttachmentsOnly}
+                  onChange={(e) => setAllowAttachmentsOnly(e.target.checked)}
+                />
+                <span>
+                  Confirmo el envío <strong>sin texto redactado</strong> (solo
+                  adjuntos). La firma no cuenta como contenido.
+                </span>
+              </label>
+            ) : null}
             <div className="flex justify-end gap-2">
               <Button
                 type="button"
@@ -894,7 +1178,11 @@ export function EmailComposer({
                 disabled={sending}
                 onClick={() => void onConfirmSend()}
               >
-                {sending ? 'Enviando…' : 'Confirmar envío'}
+                {sending
+                  ? 'Enviando…'
+                  : confirmMode === 'visual_test'
+                    ? 'Confirmar prueba'
+                    : 'Confirmar envío'}
               </Button>
             </div>
           </div>
@@ -924,6 +1212,74 @@ export function EmailComposer({
             </div>
           </div>
         </div>
+      ) : null}
+
+      <Dialog open={portfolioOpen} onOpenChange={setPortfolioOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Cartera de farmacias</DialogTitle>
+            <DialogDescription>
+              Farmacias con consentimiento comercial vigente (sin campañas
+              masivas).
+            </DialogDescription>
+          </DialogHeader>
+          <Input
+            placeholder="Buscar por nombre, email o localidad…"
+            value={portfolioQuery}
+            onChange={(e) => setPortfolioQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void openPortfolioPicker();
+              }
+            }}
+          />
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={portfolioBusy}
+            onClick={() => void openPortfolioPicker()}
+          >
+            {portfolioBusy ? 'Buscando…' : 'Buscar'}
+          </Button>
+          {portfolioNotice ? (
+            <p className="text-sm text-muted-foreground">{portfolioNotice}</p>
+          ) : null}
+          {portfolioRows.length > 0 ? (
+            <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
+              {portfolioRows.map((r) => (
+                <li key={`${r.pharmacyId}-${r.email}`}>
+                  <button
+                    type="button"
+                    className="w-full rounded-md border border-border px-3 py-2 text-left hover:bg-muted/40"
+                    onClick={() => {
+                      patch({
+                        recipientEmail: r.email,
+                        recipientName: r.contactName || r.pharmacyName,
+                      });
+                      setPortfolioOpen(false);
+                    }}
+                  >
+                    <span className="font-medium">{r.pharmacyName}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {r.contactName || '—'} · {r.email}
+                      {r.city || r.province
+                        ? ` · ${[r.city, r.province].filter(Boolean).join(', ')}`
+                        : ''}
+                      {' · Auth. '}
+                      {new Date(r.authorizedAt).toLocaleDateString('es-ES')}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {!isTemplateEditor && isCommercialTemplate ? (
+        <p className="text-xs text-muted-foreground">{COMMERCIAL_SEND_NOTICE_ES}</p>
       ) : null}
     </div>
   );

@@ -11,10 +11,14 @@ import {
 import {
   assertCorporateSendPolicy,
   defaultPurposeForTemplate,
+  emailPurposeLabel,
+  isEmailPurpose,
   resolveEffectivePurpose,
   type EmailLegalBasis,
   type EmailPurpose,
 } from '@/lib/email/corporate-send-policy';
+import { buildProviderEmailHtml } from '@/lib/email/provider-html';
+import { htmlHasEmbeddedSignature } from '@/lib/email/signature';
 import {
   buildDraftAttachmentStoragePath,
   formatAttachmentBytes,
@@ -29,7 +33,6 @@ import {
   type EmailHistoryKind,
 } from '@/lib/email/delivery-status';
 import {
-  assertCorporateSendBlocked,
   validateEmailDraftInput,
   type EmailDraftInput,
   type EmailFromKey,
@@ -40,7 +43,11 @@ import {
   corporateEmailSendReadiness,
   getCorporateEmailSendMode,
 } from '@/lib/email/send-config';
-import { assertCorporateEmailRecipientsAllowed } from '@/lib/email/send-recipient-allowlist';
+import {
+  assertCorporateEmailRecipientsAllowed,
+  parseCorporateEmailTestRecipients,
+} from '@/lib/email/send-recipient-allowlist';
+import { assertEmailHasAuthoredContent } from '@/lib/email/content-validation';
 import {
   assertAuthorizedSenderKey,
   defaultCorporateSenderKey,
@@ -55,7 +62,6 @@ import {
   sanitizeEmailHtml,
 } from '@/lib/email/html-sanitize';
 import { normalizeRecipients } from '@/lib/email/recipients';
-import { applySignaturePolicy } from '@/lib/email/signature';
 import { createClient } from '@/lib/supabase/server';
 
 export type EmailTemplateRow = {
@@ -109,19 +115,33 @@ export type EmailDraftRow = {
   createdAt: string;
 };
 
+export type EmailSendAttachmentRow = {
+  id: string;
+  fileName: string;
+  contentType: string;
+  byteSize: number;
+  byteSizeLabel: string;
+};
+
 export type EmailSendRow = {
   id: string;
   status: string;
   purpose: EmailPurpose;
+  purposeLabel: string;
   subject: string;
   recipientEmail: string;
+  recipientName: string | null;
+  ccEmails: string[];
+  bccEmails: string[];
   fromAddress: string;
   fromKey: string;
+  replyTo: string | null;
   templateSlug: string;
   dryRun: boolean;
   error: string | null;
   providerMessageId: string | null;
   providerStatus: string | null;
+  providerStatusLabel: string;
   attachmentCount: number;
   createdBy: string | null;
   createdByLabel: string | null;
@@ -131,7 +151,31 @@ export type EmailSendRow = {
   bouncedAt: string | null;
   historyKind: EmailHistoryKind;
   historyLabel: string;
+  trashedAt: string | null;
+  /** Snapshot HTML final; null si no disponible. */
+  htmlBody: string | null;
+  textBody: string | null;
+  finalHtmlAvailable: boolean;
+  signatureIncluded: boolean;
+  signatureLabel: string | null;
+  attachments?: EmailSendAttachmentRow[];
 };
+
+function parsePurpose(raw: unknown): EmailPurpose {
+  const v = String(raw ?? 'operational');
+  return isEmailPurpose(v) ? v : 'operational';
+}
+
+function providerStatusLabelEs(status: string | null): string {
+  if (!status) return '—';
+  const s = status.toLowerCase();
+  // Código técnico del proveedor (no duplicar el estado de historial)
+  if (s === 'accepted') return 'accepted (Resend)';
+  if (s === 'delivered') return 'delivered';
+  if (s === 'bounced') return 'bounced';
+  if (s === 'complained') return 'complained';
+  return status;
+}
 
 type ActionOk<T> = { ok: true } & T;
 type ActionErr = {
@@ -148,9 +192,7 @@ const ATTACH_SELECT =
 
 function mapDraftRow(row: Record<string, unknown>): EmailDraftRow {
   const slug = String(row.template_slug ?? 'blank');
-  const purposeRaw = String(row.purpose ?? 'operational');
-  const purpose: EmailPurpose =
-    purposeRaw === 'commercial' ? 'commercial' : 'operational';
+  const purpose = parsePurpose(row.purpose);
   const basisRaw = row.legal_basis == null ? '' : String(row.legal_basis);
   const legalBasis =
     basisRaw === 'consent' ||
@@ -245,25 +287,54 @@ function mapAttachmentRow(row: Record<string, unknown>): EmailDraftAttachmentRow
 
 function mapSendRow(
   row: Record<string, unknown>,
-  profileLabel?: string | null
+  profileLabel?: string | null,
+  opts?: { includeBody?: boolean; attachments?: EmailSendAttachmentRow[] }
 ): EmailSendRow {
-  const purposeRaw = String(row.purpose ?? 'operational');
+  const purpose = parsePurpose(row.purpose);
+  const providerStatus =
+    row.provider_status == null ? null : String(row.provider_status);
   const historyKind = resolveEmailHistoryKind({
     status: String(row.status ?? ''),
-    providerStatus:
-      row.provider_status == null ? null : String(row.provider_status),
+    providerStatus,
     dryRun: Boolean(row.dry_run),
     bouncedAt: row.bounced_at == null ? null : String(row.bounced_at),
     deliveredAt: row.delivered_at == null ? null : String(row.delivered_at),
   });
+  const hasHtmlColumn = Object.prototype.hasOwnProperty.call(row, 'html_body');
+  const rawHtml = hasHtmlColumn ? String(row.html_body ?? '') : '';
+  const finalHtmlAvailable =
+    row.final_html_available != null
+      ? Boolean(row.final_html_available) &&
+        (!hasHtmlColumn || rawHtml.trim().length > 0)
+      : hasHtmlColumn
+        ? rawHtml.trim().length > 0
+        : true;
+  const ccEmails = Array.isArray(row.cc_emails)
+    ? (row.cc_emails as string[]).map((e) => String(e).toLowerCase())
+    : [];
+  const bccEmails = Array.isArray(row.bcc_emails)
+    ? (row.bcc_emails as string[]).map((e) => String(e).toLowerCase())
+    : [];
+  const includeBody = opts?.includeBody === true;
   return {
     id: String(row.id),
     status: String(row.status ?? ''),
-    purpose: purposeRaw === 'commercial' ? 'commercial' : 'operational',
+    purpose,
+    purposeLabel: emailPurposeLabel(purpose),
     subject: String(row.subject ?? ''),
     recipientEmail: String(row.recipient_email ?? ''),
+    recipientName:
+      row.recipient_name == null || row.recipient_name === ''
+        ? null
+        : String(row.recipient_name),
+    ccEmails,
+    bccEmails,
     fromAddress: String(row.from_address ?? ''),
     fromKey: String(row.from_key ?? 'pilar'),
+    replyTo:
+      row.reply_to == null || row.reply_to === ''
+        ? null
+        : String(row.reply_to),
     templateSlug: String(row.template_slug ?? 'blank'),
     dryRun: Boolean(row.dry_run),
     error: row.error == null ? null : String(row.error),
@@ -271,8 +342,8 @@ function mapSendRow(
       row.provider_message_id == null
         ? null
         : String(row.provider_message_id),
-    providerStatus:
-      row.provider_status == null ? null : String(row.provider_status),
+    providerStatus,
+    providerStatusLabel: providerStatusLabelEs(providerStatus),
     attachmentCount: Number(row.attachment_count ?? 0),
     createdBy: row.created_by == null ? null : String(row.created_by),
     createdByLabel: profileLabel ?? null,
@@ -284,6 +355,38 @@ function mapSendRow(
     historyLabel: emailHistoryLabel(historyKind, {
       dryRun: Boolean(row.dry_run),
     }),
+    trashedAt: row.trashed_at == null ? null : String(row.trashed_at),
+    htmlBody: includeBody && finalHtmlAvailable ? rawHtml : null,
+    textBody:
+      includeBody && finalHtmlAvailable
+        ? String(row.text_body ?? '')
+        : null,
+    finalHtmlAvailable,
+    signatureIncluded: (() => {
+      if (Boolean(row.signature_included)) return true;
+      // Legacy / metadato ausente: detectar en snapshot HTML si está disponible
+      if (includeBody && finalHtmlAvailable && rawHtml) {
+        return htmlHasEmbeddedSignature(rawHtml);
+      }
+      return false;
+    })(),
+    signatureLabel: (() => {
+      const labeled =
+        row.signature_label == null || row.signature_label === ''
+          ? null
+          : String(row.signature_label);
+      if (labeled) return labeled;
+      if (
+        includeBody &&
+        finalHtmlAvailable &&
+        rawHtml &&
+        htmlHasEmbeddedSignature(rawHtml)
+      ) {
+        return 'Detectada en el HTML enviado';
+      }
+      return null;
+    })(),
+    attachments: opts?.attachments,
   };
 }
 
@@ -378,6 +481,45 @@ export async function listCorporateSendersAction(): Promise<
   };
 }
 
+export type PharmacyPortfolioRecipientRow = {
+  pharmacyId: string;
+  pharmacyName: string;
+  contactName: string | null;
+  email: string;
+  city: string | null;
+  province: string | null;
+  authorizedAt: string;
+};
+
+export async function listPharmacyPortfolioRecipientsAction(input?: {
+  query?: string;
+}): Promise<
+  | ActionOk<{
+      available: boolean;
+      recipients: PharmacyPortfolioRecipientRow[];
+      notice: string | null;
+    }>
+  | ActionErr
+> {
+  const access = await requireEmailsAccess('read');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const { listPharmacyPortfolioCommercialRecipients } = await import(
+    '@/lib/email/pharmacy-portfolio-recipients'
+  );
+  const result = await listPharmacyPortfolioCommercialRecipients({
+    query: input?.query,
+  });
+  if (!result.ok) return { ok: false, error: result.error };
+  return {
+    ok: true,
+    available: result.available,
+    recipients: result.recipients,
+    notice: result.notice,
+  };
+}
+
 export async function getCorporateEmailSendStatusAction(): Promise<
   ActionOk<{
     sendEnabled: boolean;
@@ -388,10 +530,19 @@ export async function getCorporateEmailSendStatusAction(): Promise<
     fromAddress: string;
     replyTo: string;
     missing: string[];
+    /** Motivo legible si Enviar está deshabilitado o restringido. */
+    disabledReason: string | null;
+    /** Allowlist de prueba configurada (sin listar emails en UI pública). */
+    testAllowlistConfigured: boolean;
+    testAllowlistCount: number;
   }>
 > {
   const access = await requireEmailsAccess('read');
   const defaultSender = getCorporateSender('pilar');
+  const { parseCorporateEmailTestRecipients } = await import(
+    '@/lib/email/send-recipient-allowlist'
+  );
+  const allow = parseCorporateEmailTestRecipients();
   if (!access.ok) {
     return {
       ok: true,
@@ -403,13 +554,28 @@ export async function getCorporateEmailSendStatusAction(): Promise<
       fromAddress: defaultSender.fromHeader,
       replyTo: defaultSender.replyTo,
       missing: ['auth'],
+      disabledReason: 'Sesión no autorizada para el módulo Emails.',
+      testAllowlistConfigured: Boolean(allow?.length),
+      testAllowlistCount: allow?.length ?? 0,
     };
   }
   const readiness = corporateEmailSendReadiness();
   const mode = readiness.mode;
+  let disabledReason: string | null = null;
+  if (!mode.enabled) {
+    disabledReason =
+      'Envío desactivado: falta FF_CORPORATE_EMAIL_SEND_ENABLED=1 en el entorno del servidor.';
+  } else if (readiness.missing.length > 0) {
+    disabledReason = `Configuración incompleta: ${readiness.missing.join(', ')}.`;
+  } else if (!mode.dryRun && !allow?.length) {
+    disabledReason =
+      'Envío real bloqueado: define FF_CORPORATE_EMAIL_TEST_RECIPIENTS (allowlist).';
+  }
+  // El botón se habilita si el flag está ON; la allowlist se exige al confirmar live.
+  const sendEnabled = mode.enabled && readiness.missing.length === 0;
   return {
     ok: true,
-    sendEnabled: mode.enabled,
+    sendEnabled,
     dryRun: mode.enabled ? mode.dryRun : true,
     resendConfigured: readiness.resendConfigured,
     fromConfigured: readiness.fromConfigured,
@@ -417,6 +583,9 @@ export async function getCorporateEmailSendStatusAction(): Promise<
     fromAddress: process.env.EMAIL_FROM?.trim() || defaultSender.fromHeader,
     replyTo: defaultSender.replyTo,
     missing: readiness.missing,
+    disabledReason: sendEnabled ? null : disabledReason,
+    testAllowlistConfigured: Boolean(allow?.length),
+    testAllowlistCount: allow?.length ?? 0,
   };
 }
 
@@ -429,14 +598,35 @@ export async function listEmailDraftsAction(): Promise<
   }
 
   const supabase = createClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from('email_drafts')
     .select(DRAFT_SELECT)
     .is('trashed_at', null)
     .order('updated_at', { ascending: false })
     .limit(100);
+  // 090: excluir borradores consumidos tras envío (si la columna existe)
+  query = query.is('consumed_at', null);
+  const { data, error } = await query;
 
   if (error) {
+    if (/consumed_at/i.test(error.message || '')) {
+      const fallback = await supabase
+        .from('email_drafts')
+        .select(DRAFT_SELECT)
+        .is('trashed_at', null)
+        .order('updated_at', { ascending: false })
+        .limit(100);
+      if (fallback.error) {
+        if (isMissingRelation(fallback.error)) return migrationPendingError();
+        return { ok: false, error: 'No se pudieron cargar los borradores.' };
+      }
+      return {
+        ok: true,
+        drafts: (fallback.data ?? []).map((row) =>
+          mapDraftRow(row as Record<string, unknown>)
+        ),
+      };
+    }
     if (isMissingRelation(error)) return migrationPendingError();
     console.error('[emails] list drafts', error.code, error.message);
     return { ok: false, error: 'No se pudieron cargar los borradores.' };
@@ -460,9 +650,28 @@ export async function listTrashedEmailDraftsAction(): Promise<
     .from('email_drafts')
     .select(DRAFT_SELECT)
     .not('trashed_at', 'is', null)
+    .is('consumed_at', null)
     .order('trashed_at', { ascending: false })
     .limit(100);
   if (error) {
+    if (/consumed_at/i.test(error.message || '')) {
+      const fallback = await supabase
+        .from('email_drafts')
+        .select(DRAFT_SELECT)
+        .not('trashed_at', 'is', null)
+        .order('trashed_at', { ascending: false })
+        .limit(100);
+      if (fallback.error) {
+        if (isMissingRelation(fallback.error)) return migrationPendingError();
+        return { ok: false, error: 'No se pudo cargar la papelera.' };
+      }
+      return {
+        ok: true,
+        drafts: (fallback.data ?? []).map((row) =>
+          mapDraftRow(row as Record<string, unknown>)
+        ),
+      };
+    }
     if (isMissingRelation(error)) return migrationPendingError();
     return { ok: false, error: 'No se pudo cargar la papelera.' };
   }
@@ -518,6 +727,35 @@ export async function restoreEmailDraftAction(
   return { ok: true };
 }
 
+const SEND_LIST_SELECT =
+  'id, status, purpose, subject, recipient_email, recipient_name, cc_emails, bcc_emails, from_address, reply_to, from_key, template_slug, dry_run, error, provider_message_id, provider_status, attachment_count, created_by, created_at, sent_at, delivered_at, bounced_at, trashed_at, signature_included, signature_label, final_html_available';
+
+const SEND_DETAIL_SELECT = `${SEND_LIST_SELECT}, html_body, text_body`;
+
+async function loadProfileLabels(
+  supabase: ReturnType<typeof createClient>,
+  userIds: string[]
+): Promise<Map<string, string>> {
+  const labelById = new Map<string, string>();
+  if (userIds.length === 0) return labelById;
+  const { data: profiles } = await supabase
+    .from('profiles')
+    .select('id, full_name, email')
+    .in('id', userIds);
+  for (const p of profiles ?? []) {
+    const row = p as {
+      id: string;
+      full_name?: string | null;
+      email?: string | null;
+    };
+    labelById.set(
+      row.id,
+      (row.full_name || row.email || row.id.slice(0, 8)).trim()
+    );
+  }
+  return labelById;
+}
+
 export async function listEmailSendsAction(): Promise<
   ActionOk<{ sends: EmailSendRow[] }> | ActionErr
 > {
@@ -527,13 +765,28 @@ export async function listEmailSendsAction(): Promise<
   }
 
   const supabase = createClient();
-  const { data, error } = await supabase
+  const primary = await supabase
     .from('email_sends')
-    .select(
-      'id, status, purpose, subject, recipient_email, from_address, from_key, template_slug, dry_run, error, provider_message_id, provider_status, attachment_count, created_by, created_at, sent_at, delivered_at, bounced_at'
-    )
+    .select(SEND_LIST_SELECT)
+    .is('trashed_at', null)
+    .is('user_hidden_at', null)
     .order('created_at', { ascending: false })
     .limit(100);
+
+  let rowsRaw: unknown[] | null = primary.data;
+  let error = primary.error;
+
+  if (error && /trashed_at|user_hidden_at|signature_|final_html/i.test(error.message || '')) {
+    const fallback = await supabase
+      .from('email_sends')
+      .select(
+        'id, status, purpose, subject, recipient_email, recipient_name, cc_emails, bcc_emails, from_address, reply_to, from_key, template_slug, dry_run, error, provider_message_id, provider_status, attachment_count, created_by, created_at, sent_at, delivered_at, bounced_at, html_body'
+      )
+      .order('created_at', { ascending: false })
+      .limit(100);
+    rowsRaw = fallback.data;
+    error = fallback.error;
+  }
 
   if (error) {
     if (isMissingRelation(error)) return migrationPendingError();
@@ -541,6 +794,50 @@ export async function listEmailSendsAction(): Promise<
     return { ok: false, error: 'No se pudo cargar el historial de envíos.' };
   }
 
+  const rows = (rowsRaw ?? []) as Record<string, unknown>[];
+  const userIds = Array.from(
+    new Set(
+      rows
+        .map((r) => (r.created_by == null ? null : String(r.created_by)))
+        .filter((v): v is string => Boolean(v))
+    )
+  );
+  const labelById = await loadProfileLabels(supabase, userIds);
+
+  return {
+    ok: true,
+    sends: rows.map((row) =>
+      mapSendRow(
+        row,
+        row.created_by ? labelById.get(String(row.created_by)) ?? null : null,
+        { includeBody: false }
+      )
+    ),
+  };
+}
+
+export async function listTrashedEmailSendsAction(): Promise<
+  ActionOk<{ sends: EmailSendRow[] }> | ActionErr
+> {
+  const access = await requireEmailsAccess('read');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('email_sends')
+    .select(SEND_LIST_SELECT)
+    .not('trashed_at', 'is', null)
+    .is('user_hidden_at', null)
+    .order('trashed_at', { ascending: false })
+    .limit(100);
+  if (error) {
+    if (/trashed_at|user_hidden/i.test(error.message || '')) {
+      return { ok: true, sends: [] };
+    }
+    if (isMissingRelation(error)) return migrationPendingError();
+    return { ok: false, error: 'No se pudo cargar la papelera de enviados.' };
+  }
   const rows = (data ?? []) as Record<string, unknown>[];
   const userIds = Array.from(
     new Set(
@@ -549,21 +846,7 @@ export async function listEmailSendsAction(): Promise<
         .filter((v): v is string => Boolean(v))
     )
   );
-  const labelById = new Map<string, string>();
-  if (userIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, full_name, email')
-      .in('id', userIds);
-    for (const p of profiles ?? []) {
-      const row = p as { id: string; full_name?: string | null; email?: string | null };
-      labelById.set(
-        row.id,
-        (row.full_name || row.email || row.id.slice(0, 8)).trim()
-      );
-    }
-  }
-
+  const labelById = await loadProfileLabels(supabase, userIds);
   return {
     ok: true,
     sends: rows.map((row) =>
@@ -573,6 +856,176 @@ export async function listEmailSendsAction(): Promise<
       )
     ),
   };
+}
+
+export async function getEmailSendDetailAction(
+  sendId: string
+): Promise<ActionOk<{ send: EmailSendRow }> | ActionErr> {
+  const access = await requireEmailsAccess('read');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  if (!sendId) return { ok: false, error: 'Envío no indicado.' };
+
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('email_sends')
+    .select(SEND_DETAIL_SELECT)
+    .eq('id', sendId)
+    .maybeSingle();
+
+  if (error) {
+    if (isMissingRelation(error)) return migrationPendingError();
+    return { ok: false, error: 'No se pudo cargar el correo enviado.' };
+  }
+  if (!data) return { ok: false, error: 'Correo enviado no encontrado.' };
+
+  const row = data as Record<string, unknown>;
+  let label: string | null = null;
+  if (row.created_by) {
+    const labels = await loadProfileLabels(supabase, [String(row.created_by)]);
+    label = labels.get(String(row.created_by)) ?? null;
+  }
+
+  const { data: attRows } = await supabase
+    .from('email_send_attachments')
+    .select('id, file_name, content_type, byte_size')
+    .eq('send_id', sendId)
+    .order('created_at', { ascending: true });
+
+  const attachments: EmailSendAttachmentRow[] = (attRows ?? []).map((a) => {
+    const r = a as Record<string, unknown>;
+    const byteSize = Number(r.byte_size ?? 0);
+    return {
+      id: String(r.id),
+      fileName: String(r.file_name ?? 'adjunto'),
+      contentType: String(r.content_type ?? ''),
+      byteSize,
+      byteSizeLabel: formatAttachmentBytes(byteSize),
+    };
+  });
+
+  return {
+    ok: true,
+    send: mapSendRow(row, label, { includeBody: true, attachments }),
+  };
+}
+
+export async function trashEmailSendAction(
+  sendId: string
+): Promise<{ ok: true } | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  if (!sendId) return { ok: false, error: 'Envío no indicado.' };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('email_sends')
+    .update({ trashed_at: new Date().toISOString() })
+    .eq('id', sendId)
+    .is('user_hidden_at', null);
+  if (error) {
+    if (/trashed_at/i.test(error.message || '')) {
+      return migrationPendingError();
+    }
+    return { ok: false, error: 'No se pudo mover el envío a la papelera.' };
+  }
+  revalidatePath('/emails/sends');
+  revalidatePath('/emails/trash');
+  return { ok: true };
+}
+
+export async function restoreEmailSendAction(
+  sendId: string
+): Promise<{ ok: true } | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  if (!sendId) return { ok: false, error: 'Envío no indicado.' };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('email_sends')
+    .update({ trashed_at: null })
+    .eq('id', sendId)
+    .is('user_hidden_at', null);
+  if (error) {
+    if (/trashed_at/i.test(error.message || '')) {
+      return migrationPendingError();
+    }
+    return { ok: false, error: 'No se pudo restaurar el envío.' };
+  }
+  revalidatePath('/emails/sends');
+  revalidatePath('/emails/trash');
+  return { ok: true };
+}
+
+/** Oculta de la UI del usuario; conserva auditoría y evidencias. */
+export async function hideEmailSendFromUserViewAction(
+  sendId: string
+): Promise<{ ok: true } | ActionErr> {
+  const access = await requireEmailsAccess('write');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  if (!sendId) return { ok: false, error: 'Envío no indicado.' };
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('email_sends')
+    .update({
+      user_hidden_at: new Date().toISOString(),
+      trashed_at: new Date().toISOString(),
+    })
+    .eq('id', sendId);
+  if (error) {
+    if (/user_hidden_at|trashed_at/i.test(error.message || '')) {
+      return migrationPendingError();
+    }
+    return {
+      ok: false,
+      error: 'No se pudo ocultar el envío de la vista.',
+    };
+  }
+  revalidatePath('/emails/sends');
+  revalidatePath('/emails/trash');
+  return { ok: true };
+}
+
+export async function getSendAttachmentDownloadUrlAction(
+  sendId: string,
+  attachmentId: string
+): Promise<ActionOk<{ url: string; fileName: string }> | ActionErr> {
+  const access = await requireEmailsAccess('read');
+  if (!access.ok) {
+    return { ok: false, code: 'forbidden', error: 'No autorizado.' };
+  }
+  if (!sendId || !attachmentId) {
+    return { ok: false, error: 'Adjunto no indicado.' };
+  }
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('email_send_attachments')
+    .select('id, file_name, storage_path, send_id')
+    .eq('id', attachmentId)
+    .eq('send_id', sendId)
+    .maybeSingle();
+  if (error || !data) {
+    return { ok: false, error: 'Adjunto no encontrado.' };
+  }
+  const path = String((data as { storage_path?: string }).storage_path || '');
+  const fileName = String(
+    (data as { file_name?: string }).file_name || 'adjunto'
+  );
+  if (!path) return { ok: false, error: 'Ruta de adjunto no disponible.' };
+
+  const { data: signed, error: signErr } = await supabase.storage
+    .from('email-attachments')
+    .createSignedUrl(path, 120);
+  if (signErr || !signed?.signedUrl) {
+    return { ok: false, error: 'No se pudo generar el enlace de descarga.' };
+  }
+  return { ok: true, url: signed.signedUrl, fileName };
 }
 
 export async function getEmailDraftAction(
@@ -971,10 +1424,7 @@ export async function listEmailTemplatesAction(opts?: {
       subject: String(r.subject ?? ''),
       htmlBody: String(r.html_body ?? ''),
       textBody: String(r.text_body ?? ''),
-      purpose:
-        String(r.purpose) === 'commercial'
-          ? ('commercial' as const)
-          : ('operational' as const),
+      purpose: parsePurpose(r.purpose),
       variables: Array.isArray(r.variables) ? (r.variables as unknown[]) : [],
       includeSignature: Boolean(r.include_signature ?? true),
       status: status as EmailTemplateRow['status'],
@@ -1290,6 +1740,10 @@ export async function sendCorporateEmailAction(input: {
   templateSlug?: string;
   previewOrigin?: string | null;
   includeSignature?: boolean;
+  /** EMAIL-02: prueba visual de plantilla comercial (allowlist + [PRUEBA]). */
+  visualTestSend?: boolean;
+  /** EMAIL-04: confirmar envío solo con adjuntos. */
+  allowAttachmentsOnly?: boolean;
 }): Promise<
   | ActionOk<{
       sendId: string;
@@ -1298,6 +1752,7 @@ export async function sendCorporateEmailAction(input: {
       replay: boolean;
       providerMessageId: string | null;
       historyLabel: string;
+      visualTestSend?: boolean;
     }>
   | ActionErr
 > {
@@ -1309,14 +1764,28 @@ export async function sendCorporateEmailAction(input: {
       error: access.message || 'No autorizado a enviar.',
     };
   }
+  const profileId = access.profile.id;
 
   const mode = getCorporateEmailSendMode();
   if (!mode.enabled) {
     return {
       ok: false,
       code: 'send_disabled',
-      error: assertCorporateSendBlocked().error,
+      error:
+        'El envío está desactivado (FF_CORPORATE_EMAIL_SEND_ENABLED). Puedes guardar el borrador.',
     };
+  }
+
+  // Envíos reales o prueba visual: allowlist obligatoria (To/CC/CCO).
+  if (!mode.dryRun || input.visualTestSend === true) {
+    if (!parseCorporateEmailTestRecipients()?.length) {
+      return {
+        ok: false,
+        code: 'blocked',
+        error:
+          'Envío real/prueba bloqueado: configura FF_CORPORATE_EMAIL_TEST_RECIPIENTS.',
+      };
+    }
   }
 
   const supabase = createClient();
@@ -1367,7 +1836,11 @@ export async function sendCorporateEmailAction(input: {
   if (!allowCheck.ok) {
     return { ok: false, code: 'blocked', error: allowCheck.error };
   }
-  const subject = (input.subject ?? draft?.subject ?? '').trim();
+  const visualTestSend = input.visualTestSend === true;
+  let subject = (input.subject ?? draft?.subject ?? '').trim();
+  if (visualTestSend && !/^\[PRUEBA\]/i.test(subject)) {
+    subject = `[PRUEBA] ${subject || 'Plantilla comercial'}`.trim();
+  }
   const htmlBodyRaw = sanitizeEmailHtml(
     input.htmlBody ?? draft?.htmlBody ?? ''
   );
@@ -1379,14 +1852,18 @@ export async function sendCorporateEmailAction(input: {
     templateSlug === 'custom' ? 'blank' : templateSlug,
     requestedPurpose
   );
-  const legalBasis =
-    input.legalBasis !== undefined
+  // Prueba visual: no inventar consentimiento comercial
+  const legalBasis = visualTestSend
+    ? null
+    : input.legalBasis !== undefined
       ? input.legalBasis
       : draft?.legalBasis ?? null;
-  const commercialAuthAck =
-    input.commercialAuthAck ?? draft?.commercialAuthAck ?? false;
-  const oppositionChecked =
-    input.oppositionChecked ?? draft?.oppositionChecked ?? false;
+  const commercialAuthAck = visualTestSend
+    ? false
+    : input.commercialAuthAck ?? draft?.commercialAuthAck ?? false;
+  const oppositionChecked = visualTestSend
+    ? false
+    : input.oppositionChecked ?? draft?.oppositionChecked ?? false;
   const fromKeyRaw =
     input.fromKey || draft?.fromKey || defaultCorporateSenderKey();
   const senderCheck = assertAuthorizedSenderKey(fromKeyRaw);
@@ -1395,15 +1872,15 @@ export async function sendCorporateEmailAction(input: {
   }
   const sender = senderCheck.sender;
 
-  const withSig = applySignaturePolicy({
+  // Firmas para Resend: siempre URLs HTTPS públicas (nunca localhost / origin del preview).
+  const providerPayload = buildProviderEmailHtml({
     htmlBody: htmlBodyRaw,
     textBody: textBodyRaw,
     fromKey: sender.key,
-    previewOrigin: input.previewOrigin,
-    includeSignature: input.includeSignature !== false,
+    includeSignature: input.includeSignature === true,
   });
-  const htmlBody = withSig.html;
-  const textBody = withSig.text;
+  const htmlBody = providerPayload.html;
+  const textBody = providerPayload.text;
 
   const emailNorm = recipients.recipients.to[0];
   const allRecipients = recipients.recipients.all;
@@ -1421,34 +1898,13 @@ export async function sendCorporateEmailAction(input: {
   );
   const recipientSuppressed = allRecipients.some((e) => suppressedSet.has(e));
 
-  const policy = assertCorporateSendPolicy({
-    purpose,
-    templateSlug: templateSlug === 'custom' ? 'blank' : templateSlug,
-    legalBasis,
-    commercialAuthAck,
-    oppositionChecked,
-    recipientSuppressed,
-    explicitConfirm: input.explicitConfirm === true,
-    recipientEmail: emailNorm,
-    subject,
-    htmlBody,
-    textBody,
-  });
-  if (!policy.ok) {
-    if (
-      purpose === 'commercial' &&
-      (policy.code === 'commercial_ack_required' ||
-        policy.code === 'legal_basis_required' ||
-        policy.code === 'opposition_not_checked')
-    ) {
-      return {
-        ok: false,
-        code: 'blocked',
-        error:
-          'Las comunicaciones comerciales están bloqueadas hasta registrar autorizaciones en Cartera de farmacias.',
-      };
-    }
-    return { ok: false, code: 'blocked', error: policy.error };
+  if (visualTestSend && purpose !== 'commercial') {
+    return {
+      ok: false,
+      code: 'blocked',
+      error:
+        '«Enviar prueba» solo aplica a plantillas comerciales (demo/piloto). Usa Enviar normal para el resto.',
+    };
   }
 
   let attachments: EmailDraftAttachmentRow[] = [];
@@ -1465,11 +1921,43 @@ export async function sendCorporateEmailAction(input: {
   );
   if (!attBatch.ok) return { ok: false, error: attBatch.error };
 
+  const contentGate = assertEmailHasAuthoredContent({
+    htmlBody,
+    textBody,
+    attachmentCount: attachments.length,
+  });
+  if (
+    !contentGate.ok &&
+    !(
+      contentGate.code === 'attachments_only' &&
+      input.allowAttachmentsOnly === true
+    )
+  ) {
+    return { ok: false, code: 'blocked', error: contentGate.error };
+  }
+
+  const policy = assertCorporateSendPolicy({
+    purpose,
+    templateSlug: templateSlug === 'custom' ? 'blank' : templateSlug,
+    legalBasis,
+    commercialAuthAck,
+    oppositionChecked,
+    recipientSuppressed,
+    explicitConfirm: input.explicitConfirm === true,
+    recipientEmail: emailNorm,
+    subject,
+    htmlBody,
+    textBody,
+    visualTestSend,
+    attachmentCount: attachments.length,
+    allowAttachmentsOnly: input.allowAttachmentsOnly === true,
+  });
+  if (!policy.ok) {
+    return { ok: false, code: 'blocked', error: policy.error };
+  }
+
   const fromAddress = sender.fromHeader;
   const replyTo = sender.replyTo;
-  const idem =
-    input.idempotencyKey?.trim() ||
-    `ff-corp-${draft?.id || 'nodraft'}-${randomUUID()}`;
   const hash = payloadHash({
     to: emailNorm,
     subject,
@@ -1479,31 +1967,57 @@ export async function sendCorporateEmailAction(input: {
     fromKey: sender.key,
     attachmentIds: attachments.map((a) => a.id).sort(),
   });
+  // Idempotencia estable (anti doble-clic): mismo borrador + mismo payload → replay
+  const idem =
+    input.idempotencyKey?.trim() ||
+    `ff-corp-${draft?.id || 'nodraft'}-${hash.slice(0, 32)}`;
 
-  const { data: claimData, error: claimErr } = await supabase.rpc(
+  const claimArgs: Record<string, unknown> = {
+    p_idempotency_key: idem,
+    p_draft_id: draft?.id ?? null,
+    p_template_slug: templateSlug,
+    p_subject: subject,
+    p_html_body: htmlBody,
+    p_text_body: textBody,
+    p_recipient_email: emailNorm,
+    p_recipient_name: recipientName,
+    p_from_address: fromAddress,
+    p_reply_to: replyTo,
+    p_purpose: policy.purpose,
+    p_legal_basis: policy.legalBasis,
+    p_payload_hash: hash,
+    p_dry_run: mode.dryRun,
+    p_attachment_count: attachments.length,
+    p_confirmation_ack_at: new Date().toISOString(),
+    p_from_key: sender.key,
+    p_cc_emails: recipients.recipients.cc,
+    p_bcc_emails: recipients.recipients.bcc,
+    p_signature_included: providerPayload.signaturePresent,
+    p_signature_label: providerPayload.signatureLabel,
+  };
+
+  let { data: claimData, error: claimErr } = await supabase.rpc(
     'ff_corporate_email_claim_send_v1',
-    {
-      p_idempotency_key: idem,
-      p_draft_id: draft?.id ?? null,
-      p_template_slug: templateSlug,
-      p_subject: subject,
-      p_html_body: htmlBody,
-      p_text_body: textBody,
-      p_recipient_email: emailNorm,
-      p_recipient_name: recipientName,
-      p_from_address: fromAddress,
-      p_reply_to: replyTo,
-      p_purpose: policy.purpose,
-      p_legal_basis: policy.legalBasis,
-      p_payload_hash: hash,
-      p_dry_run: mode.dryRun,
-      p_attachment_count: attachments.length,
-      p_confirmation_ack_at: new Date().toISOString(),
-      p_from_key: sender.key,
-      p_cc_emails: recipients.recipients.cc,
-      p_bcc_emails: recipients.recipients.bcc,
-    }
+    claimArgs
   );
+
+  // Compatibilidad si 090 aún no está aplicada (sin params de firma)
+  if (
+    claimErr &&
+    /p_signature_|could not find|unexpected|function.*does not exist|42883/i.test(
+      claimErr.message || ''
+    )
+  ) {
+    const legacyArgs = { ...claimArgs };
+    delete legacyArgs.p_signature_included;
+    delete legacyArgs.p_signature_label;
+    const legacy = await supabase.rpc(
+      'ff_corporate_email_claim_send_v1',
+      legacyArgs
+    );
+    claimData = legacy.data;
+    claimErr = legacy.error;
+  }
 
   if (claimErr) {
     if (
@@ -1543,7 +2057,22 @@ export async function sendCorporateEmailAction(input: {
     return { ok: false, error: 'No se pudo registrar el envío.' };
   }
 
+  async function markDraftConsumedEarly() {
+    if (!draft?.id) return;
+    await supabase
+      .from('email_drafts')
+      .update({
+        consumed_at: new Date().toISOString(),
+        consumed_by_send_id: sendId,
+        trashed_at: null,
+        updated_by: profileId,
+      })
+      .eq('id', draft.id);
+    revalidatePath('/emails/drafts');
+  }
+
   if (replay && String(claim.status) === 'sent') {
+    await markDraftConsumedEarly();
     const kind = resolveEmailHistoryKind({
       status: 'sent',
       providerStatus:
@@ -1581,12 +2110,30 @@ export async function sendCorporateEmailAction(input: {
           sha256: a.sha256 || createHash('sha256').update(a.id).digest('hex'),
           source_kind: a.sourceKind,
           source_ref: {},
-          created_by: access.profile.id,
+          created_by: profileId,
         }))
       );
     if (attInsErr) {
       console.error('[emails] send attachments meta', attInsErr.message);
     }
+  }
+
+  async function markDraftConsumed() {
+    if (!draft?.id) return;
+    const { error: consumeErr } = await supabase
+      .from('email_drafts')
+      .update({
+        consumed_at: new Date().toISOString(),
+        consumed_by_send_id: sendId,
+        trashed_at: null,
+        updated_by: profileId,
+      })
+      .eq('id', draft.id);
+    if (consumeErr && !/consumed_at|consumed_by_send/i.test(consumeErr.message || '')) {
+      console.error('[emails] consume draft', consumeErr.message);
+    }
+    revalidatePath('/emails/drafts');
+    revalidatePath('/emails/trash');
   }
 
   if (mode.dryRun) {
@@ -1608,6 +2155,7 @@ export async function sendCorporateEmailAction(input: {
       };
     }
     const finRow = (fin ?? {}) as Record<string, unknown>;
+    await markDraftConsumed();
     revalidatePath('/emails');
     revalidatePath('/emails/sends');
     const kind = resolveEmailHistoryKind({
@@ -1703,6 +2251,7 @@ export async function sendCorporateEmailAction(input: {
     p_provider_status: 'accepted',
   });
 
+  await markDraftConsumed();
   revalidatePath('/emails');
   revalidatePath('/emails/sends');
   const kind = resolveEmailHistoryKind({

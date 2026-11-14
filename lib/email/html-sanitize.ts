@@ -65,16 +65,24 @@ export function extractComposerEditableHtml(raw: string): string {
   return sanitizeEmailHtml(html.trim() || '<p><br/></p>');
 }
 
+export type WrapComposerHtmlMode = 'plain' | 'template';
+
 /**
- * Si el contenido ya es documento completo, se respeta (sanitizado).
- * Si es fragmento del editor, se envuelve en cáscara corporativa mínima.
+ * EMAIL-03:
+ * - plain (sin plantilla): fondo blanco, texto natural, sin tarjeta grande.
+ * - template / documento completo: se respeta el diseño corporativo.
  */
-export function wrapComposerHtmlForSend(editableHtml: string): string {
+export function wrapComposerHtmlForSend(
+  editableHtml: string,
+  mode: WrapComposerHtmlMode = 'plain'
+): string {
   const cleaned = sanitizeEmailHtml(editableHtml || '');
   if (/<html[\s>]/i.test(cleaned) || /<!DOCTYPE/i.test(cleaned)) {
     return cleaned;
   }
-  return `<!DOCTYPE html>
+  if (mode === 'template') {
+    // Fragmento de plantilla sin cáscara: conservar padding suave corporativo
+    return `<!DOCTYPE html>
 <html lang="es">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>FarmaFácil</title></head>
 <body style="margin:0;padding:0;background-color:#F8FAFC;-webkit-text-size-adjust:100%;">
@@ -91,6 +99,17 @@ export function wrapComposerHtmlForSend(editableHtml: string): string {
       </td>
     </tr>
   </table>
+</body>
+</html>`;
+  }
+  // Formato A — email redactado sin plantilla
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>FarmaFácil</title></head>
+<body style="margin:0;padding:0;background-color:#FFFFFF;-webkit-text-size-adjust:100%;">
+  <div style="max-width:640px;margin:0 auto;padding:20px 16px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#111827;background-color:#FFFFFF;">
+    ${cleaned}
+  </div>
 </body>
 </html>`;
 }

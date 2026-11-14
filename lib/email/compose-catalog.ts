@@ -19,6 +19,7 @@ import {
   isEmailTemplateSlug,
   type EmailTemplateSlug,
 } from './email-template-slugs';
+import { stripLegacyTemplateSignature } from './content-validation';
 
 export { EMAIL_TEMPLATE_SLUGS, isEmailTemplateSlug, type EmailTemplateSlug };
 
@@ -34,6 +35,8 @@ export type EmailComposeSeed = {
   from: string;
   replyTo: string;
   sendEnabled: false;
+  /** EMAIL-05: el composer debe aplicar firma dinámica. */
+  preferDynamicSignature: boolean;
 };
 
 export const EMAIL_TEMPLATE_OPTIONS: ReadonlyArray<{
@@ -80,35 +83,31 @@ function fromContent(
     replyTo: string;
   }
 ): EmailComposeSeed {
+  // EMAIL-05: quitar solo la tabla compacta de firma (nunca el layout raíz).
+  const htmlBody = stripLegacyTemplateSignature(mail.html);
+  const textBody = (mail.text || '')
+    .replace(/\n--\n[\s\S]*$/m, '')
+    .replace(/\nPilar Reyes Bononat[\s\S]*farmafacil\.solutions\s*$/im, '')
+    .trim();
   return {
     templateSlug: slug,
     templateId,
     title,
     subject: mail.subject,
-    htmlBody: mail.html,
-    textBody: mail.text,
+    htmlBody,
+    textBody,
     from: mail.from,
     replyTo: mail.replyTo,
     sendEnabled: false,
+    preferDynamicSignature: true,
   };
 }
 
 function buildBlankEmail(): EmailComposeSeed {
   const subject = '';
-  const html = `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="utf-8" /><title>FarmaFácil</title></head>
-<body style="margin:0;padding:24px;background:#F8FAFC;font-family:Arial,Helvetica,sans-serif;color:#111827;">
-  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:640px;margin:0 auto;background:#FFFFFF;border:1px solid #E7EEF3;border-radius:12px;">
-    <tr><td style="padding:28px 28px 8px;font-size:20px;font-weight:700;">FarmaFácil</td></tr>
-    <tr><td style="padding:8px 28px 28px;font-size:15px;line-height:1.55;color:#111827;">
-      <p style="margin:0 0 12px;">Escribe aquí el cuerpo del mensaje.</p>
-    </td></tr>
-  </table>
-</body>
-</html>`;
-  const text =
-    'FarmaFácil\n\nEscribe aquí el cuerpo del mensaje.\n';
+  // EMAIL-03 formato A: blanco, sin tarjeta decorativa
+  const html = `<p>Escribe aquí el cuerpo del mensaje.</p>`;
+  const text = 'Escribe aquí el cuerpo del mensaje.\n';
   return {
     templateSlug: 'blank',
     templateId: 'ff-blank-v1',
@@ -118,6 +117,7 @@ function buildBlankEmail(): EmailComposeSeed {
     textBody: text,
     from: FF_EMAIL_FROM,
     replyTo: FF_EMAIL_REPLY_TO,
+    preferDynamicSignature: true,
     sendEnabled: false,
   };
 }

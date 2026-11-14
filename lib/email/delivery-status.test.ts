@@ -13,7 +13,7 @@ describe('delivery status', () => {
       providerStatus: 'accepted',
     });
     assert.equal(kind, 'accepted_by_provider');
-    assert.equal(emailHistoryLabel(kind), 'Enviado a Resend');
+    assert.equal(emailHistoryLabel(kind), 'Aceptado por el proveedor');
   });
 
   it('delivered solo con confirmación', () => {

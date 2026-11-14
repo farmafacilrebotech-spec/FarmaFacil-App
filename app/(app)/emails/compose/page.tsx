@@ -12,6 +12,23 @@ import {
   getCorporateSender,
 } from '@/lib/email/senders';
 
+/**
+ * Conserva el HTML íntegro de la plantilla.
+ * No aplicar stripLegacy aquí: destruía el layout (tabla raíz).
+ * Si ya trae firma/pie corporativo, no forzar firma dinámica.
+ */
+function prepareTemplateBody(raw: string): {
+  body: string;
+  includeSignature: boolean;
+} {
+  const extracted = extractComposerEditableHtml(raw || '<p><br/></p>');
+  const hasEmbedded = htmlHasEmbeddedSignature(extracted);
+  return {
+    body: extracted,
+    includeSignature: !hasEmbedded,
+  };
+}
+
 export const dynamic = 'force-dynamic';
 
 type SearchParams = {
@@ -58,7 +75,11 @@ export default async function EmailComposePage({
     fromKey: defaultSender.key,
     from: defaultSender.fromHeader,
     replyTo: defaultSender.replyTo,
-    purpose: 'operational' as 'operational' | 'commercial',
+    purpose: 'operational' as
+      | 'operational'
+      | 'commercial'
+      | 'institutional'
+      | 'procurement',
     includeSignature: true,
   };
 
@@ -67,18 +88,18 @@ export default async function EmailComposePage({
   if (mode === 'edit-template' && editTemplateId) {
     const tpl = allTemplates.find((t) => t.id === editTemplateId);
     if (tpl) {
-      const body = extractComposerEditableHtml(tpl.htmlBody || '<p><br/></p>');
-      const hasEmbedded = htmlHasEmbeddedSignature(body);
+      const prepared = prepareTemplateBody(tpl.htmlBody || '<p><br/></p>');
       initial = {
         ...initial,
         templateSlug: tpl.systemKey || 'custom',
         templateId: tpl.id,
         templateName: tpl.name,
         subject: tpl.subject,
-        htmlBody: body,
+        htmlBody: prepared.body,
         textBody: tpl.textBody,
         purpose: tpl.purpose,
-        includeSignature: hasEmbedded ? false : tpl.includeSignature !== false,
+        includeSignature:
+          tpl.includeSignature !== false ? prepared.includeSignature : false,
       };
       title = 'Editar plantilla';
     }
@@ -119,19 +140,18 @@ export default async function EmailComposePage({
   } else if (templateIdParam) {
     const tpl = activeTemplates.find((t) => t.id === templateIdParam);
     if (tpl) {
-      const body = extractComposerEditableHtml(tpl.htmlBody || '<p><br/></p>');
+      const prepared = prepareTemplateBody(tpl.htmlBody || '<p><br/></p>');
       initial = {
         ...initial,
         templateSlug: tpl.systemKey || 'custom',
         templateId: tpl.id,
         templateName: tpl.name,
         subject: tpl.subject,
-        htmlBody: body,
+        htmlBody: prepared.body,
         textBody: tpl.textBody,
         purpose: tpl.purpose,
-        includeSignature: htmlHasEmbeddedSignature(body)
-          ? false
-          : tpl.includeSignature !== false,
+        includeSignature:
+          tpl.includeSignature !== false ? prepared.includeSignature : false,
       };
     }
   }

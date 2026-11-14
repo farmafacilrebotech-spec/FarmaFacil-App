@@ -49,7 +49,7 @@ export type AttachmentMetaInput = {
 
 export function sanitizeAttachmentFileName(raw: string): string {
   const base = raw.replace(/[/\\]/g, '').trim();
-  const cleaned = base.replace(/[^\w.\- ()áéíóúñÁÉÍÓÚÑ]+/gi, '_');
+  const cleaned = base.replace(/[^\w.\- ()áéíóúüñÁÉÍÓÚÜÑ]+/gi, '_');
   return cleaned.slice(0, 180) || 'adjunto';
 }
 

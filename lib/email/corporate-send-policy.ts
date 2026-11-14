@@ -1,8 +1,18 @@
 /**
  * Política legal/comercial del envío corporativo 1:1 (pura, testeable).
+ *
+ * El envío manual 1:1 NO se bloquea por falta de registro en Cartera.
+ * Se mantiene clasificación purpose/legalBasis para trazabilidad.
+ * Sigue bloqueando destinatarios en oposición/bajas.
  */
 
-export type EmailPurpose = 'operational' | 'commercial';
+import { assertEmailHasAuthoredContent } from './content-validation';
+
+export type EmailPurpose =
+  | 'operational'
+  | 'commercial'
+  | 'institutional'
+  | 'procurement';
 
 export type EmailLegalBasis =
   | 'consent'
@@ -20,12 +30,23 @@ export type CorporateSendPolicyInput = {
   subject: string;
   htmlBody: string;
   textBody: string;
+  /**
+   * EMAIL-02: envío de prueba visual SA. No registra consentimiento.
+   */
+  visualTestSend?: boolean;
+  /** Nº de adjuntos (EMAIL-04 advertencia attachments_only). */
+  attachmentCount?: number;
+  /** Si true, permite adjuntos sin texto tras confirmación explícita del warning. */
+  allowAttachmentsOnly?: boolean;
 };
 
 export type CorporateSendPolicyOk = {
   ok: true;
   purpose: EmailPurpose;
   legalBasis: EmailLegalBasis | null;
+  visualTestSend: boolean;
+  /** Aviso no bloqueante para UI. */
+  commercialNotice: string | null;
 };
 
 export type CorporateSendPolicyErr = {
@@ -34,40 +55,67 @@ export type CorporateSendPolicyErr = {
     | 'missing_recipient'
     | 'missing_subject'
     | 'missing_body'
+    | 'attachments_only'
     | 'confirm_required'
-    | 'commercial_ack_required'
-    | 'legal_basis_required'
-    | 'opposition_not_checked'
     | 'recipient_suppressed';
   error: string;
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
+const FORCED_PURPOSE_SLUGS: Record<string, EmailPurpose> = {
+  lanzadera: 'institutional',
+  imprentas: 'procurement',
+  demo: 'commercial',
+  piloto: 'commercial',
+};
+
+/**
+ * Propósito por defecto de plantilla.
+ * - Lanzadera: institucional/corporativa (instituciones, aceleradoras).
+ * - Presupuesto imprentas: aprovisionamiento.
+ * - Demo/piloto: comercial (trazabilidad; no bloquea envío manual).
+ */
 export function defaultPurposeForTemplate(slug: string): EmailPurpose {
-  switch (slug) {
-    case 'lanzadera':
-    case 'demo':
-    case 'piloto':
-    case 'imprentas':
-      return 'commercial';
-    default:
-      return 'operational';
-  }
+  return FORCED_PURPOSE_SLUGS[slug] ?? 'operational';
 }
 
 /**
- * Plantillas comerciales fuerzan gates comerciales aunque el usuario marque «operativa».
+ * Plantillas con propósito forzado no pueden eludirlo marcando otro tipo.
  */
 export function resolveEffectivePurpose(
   templateSlug: string,
   requested: EmailPurpose
 ): EmailPurpose {
-  if (defaultPurposeForTemplate(templateSlug) === 'commercial') {
-    return 'commercial';
-  }
+  const forced = FORCED_PURPOSE_SLUGS[templateSlug];
+  if (forced) return forced;
   return requested;
 }
+
+export function emailPurposeLabel(purpose: EmailPurpose): string {
+  switch (purpose) {
+    case 'commercial':
+      return 'Comercial';
+    case 'institutional':
+      return 'Institucional / Corporativa';
+    case 'procurement':
+      return 'Aprovisionamiento';
+    default:
+      return 'Operativa';
+  }
+}
+
+export function isEmailPurpose(value: string): value is EmailPurpose {
+  return (
+    value === 'operational' ||
+    value === 'commercial' ||
+    value === 'institutional' ||
+    value === 'procurement'
+  );
+}
+
+export const COMMERCIAL_SEND_NOTICE_ES =
+  'Recuerda disponer de habilitación legal para comunicaciones comerciales. Este envío 1:1 no registra consentimiento automáticamente.' as const;
 
 export function assertCorporateSendPolicy(
   input: CorporateSendPolicyInput & { templateSlug?: string }
@@ -92,12 +140,27 @@ export function assertCorporateSendPolicy(
       error: 'El asunto es obligatorio para enviar.',
     };
   }
-  if (!input.htmlBody.trim() && !input.textBody.trim()) {
-    return {
-      ok: false,
-      code: 'missing_body',
-      error: 'El cuerpo del mensaje no puede estar vacío.',
-    };
+  const content = assertEmailHasAuthoredContent({
+    htmlBody: input.htmlBody,
+    textBody: input.textBody,
+    attachmentCount: input.attachmentCount ?? 0,
+  });
+  if (!content.ok) {
+    if (
+      content.code === 'attachments_only' &&
+      input.allowAttachmentsOnly === true
+    ) {
+      // Permitido solo tras confirmación explícita en UI
+    } else {
+      return {
+        ok: false,
+        code:
+          content.code === 'attachments_only'
+            ? 'attachments_only'
+            : 'missing_body',
+        error: content.error,
+      };
+    }
   }
   if (!input.explicitConfirm) {
     return {
@@ -107,43 +170,25 @@ export function assertCorporateSendPolicy(
     };
   }
 
-  if (purpose === 'commercial') {
-    if (!input.commercialAuthAck) {
-      return {
-        ok: false,
-        code: 'commercial_ack_required',
-        error:
-          'Las comunicaciones comerciales requieren autorización/base legal documentada.',
-      };
-    }
-    if (!input.legalBasis) {
-      return {
-        ok: false,
-        code: 'legal_basis_required',
-        error: 'Selecciona la base jurídica de la comunicación comercial.',
-      };
-    }
-    if (!input.oppositionChecked) {
-      return {
-        ok: false,
-        code: 'opposition_not_checked',
-        error:
-          'Confirma que has comprobado oposición/bajas antes de un envío comercial.',
-      };
-    }
-    if (input.recipientSuppressed) {
-      return {
-        ok: false,
-        code: 'recipient_suppressed',
-        error:
-          'Este destinatario figura en la lista de oposición/bajas. No se puede enviar comercial.',
-      };
-    }
+  const visualTest = input.visualTestSend === true;
+
+  if (input.recipientSuppressed && !visualTest) {
+    return {
+      ok: false,
+      code: 'recipient_suppressed',
+      error: 'Destinatario en lista de oposición/bajas.',
+    };
   }
 
   return {
     ok: true,
     purpose,
-    legalBasis: purpose === 'commercial' ? input.legalBasis : null,
+    legalBasis:
+      purpose === 'commercial' && !visualTest ? input.legalBasis : null,
+    visualTestSend: visualTest,
+    commercialNotice:
+      purpose === 'commercial' && !visualTest
+        ? COMMERCIAL_SEND_NOTICE_ES
+        : null,
   };
 }

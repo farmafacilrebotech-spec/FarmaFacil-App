@@ -20,7 +20,11 @@ const SLUGS: readonly EmailTemplateSlug[] = [
   'custom',
 ];
 
-export type EmailPurpose = 'operational' | 'commercial';
+export type EmailPurpose =
+  | 'operational'
+  | 'commercial'
+  | 'institutional'
+  | 'procurement';
 export type EmailLegalBasis =
   | 'consent'
   | 'legitimate_interest_documented'
@@ -167,7 +171,12 @@ export function validateEmailDraftInput(
   }
 
   const purposeRaw = (input.purpose ?? 'operational').trim().toLowerCase();
-  if (purposeRaw !== 'operational' && purposeRaw !== 'commercial') {
+  if (
+    purposeRaw !== 'operational' &&
+    purposeRaw !== 'commercial' &&
+    purposeRaw !== 'institutional' &&
+    purposeRaw !== 'procurement'
+  ) {
     return { ok: false, error: 'Propósito de comunicación no válido.' };
   }
   const purpose = purposeRaw as EmailPurpose;

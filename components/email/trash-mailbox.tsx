@@ -7,24 +7,38 @@ import { ArchiveRestore, Trash2 } from 'lucide-react';
 
 import {
   deleteEmailDraftAction,
+  hideEmailSendFromUserViewAction,
   restoreEmailDraftAction,
+  restoreEmailSendAction,
   type EmailDraftRow,
+  type EmailSendRow,
 } from '@/app/(app)/emails/actions';
 import { MailboxIconAction } from '@/components/email/mailbox-icon-action';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 const ICON = 'h-4 w-4';
 
-export function TrashMailbox({ drafts: initial }: { drafts: EmailDraftRow[] }) {
+export function TrashMailbox({
+  drafts: initialDrafts,
+  sends: initialSends = [],
+}: {
+  drafts: EmailDraftRow[];
+  sends?: EmailSendRow[];
+}) {
   const router = useRouter();
-  const [drafts, setDrafts] = React.useState(initial);
+  const [drafts, setDrafts] = React.useState(initialDrafts);
+  const [sends, setSends] = React.useState(initialSends);
   const [busyId, setBusyId] = React.useState<string | null>(null);
 
   React.useEffect(() => {
-    setDrafts(initial);
-  }, [initial]);
+    setDrafts(initialDrafts);
+  }, [initialDrafts]);
 
-  if (drafts.length === 0) {
+  React.useEffect(() => {
+    setSends(initialSends);
+  }, [initialSends]);
+
+  if (drafts.length === 0 && sends.length === 0) {
     return (
       <p className="text-sm text-muted-foreground">La papelera está vacía.</p>
     );
@@ -32,68 +46,167 @@ export function TrashMailbox({ drafts: initial }: { drafts: EmailDraftRow[] }) {
 
   return (
     <TooltipProvider delayDuration={200}>
-      <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
-        {drafts.map((d) => (
-          <li
-            key={d.id}
-            className="flex items-start gap-3 px-3 py-3 sm:px-4"
-          >
-            <div className="min-w-0 flex-1">
-              <p className="line-clamp-2 text-sm font-medium leading-snug">
-                {d.subject || '(Sin asunto)'}
-              </p>
-              <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
-                {d.recipientEmail || 'sin destinatario'}
-                {' · '}
-                {new Date(d.updatedAt).toLocaleString('es-ES')}
-              </p>
-            </div>
-            <div className="flex shrink-0 items-center gap-0.5">
-              <MailboxIconAction
-                label="Restaurar borrador"
-                disabled={busyId === d.id}
-                className="text-primary hover:bg-primary/10 hover:text-primary"
-                onClick={() => {
-                  setBusyId(d.id);
-                  void restoreEmailDraftAction(d.id).then((r) => {
-                    setBusyId(null);
-                    if (!r.ok) toast.error(r.error);
-                    else {
-                      toast.success('Borrador restaurado.');
-                      setDrafts((prev) => prev.filter((x) => x.id !== d.id));
-                      router.refresh();
-                    }
-                  });
-                }}
-              >
-                <ArchiveRestore className={ICON} />
-              </MailboxIconAction>
-              <MailboxIconAction
-                label="Eliminar definitivamente"
-                disabled={busyId === d.id}
-                className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => {
-                  if (!window.confirm('¿Eliminar definitivamente este borrador?')) {
-                    return;
-                  }
-                  setBusyId(d.id);
-                  void deleteEmailDraftAction(d.id).then((r) => {
-                    setBusyId(null);
-                    if (!r.ok) toast.error(r.error);
-                    else {
-                      toast.success('Eliminado definitivamente.');
-                      setDrafts((prev) => prev.filter((x) => x.id !== d.id));
-                      router.refresh();
-                    }
-                  });
-                }}
-              >
-                <Trash2 className={ICON} />
-              </MailboxIconAction>
-            </div>
-          </li>
-        ))}
-      </ul>
+      <div className="space-y-6">
+        {drafts.length > 0 ? (
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Borradores
+            </h2>
+            <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
+              {drafts.map((d) => (
+                <li
+                  key={d.id}
+                  className="flex items-start gap-3 px-3 py-3 sm:px-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm font-medium leading-snug">
+                      {d.subject || '(Sin asunto)'}
+                    </p>
+                    <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                      Borrador · {d.recipientEmail || 'sin destinatario'}
+                      {' · '}
+                      {new Date(d.updatedAt).toLocaleString('es-ES')}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <MailboxIconAction
+                      label="Restaurar borrador"
+                      disabled={busyId === d.id}
+                      className="text-primary hover:bg-primary/10 hover:text-primary"
+                      onClick={() => {
+                        setBusyId(d.id);
+                        void restoreEmailDraftAction(d.id).then((r) => {
+                          setBusyId(null);
+                          if (!r.ok) toast.error(r.error);
+                          else {
+                            toast.success('Borrador restaurado.');
+                            setDrafts((prev) =>
+                              prev.filter((x) => x.id !== d.id)
+                            );
+                            router.refresh();
+                          }
+                        });
+                      }}
+                    >
+                      <ArchiveRestore className={ICON} />
+                    </MailboxIconAction>
+                    <MailboxIconAction
+                      label="Eliminar definitivamente"
+                      disabled={busyId === d.id}
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            '¿Eliminar definitivamente este borrador?'
+                          )
+                        ) {
+                          return;
+                        }
+                        setBusyId(d.id);
+                        void deleteEmailDraftAction(d.id).then((r) => {
+                          setBusyId(null);
+                          if (!r.ok) toast.error(r.error);
+                          else {
+                            toast.success('Eliminado definitivamente.');
+                            setDrafts((prev) =>
+                              prev.filter((x) => x.id !== d.id)
+                            );
+                            router.refresh();
+                          }
+                        });
+                      }}
+                    >
+                      <Trash2 className={ICON} />
+                    </MailboxIconAction>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {sends.length > 0 ? (
+          <section className="space-y-2">
+            <h2 className="text-sm font-medium text-muted-foreground">
+              Enviados
+            </h2>
+            <ul className="divide-y divide-border rounded-xl border border-border bg-card shadow-soft">
+              {sends.map((s) => (
+                <li
+                  key={s.id}
+                  className="flex items-start gap-3 px-3 py-3 sm:px-4"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-2 text-sm font-medium leading-snug">
+                      {s.subject || '(Sin asunto)'}
+                    </p>
+                    <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+                      Enviado · {s.recipientEmail}
+                      {' · '}
+                      {new Date(s.trashedAt || s.createdAt).toLocaleString(
+                        'es-ES'
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-0.5">
+                    <MailboxIconAction
+                      label="Restaurar a Enviados"
+                      disabled={busyId === s.id}
+                      className="text-primary hover:bg-primary/10 hover:text-primary"
+                      onClick={() => {
+                        setBusyId(s.id);
+                        void restoreEmailSendAction(s.id).then((r) => {
+                          setBusyId(null);
+                          if (!r.ok) toast.error(r.error);
+                          else {
+                            toast.success('Envío restaurado a Enviados.');
+                            setSends((prev) =>
+                              prev.filter((x) => x.id !== s.id)
+                            );
+                            router.refresh();
+                          }
+                        });
+                      }}
+                    >
+                      <ArchiveRestore className={ICON} />
+                    </MailboxIconAction>
+                    <MailboxIconAction
+                      label="Ocultar de mi vista (conserva auditoría)"
+                      disabled={busyId === s.id}
+                      className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                      onClick={() => {
+                        if (
+                          !window.confirm(
+                            '¿Ocultar este envío de tu vista? El registro de auditoría y las evidencias se conservan.'
+                          )
+                        ) {
+                          return;
+                        }
+                        setBusyId(s.id);
+                        void hideEmailSendFromUserViewAction(s.id).then((r) => {
+                          setBusyId(null);
+                          if (!r.ok) toast.error(r.error);
+                          else {
+                            toast.success(
+                              'Ocultado de la vista. La auditoría permanece.'
+                            );
+                            setSends((prev) =>
+                              prev.filter((x) => x.id !== s.id)
+                            );
+                            router.refresh();
+                          }
+                        });
+                      }}
+                    >
+                      <Trash2 className={ICON} />
+                    </MailboxIconAction>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+      </div>
     </TooltipProvider>
   );
 }
