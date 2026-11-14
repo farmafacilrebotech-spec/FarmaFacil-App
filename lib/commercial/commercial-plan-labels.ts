@@ -7,7 +7,7 @@ export const APPROVED_COMMERCIAL_PLAN_LABELS = {
   piloto: 'Piloto',
   general: 'General',
   personalizado: 'Personalizado',
-  asistente_ia_personalizado: 'IA',
+  asistente_ia_personalizado: 'Asistente IA personalizado',
 } as const;
 
 /** Legacy seed plans (005) — no usar en UI comercial. */

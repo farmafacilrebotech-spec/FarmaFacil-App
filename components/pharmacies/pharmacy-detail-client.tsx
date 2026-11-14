@@ -202,6 +202,7 @@ type PersonalizationForm = {
 };
 
 export function PharmacyDetailClient({
+  initialTab = 'general',
   pharmacy: initialPharmacy,
   plans,
   launchSeats,
@@ -232,6 +233,8 @@ export function PharmacyDetailClient({
   pharmacyCustomers = [],
   pharmacyCustomersError = null,
 }: {
+  /** Tab inicial estable (SSR + cliente) — evita mismatch de hidratación. */
+  initialTab?: string;
   pharmacy: PharmacyDetail;
   plans: PlanSummary[];
   launchSeats?: LaunchSeatsSummary;
@@ -265,11 +268,9 @@ export function PharmacyDetailClient({
 }) {
   const router = useRouter();
   const [pharmacy, setPharmacy] = React.useState(initialPharmacy);
-  const [activeTab, setActiveTab] = React.useState(() => {
-    if (typeof window === 'undefined') return 'general';
-    const tab = new URLSearchParams(window.location.search).get('tab');
-    return tab && tabs.some((t) => t.id === tab) ? tab : 'general';
-  });
+  const [activeTab, setActiveTab] = React.useState(() =>
+    tabs.some((t) => t.id === initialTab) ? initialTab : 'general'
+  );
   const [editingGeneral, setEditingGeneral] = React.useState(false);
   const [editingPersonalization, setEditingPersonalization] =
     React.useState(false);

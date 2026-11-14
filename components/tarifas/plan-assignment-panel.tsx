@@ -1,24 +1,19 @@
 'use client';
 
 import * as React from 'react';
-import { Info, AlertTriangle } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 
 import {
-  PLAN_ASSIGN_RPC_STATUS,
   PLAN_CATALOG_EXPECTATIONS,
-  type CatalogMode,
   type CommercialPlanCode,
 } from '@/lib/commercial/plan-catalog-mode';
-import {
-  attachMasterCatalogAction,
-  setPharmacyCatalogModeAction,
-} from '@/app/(app)/tarifas/actions';
+import type { QuotePharmacyOption } from '@/lib/commercial/quote-types';
+import { changePharmacyPlanAction } from '@/app/(app)/farmacias/actions';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -27,27 +22,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { PendingIntegrationBadge } from './pending-integration-badge';
+
+const PLAN_TO_KEY: Record<
+  Exclude<CommercialPlanCode, 'piloto'>,
+  string
+> = {
+  general: 'general',
+  personalizado: 'personalized',
+  asistente_ia_personalizado: 'ai_personalized',
+};
 
 /**
- * Preparación de contratación / cambio de plan.
- * Sin RPC unificada (056 en drafts). Operaciones parciales: mode + attach.
- * No pagos ni conversión automática.
+ * Contratación / asignación de plan comercial.
+ * Farmacia por nombre · sin UUID · sin mensajes de migración 056.
+ * Assign no reserva plaza ni finaliza piloto implícitamente (093).
  */
 export function PlanAssignmentPanel({
   canManage,
+  pharmacies = [],
   initialPharmacyId = null,
 }: {
   canManage: boolean;
-  /** Prefill desde «Preparar contrato» en presupuestos aceptados. */
+  pharmacies?: QuotePharmacyOption[];
   initialPharmacyId?: string | null;
 }) {
   const router = useRouter();
   const mutationLock = React.useRef(false);
   const [pharmacyId, setPharmacyId] = React.useState(
-    initialPharmacyId?.trim() ?? ''
+    initialPharmacyId?.trim() || 'none'
   );
-  const [plan, setPlan] = React.useState<CommercialPlanCode>('general');
+  const [plan, setPlan] = React.useState<Exclude<CommercialPlanCode, 'piloto'>>(
+    'general'
+  );
+  const [endOpenPilot, setEndOpenPilot] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -57,41 +64,34 @@ export function PlanAssignmentPanel({
   }, [initialPharmacyId]);
 
   const expectation = PLAN_CATALOG_EXPECTATIONS.find((p) => p.planCode === plan);
+  const paidPlans = PLAN_CATALOG_EXPECTATIONS.filter((p) => p.planCode !== 'piloto');
 
-  async function applyCatalogModeOnly() {
+  async function assignPlan() {
     if (!canManage || mutationLock.current) return;
-    const id = pharmacyId.trim();
-    if (!id) {
-      toast.error('Indica el UUID de la farmacia.');
+    if (pharmacyId === 'none') {
+      toast.error('Selecciona una farmacia por nombre.');
       return;
     }
-    const mode = (expectation?.catalogMode ?? 'generic') as CatalogMode;
     mutationLock.current = true;
     setBusy(true);
     try {
-      const modeResult = await setPharmacyCatalogModeAction(id, mode);
-      if (!modeResult.ok) {
-        toast.error(modeResult.error);
+      const result = await changePharmacyPlanAction(
+        pharmacyId,
+        PLAN_TO_KEY[plan],
+        {
+          endOpenPilot,
+          useLaunchPromo: false,
+          reason: 'tarifas_contratacion_panel',
+        }
+      );
+      if (!result.ok) {
+        toast.error(result.error);
         return;
       }
-      if (mode === 'generic') {
-        const attach = await attachMasterCatalogAction(id);
-        if (!attach.ok) {
-          toast.error(attach.error);
-          return;
-        }
-        toast.success(`Modalidad → ${mode}. Catálogo maestro adjuntado.`, {
-          description:
-            attach.activeGeneric != null
-              ? `${attach.activeGeneric} genéricos activos.`
-              : undefined,
-        });
-      } else {
-        toast.success(`Modalidad → ${mode}.`, {
-          description:
-            'Los productos genéricos no se borran; dejan de mostrarse en público.',
-        });
-      }
+      toast.success(`Plan «${expectation?.label ?? plan}» asignado.`, {
+        description:
+          'Sin reserva automática de plaza. Firma jurídica definitiva sigue bloqueada.',
+      });
       router.refresh();
     } finally {
       setBusy(false);
@@ -101,25 +101,25 @@ export function PlanAssignmentPanel({
 
   return (
     <div className="space-y-6">
-      <Card className="border-dashed border-amber-500/40 bg-amber-500/5 p-4">
+      <Card className="border-border/80 bg-muted/20 p-4">
         <div className="flex gap-3">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <div className="space-y-1 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">
-              Contratación / cambio de plan — pendiente de migración 056
+              Dominios separados
             </p>
-            <p>
-              No existe una RPC que sincronice a la vez plan comercial,
-              suscripción técnica, entitlements y catalog_mode. Borrador:{' '}
-              <code className="text-xs">{PLAN_ASSIGN_RPC_STATUS.draftMigration}</code>
+            <ul className="list-inside list-disc text-xs">
+              <li>Estado de la farmacia (operativo)</li>
+              <li>Piloto (acceso temporal a un plan G/P/IA)</li>
+              <li>Plaza promocional (gestión en Contratos / ficha)</li>
+              <li>Presupuesto y contrato</li>
+              <li>Suscripción y funcionalidades activas</li>
+            </ul>
+            <p className="text-xs">
+              Asignar plan <strong>no</strong> reserva plaza ni finaliza
+              pilotos sin confirmación. La firma jurídica definitiva permanece
+              bloqueada.
             </p>
-            <p>
-              Mientras tanto puedes alinear solo la modalidad de catálogo (sin
-              cobros ni activación de piloto).
-            </p>
-            <div className="pt-1">
-              <PendingIntegrationBadge label="RPC assign pendiente" />
-            </div>
           </div>
         </div>
       </Card>
@@ -127,7 +127,7 @@ export function PlanAssignmentPanel({
       <Card className="overflow-hidden shadow-soft">
         <div className="border-b border-border px-5 py-4">
           <h3 className="text-sm font-semibold text-foreground">
-            Expectativa plan → catálogo
+            Plan → catálogo (referencia)
           </h3>
         </div>
         <div className="overflow-x-auto">
@@ -135,10 +135,10 @@ export function PlanAssignmentPanel({
             <thead>
               <tr className="border-b border-border bg-muted/40">
                 <th className="px-4 py-3 font-medium text-muted-foreground">
-                  Plan comercial
+                  Plan
                 </th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">
-                  catalog_mode
+                  Catálogo
                 </th>
                 <th className="px-4 py-3 font-medium text-muted-foreground">
                   Asistente
@@ -149,14 +149,16 @@ export function PlanAssignmentPanel({
               </tr>
             </thead>
             <tbody>
-              {PLAN_CATALOG_EXPECTATIONS.map((row) => (
+              {paidPlans.map((row) => (
                 <tr
                   key={row.planCode}
                   className="border-b border-border/70 last:border-0"
                 >
                   <td className="px-4 py-2.5 font-medium">{row.label}</td>
                   <td className="px-4 py-2.5">
-                    <Badge variant="outline">{row.catalogMode}</Badge>
+                    <Badge variant="outline">
+                      {row.catalogMode === 'generic' ? 'Genérico' : 'Propio'}
+                    </Badge>
                   </td>
                   <td className="px-4 py-2.5 text-muted-foreground">
                     {row.assistantPersonalized
@@ -174,60 +176,71 @@ export function PlanAssignmentPanel({
       </Card>
 
       <Card className="space-y-4 p-5 shadow-soft">
-        <div className="flex gap-2">
-          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-          <div>
-            <h3 className="text-sm font-semibold text-foreground">
-              Alinear modalidad (operación parcial)
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Usa{' '}
-              {PLAN_ASSIGN_RPC_STATUS.interimRpcs.map((r) => (
-                <code key={r} className="mr-1 text-[11px]">
-                  {r}
-                </code>
-              ))}
-              . No crea suscripción de pago ni convierte piloto.
-            </p>
-          </div>
-        </div>
+        <h3 className="text-sm font-semibold text-foreground">
+          Asignar plan comercial
+        </h3>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="plan-pharmacy-id">UUID farmacia</Label>
-            <Input
-              id="plan-pharmacy-id"
+            <Label>Farmacia</Label>
+            <Select
               value={pharmacyId}
-              onChange={(e) => setPharmacyId(e.target.value)}
-              placeholder="uuid…"
+              onValueChange={setPharmacyId}
               disabled={!canManage || busy}
-            />
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Seleccionar por nombre" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Seleccionar…</SelectItem>
+                {pharmacies.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-1.5">
-            <Label>Plan objetivo (solo guía de modalidad)</Label>
+            <Label>Plan</Label>
             <Select
               value={plan}
-              onValueChange={(v) => setPlan(v as CommercialPlanCode)}
+              onValueChange={(v) =>
+                setPlan(v as Exclude<CommercialPlanCode, 'piloto'>)
+              }
               disabled={!canManage || busy}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {PLAN_CATALOG_EXPECTATIONS.map((p) => (
+                {paidPlans.map((p) => (
                   <SelectItem key={p.planCode} value={p.planCode}>
-                    {p.label} → {p.catalogMode}
+                    {p.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
         </div>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={endOpenPilot}
+            onChange={(e) => setEndOpenPilot(e.target.checked)}
+            disabled={!canManage || busy}
+          />
+          <span>
+            Si hay un piloto activo, finalizarlo expresamente antes de asignar
+            el plan de pago (no se hace de forma implícita).
+          </span>
+        </label>
         <Button
           type="button"
-          disabled={!canManage || busy || !pharmacyId.trim()}
-          onClick={() => void applyCatalogModeOnly()}
+          disabled={!canManage || busy || pharmacyId === 'none'}
+          onClick={() => void assignPlan()}
         >
-          Aplicar catalog_mode ({expectation?.catalogMode ?? 'generic'})
+          Asignar plan
         </Button>
       </Card>
     </div>

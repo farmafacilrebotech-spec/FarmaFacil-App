@@ -65,7 +65,7 @@ export default async function TarifasPage() {
         actions={
           <Badge variant="outline" className="font-normal">
             <Calculator className="mr-1.5 h-3.5 w-3.5" />
-            Fase 5 · RPCs comerciales
+            Catálogo comercial
           </Badge>
         }
       />

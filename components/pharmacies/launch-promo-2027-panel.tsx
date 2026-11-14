@@ -10,8 +10,16 @@ import type {
   LaunchSeatEvent,
   LaunchSeatsSummary,
 } from '@/lib/pharmacies/launch-seats';
+import {
+  LAUNCH_PROMO_ECONOMY_TABLE,
+  launchPromoEconomyForSku,
+  launchSeatEventLabelEs,
+} from '@/lib/pharmacies/launch-seats-ui';
+import { formatEurFromCents } from '@/lib/pharmacies/commercial-assign-pricing';
+import { commercialPlanLabel } from '@/lib/commercial/commercial-plan-labels';
 import { formatDate } from '@/lib/format';
 import {
+  confirmLaunchSeatAction,
   releaseLaunchSeatAction,
   reserveLaunchSeatAction,
 } from '@/app/(app)/farmacias/launch-seat-actions';
@@ -66,6 +74,94 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
+function EconomyBlock({ sku }: { sku: string }) {
+  const eco = launchPromoEconomyForSku(sku);
+  return (
+    <div className="rounded-lg border border-teal-500/20 bg-teal-500/5 px-3 py-3 text-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-teal-800 dark:text-teal-200">
+        Evolución económica del plan asociado a la plaza
+      </p>
+      <ul className="mt-2 space-y-1 text-muted-foreground">
+        {eco.discountLines.map((l) => (
+          <li key={l}>{l}</li>
+        ))}
+      </ul>
+      <dl className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+        <div>
+          <dt className="text-xs text-muted-foreground">2027</dt>
+          <dd className="font-medium tabular-nums text-foreground">
+            {eco.y2027Label}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">2028</dt>
+          <dd className="font-medium tabular-nums text-foreground">
+            {eco.y2028Label}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-xs text-muted-foreground">2029 y posteriores</dt>
+          <dd className="font-medium tabular-nums text-foreground">
+            {eco.y2029Label}
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Solo SaaS. La cuota mensual de uso del kiosko FarmaFácil no participa
+        en estos descuentos.
+      </p>
+    </div>
+  );
+}
+
+/** Tabla global: tres planes comerciales 2027 / 2028 / 2029+. */
+function GlobalEconomyTable() {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-teal-500/20 bg-teal-500/5 px-3 py-3 text-sm">
+      <p className="text-xs font-semibold uppercase tracking-wide text-teal-800 dark:text-teal-200">
+        Evolución económica SaaS (tres planes)
+      </p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        2027 (−60 %), 2028 (−30 %) y 2029 y posteriores (tarifa normal). Distinto
+        del plan activo de la farmacia y del plan promocional reservado en una
+        plaza.
+      </p>
+      <table className="mt-3 w-full min-w-[480px] text-left text-sm">
+        <thead className="text-xs uppercase tracking-wide text-muted-foreground">
+          <tr>
+            <th className="py-1.5 pr-2 font-medium">Plan</th>
+            <th className="py-1.5 pr-2 font-medium">2027</th>
+            <th className="py-1.5 pr-2 font-medium">2028</th>
+            <th className="py-1.5 font-medium">2029 y posteriores</th>
+          </tr>
+        </thead>
+        <tbody>
+          {LAUNCH_PROMO_ECONOMY_TABLE.map((row) => (
+            <tr key={row.planId} className="border-t border-border/60">
+              <td className="py-1.5 pr-2 font-medium text-foreground">
+                {row.planLabel}
+              </td>
+              <td className="py-1.5 pr-2 tabular-nums">
+                {formatEurFromCents(row.y2027Cents)}
+              </td>
+              <td className="py-1.5 pr-2 tabular-nums">
+                {formatEurFromCents(row.y2028Cents)}
+              </td>
+              <td className="py-1.5 tabular-nums">
+                {formatEurFromCents(row.y2029Cents)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-2 text-xs text-muted-foreground">
+        Solo SaaS. La cuota mensual de uso del kiosko FarmaFácil no participa
+        en estos descuentos.
+      </p>
+    </div>
+  );
+}
+
 /** Bloque ficha farmacia → Contrato */
 export function LaunchPromoPharmacyBlock({
   pharmacyId,
@@ -87,7 +183,9 @@ export function LaunchPromoPharmacyBlock({
   const [error, setError] = React.useState<string | null>(null);
   const [okMsg, setOkMsg] = React.useState<string | null>(null);
   const [releaseOpen, setReleaseOpen] = React.useState(false);
+  const [confirmOpen, setConfirmOpen] = React.useState(false);
   const [reason, setReason] = React.useState('');
+  const [confirmNotes, setConfirmNotes] = React.useState('');
   const [reserveSku, setReserveSku] = React.useState(
     currentPlanKey === 'personalized' || currentPlanKey === 'personalizado'
       ? 'personalized'
@@ -98,6 +196,9 @@ export function LaunchPromoPharmacyBlock({
   );
 
   const active = seat && seat.rawStatus === 'active';
+  const isReserved = seat?.status === 'reserved';
+  const isConfirmed = seat?.status === 'confirmed';
+  const economySku = seat?.commercialSkuKey || reserveSku;
 
   async function onReserve() {
     setError(null);
@@ -129,6 +230,27 @@ export function LaunchPromoPharmacyBlock({
     router.refresh();
   }
 
+  async function onConfirm() {
+    setError(null);
+    setOkMsg(null);
+    setBusy(true);
+    const r = await confirmLaunchSeatAction(
+      pharmacyId,
+      'staging_fixture',
+      confirmNotes.trim() || '[STAGING_FIXTURE]'
+    );
+    setBusy(false);
+    if (!r.ok) {
+      setError(r.error);
+      return;
+    }
+    setConfirmOpen(false);
+    setOkMsg(
+      `${r.message} No activa piloto, no cambia el plan ni genera cobros.`
+    );
+    router.refresh();
+  }
+
   return (
     <section className="space-y-4 rounded-xl border border-border bg-card p-5 shadow-soft">
       <div className="flex items-start gap-3">
@@ -140,15 +262,30 @@ export function LaunchPromoPharmacyBlock({
             Promoción de lanzamiento 2027
           </h3>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Primeras {summary.maxSlots} farmacias · −60 % sobre tarifa lista.
-            Liberar no cambia el plan ni desactiva la farmacia.
+            Primeras {summary.maxSlots} farmacias. Confirmar o liberar no activa
+            piloto, no contrata servicios ni genera cobros.
           </p>
         </div>
       </div>
 
       <SummaryStrip summary={summary} />
+      <EconomyBlock sku={economySku} />
 
       <dl className="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
+        <Field
+          label="Plan activo de la farmacia"
+          value={
+            currentPlanKey ? commercialPlanLabel(currentPlanKey) : 'Sin plan'
+          }
+        />
+        <Field
+          label="Plan promocional reservado"
+          value={
+            seat?.planLabel
+              ? `${seat.planLabel} (${STATUS_LABEL[seat.status] ?? seat.status})`
+              : 'Sin plaza promocional'
+          }
+        />
         <Field
           label="Estado de la plaza"
           value={STATUS_LABEL[seat?.status ?? 'none']}
@@ -157,7 +294,6 @@ export function LaunchPromoPharmacyBlock({
           label="Fecha de reserva"
           value={seat?.reservedAt ? formatDate(seat.reservedAt) : '—'}
         />
-        <Field label="Plan asociado" value={seat?.planLabel ?? '—'} />
         <Field label="Descuentos aplicables" value={seat?.discountLabel ?? '—'} />
         <Field
           label="Cuota promocional"
@@ -169,7 +305,7 @@ export function LaunchPromoPharmacyBlock({
         />
         <Field
           label="Reservada por"
-          value={seat?.reservedByLabel ?? '—'}
+          value={seat?.reservedByLabel?.trim() || '—'}
         />
       </dl>
 
@@ -221,10 +357,37 @@ export function LaunchPromoPharmacyBlock({
                 </p>
               ) : null}
             </>
+          ) : isReserved ? (
+            <>
+              <Button
+                type="button"
+                className="bg-[#1ABBB3] text-white hover:bg-[#159e97]"
+                disabled={busy}
+                onClick={() => setConfirmOpen(true)}
+              >
+                Confirmar plaza
+              </Button>
+              {seat?.canRelease ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-[#1ABBB3] text-[#1ABBB3] hover:bg-[#1ABBB3]/10"
+                  disabled={busy}
+                  onClick={() => setReleaseOpen(true)}
+                >
+                  Liberar plaza
+                </Button>
+              ) : null}
+            </>
+          ) : isConfirmed ? (
+            <p className="text-xs text-muted-foreground">
+              Plaza confirmada. Liberación ordinaria no disponible.
+            </p>
           ) : seat?.canRelease ? (
             <Button
               type="button"
               variant="outline"
+              className="border-[#1ABBB3] text-[#1ABBB3] hover:bg-[#1ABBB3]/10"
               disabled={busy}
               onClick={() => setReleaseOpen(true)}
             >
@@ -234,7 +397,7 @@ export function LaunchPromoPharmacyBlock({
         </div>
       ) : (
         <p className="text-xs text-muted-foreground">
-          Solo SuperAdmin Total puede reservar o liberar plazas.
+          Solo SuperAdmin Total puede reservar, confirmar o liberar plazas.
         </p>
       )}
 
@@ -246,7 +409,7 @@ export function LaunchPromoPharmacyBlock({
           <ul className="space-y-1.5 text-xs text-muted-foreground">
             {events.slice(0, 8).map((e) => (
               <li key={e.id}>
-                {formatDate(e.createdAt)} · {e.eventType}
+                {formatDate(e.createdAt)} · {launchSeatEventLabelEs(e.eventType)}
                 {e.actorLabel ? ` · ${e.actorLabel}` : ''}
                 {e.reason ? ` — ${e.reason}` : ''}
               </li>
@@ -261,8 +424,8 @@ export function LaunchPromoPharmacyBlock({
             <AlertDialogTitle>Liberar plaza de lanzamiento</AlertDialogTitle>
             <AlertDialogDescription>
               La farmacia seguirá activa con su plan y suscripción actuales. La
-              plaza volverá al pool disponible ({summary.remaining + 1} tras
-              liberar, máx. {summary.maxSlots}).
+              plaza volverá al pool disponible. No cambia el piloto ni genera
+              cobros.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-2 py-2">
@@ -284,6 +447,40 @@ export function LaunchPromoPharmacyBlock({
             >
               {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               Confirmar liberación
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar plaza de lanzamiento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Confirma la reserva promocional. No activa piloto, no cambia el
+              plan activo ni genera cobros. En staging se usa fixture de
+              formalización.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="confirm-notes">Notas</Label>
+            <Textarea
+              id="confirm-notes"
+              value={confirmNotes}
+              onChange={(e) => setConfirmNotes(e.target.value)}
+              rows={2}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>Cancelar</AlertDialogCancel>
+            <Button
+              type="button"
+              className="bg-[#1ABBB3] text-white hover:bg-[#159e97]"
+              disabled={busy}
+              onClick={() => void onConfirm()}
+            >
+              {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Confirmar plaza
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -335,6 +532,7 @@ export function LaunchPromoGlobalPanel({
       </div>
 
       <SummaryStrip summary={summary} />
+      <GlobalEconomyTable />
 
       <div className="overflow-x-auto rounded-xl border border-border bg-card shadow-soft">
         <table className="w-full min-w-[720px] text-left text-sm">
@@ -394,7 +592,7 @@ export function LaunchPromoGlobalPanel({
         <h3 className="text-sm font-semibold">Historial de reservas y liberaciones</h3>
         {events.length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            Sin eventos registrados (requiere migración 089 en el entorno).
+            Sin eventos de reserva o liberación registrados todavía.
           </p>
         ) : (
           <ul className="max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-border bg-muted/20 p-3 text-xs text-muted-foreground">
@@ -404,7 +602,7 @@ export function LaunchPromoGlobalPanel({
                 <span className="font-medium text-foreground">
                   {e.pharmacyName ?? e.pharmacyId.slice(0, 8)}
                 </span>{' '}
-                · {e.eventType}
+                · {launchSeatEventLabelEs(e.eventType)}
                 {e.actorLabel ? ` · ${e.actorLabel}` : ''}
                 {e.reason ? ` — ${e.reason}` : ''}
               </li>

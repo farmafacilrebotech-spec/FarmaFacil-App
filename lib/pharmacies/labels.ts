@@ -10,13 +10,20 @@ export const PHARMACY_STATUS_LABELS: Record<string, string> = {
 };
 
 export const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
-  trialing: 'Periodo de prueba',
+  trialing: 'En prueba',
   active: 'Activa',
   past_due: 'Pago atrasado',
   paused: 'Pausada',
+  suspended: 'Suspendida',
   cancelled: 'Cancelada',
-  expired: 'Expirada',
+  expired: 'Vencida',
 };
+
+/** Etiqueta visible de estado de suscripción; claves internas intactas. */
+export function subscriptionStatusLabelEs(status: string): string {
+  const key = (status || '').toLowerCase();
+  return SUBSCRIPTION_STATUS_LABELS[key] ?? status;
+}
 
 export const DEFAULT_PRIMARY_COLOR = '#2EC4C7';
 export const DEFAULT_SECONDARY_COLOR = '#0EA5E9';

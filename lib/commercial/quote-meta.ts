@@ -26,6 +26,7 @@ export function parseQuoteInternalMeta(
       emailSends: Array.isArray(parsed.emailSends)
         ? (parsed.emailSends as QuoteEmailSendEntry[])
         : [],
+      pdfDocument: parsed.pdfDocument ?? null,
     };
   } catch {
     return emptyQuoteInternalMeta();
@@ -37,6 +38,7 @@ export function serializeQuoteInternalMeta(meta: QuoteInternalMeta): string {
     v: 1,
     history: meta.history,
     emailSends: meta.emailSends,
+    pdfDocument: meta.pdfDocument ?? null,
   });
 }
 
@@ -61,11 +63,12 @@ export function appendEmailSend(
 }
 
 const ALLOWED: Record<CommercialQuoteStatus, CommercialQuoteStatus[]> = {
-  draft: ['sent', 'rejected', 'expired'],
-  sent: ['accepted', 'rejected', 'expired', 'draft'],
-  accepted: ['expired'],
-  rejected: ['draft'],
-  expired: ['draft'],
+  draft: ['sent', 'rejected', 'expired', 'cancelled'],
+  sent: ['accepted', 'rejected', 'expired', 'cancelled'],
+  accepted: ['expired', 'cancelled'],
+  rejected: ['draft', 'cancelled'],
+  expired: ['draft', 'cancelled'],
+  cancelled: [],
 };
 
 export function canTransitionQuoteStatus(

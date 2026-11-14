@@ -9,6 +9,7 @@ export const COMMERCIAL_QUOTE_STATUSES = [
   'accepted',
   'rejected',
   'expired',
+  'cancelled',
 ] as const;
 
 export type CommercialQuoteStatus = (typeof COMMERCIAL_QUOTE_STATUSES)[number];
@@ -22,6 +23,7 @@ export const COMMERCIAL_QUOTE_STATUS_LABELS: Record<
   accepted: 'Aceptado',
   rejected: 'Rechazado',
   expired: 'Caducado',
+  cancelled: 'Anulado',
 };
 
 export type QuoteStatusHistoryEntry = {
@@ -46,6 +48,14 @@ export type QuoteInternalMeta = {
   v: 1;
   history: QuoteStatusHistoryEntry[];
   emailSends: QuoteEmailSendEntry[];
+  /** Último PDF corporativo emitido (ruta Storage o huella). */
+  pdfDocument?: {
+    filename: string;
+    storagePath: string | null;
+    sha256: string;
+    generatedAt: string;
+    generatedBy: string | null;
+  } | null;
 };
 
 /** Snapshot inmutable comercial (sin costes internos). */

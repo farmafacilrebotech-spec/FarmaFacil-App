@@ -14,12 +14,20 @@ export type CommercialTrialStatus =
   | 'ended'
   | 'cancelled';
 
+/** Plan comercial en prueba (piloto ≠ 4º plan). */
+export type PilotTrialPlanSku =
+  | 'general'
+  | 'personalized'
+  | 'ai_personalized';
+
 export type CommercialPilotRow = {
   trialId: string;
   pharmacyId: string;
   pharmacyName: string;
   pharmacyStatus: string;
   trialStatus: CommercialTrialStatus;
+  /** Plan G/P/IA en prueba; null si aún no se eligió / migración 095 pendiente. */
+  trialPlanSku: PilotTrialPlanSku | null;
   preparedAt: string | null;
   activatedAt: string | null;
   endsAt: string | null;
@@ -66,10 +74,23 @@ export async function listCommercialPilots(): Promise<{
   }
 
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('pharmacy_commercial_trials')
-    .select(
-      `
+  const selectWithPlan = `
+      id,
+      pharmacy_id,
+      status,
+      trial_plan_sku,
+      prepared_at,
+      activated_at,
+      ends_at,
+      extension_used,
+      extended_at,
+      pharmacies!inner (
+        id,
+        name,
+        status
+      )
+    `;
+  const selectLegacy = `
       id,
       pharmacy_id,
       status,
@@ -83,17 +104,42 @@ export async function listCommercialPilots(): Promise<{
         name,
         status
       )
-    `
-    )
-    .order('created_at', { ascending: false })
-    .limit(200);
+    `;
+
+  let data: unknown[] | null = null;
+  let error: { code?: string; message: string } | null = null;
+
+  {
+    const first = await supabase
+      .from('pharmacy_commercial_trials')
+      .select(selectWithPlan)
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (
+      first.error &&
+      /trial_plan_sku|42703|column/i.test(first.error.message)
+    ) {
+      const second = await supabase
+        .from('pharmacy_commercial_trials')
+        .select(selectLegacy)
+        .order('created_at', { ascending: false })
+        .limit(200);
+      data = second.data as unknown[] | null;
+      error = second.error;
+    } else {
+      data = first.data as unknown[] | null;
+      error = first.error;
+    }
+  }
 
   if (error) {
     console.error('[pilots] list', error.code, error.message);
     return { ok: false, error: 'No se han podido cargar los pilotos.' };
   }
 
-  const pharmacyIds = (data ?? []).map((r) => r.pharmacy_id as string);
+  const pharmacyIds = (data ?? []).map(
+    (r) => (r as { pharmacy_id: string }).pharmacy_id
+  );
   const modeByPharmacy = new Map<string, 'generic' | 'own'>();
   const countByPharmacy = new Map<string, number>();
   const urlByPharmacy = new Map<string, string>();
@@ -135,7 +181,8 @@ export async function listCommercialPilots(): Promise<{
     }
   }
 
-  const rows: CommercialPilotRow[] = (data ?? []).map((raw) => {
+  const rows: CommercialPilotRow[] = (data ?? []).map((row) => {
+    const raw = row as Record<string, unknown>;
     const ph = raw.pharmacies as unknown as {
       id: string;
       name: string;
@@ -144,12 +191,23 @@ export async function listCommercialPilots(): Promise<{
     const endsAt = (raw.ends_at as string | null) ?? null;
     const status = raw.status as CommercialTrialStatus;
     const pharmacyId = raw.pharmacy_id as string;
+    const skuRaw =
+      raw.trial_plan_sku == null
+        ? null
+        : String(raw.trial_plan_sku).toLowerCase();
+    const trialPlanSku: PilotTrialPlanSku | null =
+      skuRaw === 'general' ||
+      skuRaw === 'personalized' ||
+      skuRaw === 'ai_personalized'
+        ? skuRaw
+        : null;
     return {
       trialId: raw.id as string,
       pharmacyId,
       pharmacyName: ph?.name ?? '—',
       pharmacyStatus: ph?.status ?? '—',
       trialStatus: status,
+      trialPlanSku,
       preparedAt: (raw.prepared_at as string | null) ?? null,
       activatedAt: (raw.activated_at as string | null) ?? null,
       endsAt,
@@ -202,7 +260,7 @@ export async function fetchTrialReadiness(
 ): Promise<ReadinessResult> {
   const allowed = await canManageCommercialTrials();
   if (!allowed) {
-    return { ok: false, error: 'Sin permiso para consultar readiness.' };
+    return { ok: false, error: 'Sin permiso para comprobar preparación.' };
   }
   const supabase = createClient();
   const { data, error } = await supabase.rpc('ff_commercial_trial_readiness_v1', {
@@ -210,12 +268,15 @@ export async function fetchTrialReadiness(
   });
   if (error) {
     console.error('[pilots] readiness', error.code, error.message);
-    return { ok: false, error: 'No se ha podido consultar la readiness.' };
+    return {
+      ok: false,
+      error: 'No se ha podido comprobar la preparación del piloto.',
+    };
   }
   const payload =
     data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
   if (!payload) {
-    return { ok: false, error: 'Respuesta de readiness vacía.' };
+    return { ok: false, error: 'Respuesta de preparación vacía.' };
   }
   const checksRaw = Array.isArray(payload.checks) ? payload.checks : [];
   const checks: ReadinessCheck[] = checksRaw.map((c) => {

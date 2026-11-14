@@ -99,6 +99,7 @@ export function TarifasWorkspace({
       >
         <PlanAssignmentPanel
           canManage={canManageTrials || canWriteMaster}
+          pharmacies={quotePharmacies}
           initialPharmacyId={contractPharmacyId}
         />
       </TabsContent>

@@ -50,21 +50,17 @@ describe('alta comercial SuperAdmin', () => {
     }
   });
 
-  it('separa los cuatro planes y solo Piloto es creable hoy', () => {
+  it('piloto se crea vía prep; G/P/IA se asignan (no alta directa)', () => {
     const modalities = listOnboardingModalities();
     assert.equal(modalities.length, 4);
     assert.deepEqual(
       COMMERCIAL_ONBOARDING_PLAN_CODES,
       PLAN_CATALOG_EXPECTATIONS.map((p) => p.planCode)
     );
-    assert.deepEqual(
-      modalities.map((m) => m.planCode),
-      COMMERCIAL_ONBOARDING_PLAN_CODES
-    );
+    assert.ok(modalities.every((m) => m.creatable));
 
-    const creatable = modalities.filter((m) => m.creatable);
-    assert.equal(creatable.length, 1);
-    assert.equal(creatable[0]?.planCode, 'piloto');
+    const piloto = resolveCreatePharmacyRoute('piloto');
+    assert.equal(piloto.ok, true);
 
     for (const code of [
       'general',
@@ -74,8 +70,8 @@ describe('alta comercial SuperAdmin', () => {
       const r = resolveCreatePharmacyRoute(code);
       assert.equal(r.ok, false);
       if (!r.ok) {
-        assert.equal(r.code, 'plan_not_creatable');
-        assert.match(r.error, /056|contratad/i);
+        assert.equal(r.code, 'use_assign_not_create');
+        assert.match(r.error, /asign|Contrataci/i);
       }
     }
   });

@@ -278,7 +278,7 @@ export function PharmacySubscriptionPanel({
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Fin de prueba</dt>
+              <dt className="text-xs text-muted-foreground">Fin de piloto</dt>
               <dd className="text-sm">
                 <DateValue value={sub.trial_end} />
               </dd>
@@ -289,12 +289,20 @@ export function PharmacySubscriptionPanel({
                 <DateValue value={sub.current_period_end} />
               </dd>
             </div>
-            <div>
-              <dt className="text-xs text-muted-foreground">Fin de gracia</dt>
-              <dd className="text-sm">
-                <DateValue value={sub.grace_period_ends_at} />
-              </dd>
-            </div>
+            {sub.grace_period_ends_at ? (
+              <div>
+                <dt className="text-xs text-muted-foreground">
+                  Fin del periodo de gracia
+                </dt>
+                <dd className="text-sm">
+                  <DateValue value={sub.grace_period_ends_at} />
+                </dd>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  No amplía el piloto; solo aplica si hay un periodo de gracia
+                  vigente.
+                </p>
+              </div>
+            ) : null}
           </dl>
 
           {(sub.commercial_reason || pharmacy.suspension_reason) && (

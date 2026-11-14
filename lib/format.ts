@@ -11,20 +11,26 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('es-ES').format(value);
 }
 
+/** Zona fija para evitar mismatch SSR/cliente en fechas comerciales. */
+const FF_DATE_TZ = 'Europe/Madrid';
+
 export function formatDate(iso: string): string {
   return new Intl.DateTimeFormat('es-ES', {
     day: '2-digit',
-    month: 'short',
+    month: '2-digit',
     year: 'numeric',
+    timeZone: FF_DATE_TZ,
   }).format(new Date(iso));
 }
 
 export function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat('es-ES', {
     day: '2-digit',
-    month: 'short',
+    month: '2-digit',
+    year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: FF_DATE_TZ,
   }).format(new Date(iso));
 }
 

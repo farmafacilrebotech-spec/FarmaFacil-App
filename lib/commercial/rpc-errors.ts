@@ -16,6 +16,8 @@ const KNOWN: Record<string, string> = {
   commercial_trial_not_found: 'No se encontró el piloto comercial.',
   commercial_trial_extension_already_used: 'La ampliación de 15 días ya se usó.',
   commercial_trial_not_running: 'No hay un piloto activo o ampliado para finalizar.',
+  commercial_trial_plan_required:
+    'Selecciona el plan del piloto: General, Personalizado o Asistente IA personalizado.',
   extension_reason_required: 'Indica un motivo de ampliación (mín. 3 caracteres).',
   pharmacy_has_current_subscription: 'La farmacia ya tiene una suscripción corriente.',
   starter_plan_missing: 'Falta el plan técnico starter en la base de datos.',
@@ -32,10 +34,10 @@ export function mapCommercialRpcError(
     if (raw.includes(key)) return label;
   }
   if (raw.includes('commercial_trial_not_ready_checklist')) {
-    return 'Faltan condiciones para activar el piloto. Revisa el checklist de readiness.';
+    return 'Faltan condiciones para activar el piloto. Comprueba la preparación.';
   }
   if (raw.includes('Faltan condiciones obligatorias')) {
-    return 'Faltan condiciones para activar el piloto. Revisa el checklist de readiness.';
+    return 'Faltan condiciones para activar el piloto. Comprueba la preparación.';
   }
   if (code === '42501') return 'Operación no autorizada.';
   if (code === 'P0002') return 'Registro no encontrado.';

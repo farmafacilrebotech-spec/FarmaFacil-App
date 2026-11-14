@@ -1,5 +1,7 @@
 'use server';
 
+import { createHash } from 'node:crypto';
+
 import { revalidatePath } from 'next/cache';
 
 import { createClient } from '@/lib/supabase/server';
@@ -11,9 +13,12 @@ import {
   buildCommercialQuoteLines,
   buildCommercialQuoteSnapshot,
   buildQuoteBreakdown,
-  buildQuoteDocumentHtml,
   defaultValidUntilIso,
 } from '@/lib/commercial/quote-document';
+import {
+  buildCommercialQuotePdf,
+  pdfBytesToBase64,
+} from '@/lib/commercial/quote-pdf';
 import {
   appendEmailSend,
   appendStatusHistory,
@@ -28,7 +33,6 @@ import {
   type CommercialQuoteStatus,
 } from '@/lib/commercial/quote-types';
 import {
-  formatCentsEur,
   type BillingInterval,
   type CommercialPlanId,
   type CommercialTariffConfig,
@@ -36,6 +40,7 @@ import {
 } from '@/lib/tarifas';
 import { loadTariffConfigForSession } from '@/lib/commercial/tariff-queries';
 import { sendTransactionalEmail } from '@/lib/email/send';
+import { buildCommercialQuoteEmailBodies } from '@/lib/email/commercial-quote-email';
 
 export type QuoteActionResult<T = Record<string, unknown>> =
   | ({ ok: true } & T)
@@ -316,7 +321,12 @@ export async function updateCommercialQuoteStatusAction(input: {
 export async function getCommercialQuoteDocumentAction(
   quoteId: string
 ): Promise<
-  QuoteActionResult<{ html: string; filename: string; referenceCode: string }>
+  QuoteActionResult<{
+    pdfBase64: string;
+    filename: string;
+    referenceCode: string;
+    mimeType: 'application/pdf';
+  }>
 > {
   const perm = await requireQuotesManage();
   if (!perm.ok) return perm;
@@ -324,7 +334,7 @@ export async function getCommercialQuoteDocumentAction(
   const supabase = createClient();
   const { data: row, error } = await supabase
     .from('commercial_quotes')
-    .select('id, reference_code, created_at, snapshot')
+    .select('id, reference_code, created_at, snapshot, internal_notes')
     .eq('id', quoteId)
     .maybeSingle();
 
@@ -337,18 +347,68 @@ export async function getCommercialQuoteDocumentAction(
     return { ok: false, error: 'El presupuesto no tiene snapshot válido.' };
   }
 
-  const referenceCode = (row.reference_code as string | null) ?? quoteId.slice(0, 8);
-  const html = buildQuoteDocumentHtml({
+  const referenceCode =
+    (row.reference_code as string | null) ?? quoteId.slice(0, 8);
+  const pdf = await buildCommercialQuotePdf({
     referenceCode,
     createdAt: row.created_at as string,
     snapshot,
   });
 
+  const sha256 = createHash('sha256').update(pdf.bytes).digest('hex');
+  const profile = await getCurrentProfile();
+  const by = profile.profile?.id ?? null;
+  const storagePath = `commercial-quotes/${quoteId}/${pdf.filename}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('email-attachments')
+    .upload(storagePath, Buffer.from(pdf.bytes), {
+      contentType: 'application/pdf',
+      upsert: true,
+    });
+
+  let meta = parseQuoteInternalMeta(row.internal_notes as string | null);
+  meta = {
+    ...meta,
+    pdfDocument: {
+      filename: pdf.filename,
+      storagePath: uploadError ? null : storagePath,
+      sha256,
+      generatedAt: new Date().toISOString(),
+      generatedBy: by,
+    },
+  };
+  await supabase
+    .from('commercial_quotes')
+    .update({
+      internal_notes: serializeQuoteInternalMeta(meta),
+      updated_by: by,
+    })
+    .eq('id', quoteId);
+
+  if (uploadError) {
+    console.warn(
+      '[commercial-quotes] pdf storage',
+      uploadError.message
+    );
+  } else {
+    await supabase.from('commercial_quote_documents').insert({
+      quote_id: quoteId,
+      filename: pdf.filename,
+      storage_path: storagePath,
+      content_sha256: sha256,
+      byte_size: pdf.bytes.byteLength,
+      mime_type: 'application/pdf',
+      created_by: by,
+    });
+  }
+
   return {
     ok: true,
-    html,
-    filename: `presupuesto-${referenceCode}.html`,
+    pdfBase64: pdfBytesToBase64(pdf.bytes),
+    filename: pdf.filename,
     referenceCode,
+    mimeType: 'application/pdf',
   };
 }
 
@@ -432,50 +492,105 @@ export async function sendCommercialQuoteEmailAction(input: {
     };
   }
 
-  const htmlDoc = buildQuoteDocumentHtml({
+  const pdf = await buildCommercialQuotePdf({
     referenceCode,
     createdAt: row.created_at as string,
     snapshot,
   });
+  const sha256 = createHash('sha256').update(pdf.bytes).digest('hex');
+  const storagePath = `commercial-quotes/${input.quoteId}/${pdf.filename}`;
+  const { error: uploadError } = await supabase.storage
+    .from('email-attachments')
+    .upload(storagePath, Buffer.from(pdf.bytes), {
+      contentType: 'application/pdf',
+      upsert: true,
+    });
+  meta = {
+    ...meta,
+    pdfDocument: {
+      filename: pdf.filename,
+      storagePath: uploadError ? null : storagePath,
+      sha256,
+      generatedAt: new Date().toISOString(),
+      generatedBy: by,
+    },
+  };
+  if (!uploadError) {
+    await supabase.from('commercial_quote_documents').insert({
+      quote_id: input.quoteId,
+      filename: pdf.filename,
+      storage_path: storagePath,
+      content_sha256: sha256,
+      byte_size: pdf.bytes.byteLength,
+      mime_type: 'application/pdf',
+      created_by: by,
+    });
+  }
 
-  const subject = `Presupuesto FarmaFácil ${referenceCode} · ${snapshot.clientName}`;
-  const text = [
-    `Hola ${snapshot.contactName},`,
-    '',
-    `Adjuntamos el resumen del presupuesto ${referenceCode} para ${snapshot.clientName}.`,
-    `Pago inicial (neto): ${formatCentsEur(snapshot.breakdown.oneTimeNetCents)}`,
-    `Cuota recurrente (neto): ${formatCentsEur(snapshot.breakdown.recurringNetCents)}`,
-    `Total año 1 (con IVA): ${formatCentsEur(snapshot.breakdown.firstYearGrossCents)}`,
-    `Vigencia: ${snapshot.validUntil ?? '—'}`,
-    '',
-    'La aceptación de este presupuesto no firma contrato ni activa el servicio.',
-    'Un saludo,',
-    'FarmaFácil',
-  ].join('\n');
-
-  const mailHtml = `
-    <div style="font-family:Arial,Helvetica,sans-serif;color:#111827;font-size:14px;line-height:1.5">
-      <p>Hola ${escapeHtml(snapshot.contactName)},</p>
-      <p>Te enviamos el presupuesto <strong>${escapeHtml(referenceCode)}</strong> para <strong>${escapeHtml(snapshot.clientName)}</strong>.</p>
-      <ul>
-        <li>Pago inicial (neto): <strong>${escapeHtml(formatCentsEur(snapshot.breakdown.oneTimeNetCents))}</strong></li>
-        <li>Cuota recurrente (neto): <strong>${escapeHtml(formatCentsEur(snapshot.breakdown.recurringNetCents))}</strong></li>
-        <li>Total año 1 (con IVA): <strong>${escapeHtml(formatCentsEur(snapshot.breakdown.firstYearGrossCents))}</strong></li>
-        <li>Vigencia hasta: <strong>${escapeHtml(snapshot.validUntil ?? '—')}</strong></li>
-      </ul>
-      <p style="color:#6b7280;font-size:12px">La aceptación no firma contrato ni activa el servicio. El piloto de 15 días solo se activa desde Gestión de pilotos.</p>
-      <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0"/>
-      ${htmlDoc}
-    </div>
-  `;
+  const bodies = buildCommercialQuoteEmailBodies({
+    referenceCode,
+    contactName: snapshot.contactName,
+    clientName: snapshot.clientName,
+    validUntil: snapshot.validUntil,
+  });
 
   const sendResult = await sendTransactionalEmail({
     to,
-    subject,
-    html: mailHtml,
-    text,
+    subject: bodies.subject,
+    html: bodies.html,
+    text: bodies.text,
     from: readiness.fromConfigured ?? undefined,
+    attachments: [
+      {
+        filename: pdf.filename,
+        content: pdfBytesToBase64(pdf.bytes),
+      },
+    ],
   });
+
+  // Registrar en Emails > Enviados (best-effort tras Resend OK).
+  // Si el claim/finalize falla: el correo ya salió; no se reintenta Resend
+  // (idempotency key evita duplicar claim; no hay segundo envío).
+  if (sendResult.ok) {
+    try {
+      const { data: claimData } = await supabase.rpc(
+        'ff_corporate_email_claim_send_v1',
+        {
+          p_idempotency_key: `commercial-quote:${input.quoteId}:${sha256.slice(0, 16)}`,
+          p_draft_id: null,
+          p_template_slug: 'custom',
+          p_subject: bodies.subject,
+          p_html_body: bodies.html,
+          p_text_body: bodies.text,
+          p_recipient_email: to,
+          p_recipient_name: snapshot.contactName || null,
+          p_from_address: readiness.fromConfigured,
+          p_reply_to: null,
+          p_purpose: 'commercial',
+          p_legal_basis: 'legitimate_interest_documented',
+          p_payload_hash: sha256,
+          p_dry_run: false,
+          p_attachment_count: 1,
+          p_confirmation_ack_at: new Date().toISOString(),
+          p_from_key: 'comercial',
+          p_cc_emails: [],
+          p_bcc_emails: [],
+        }
+      );
+      const claim = (claimData ?? {}) as { id?: string };
+      if (claim.id) {
+        await supabase.rpc('ff_corporate_email_finalize_send_v1', {
+          p_send_id: claim.id,
+          p_status: 'sent',
+          p_provider_message_id: sendResult.id ?? null,
+          p_error: null,
+          p_provider_status: 'accepted',
+        });
+      }
+    } catch (err) {
+      console.warn('[commercial-quotes] email_sends register', err);
+    }
+  }
 
   if (!sendResult.ok) {
     meta = appendEmailSend(meta, {
@@ -537,12 +652,4 @@ export async function sendCommercialQuoteEmailAction(input: {
 
   revalidateQuotes();
   return { ok: true, emailStatus: 'sent', to };
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

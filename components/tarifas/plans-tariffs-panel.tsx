@@ -119,15 +119,20 @@ export function PlansTariffsPanel({
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <div className="space-y-1 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">
-              Configuración comercial provisional (solo sesión)
+              Ajustes de simulación (solo esta sesión)
             </p>
             <p>
-              Los cambios no se guardan en base de datos. No afectan a
-              suscripciones ni a las claves internas{' '}
-              <span className="font-mono text-xs">
-                {INTERNAL_PLAN_KEYS_UNMAPPED.join(', ')}
-              </span>
-              .
+              Los importes editables de esta pantalla son hipótesis para el
+              simulador y no modifican las tarifas oficiales ni las
+              suscripciones existentes. Los presupuestos guardados conservan
+              su propio snapshot económico en el momento de creación.
+            </p>
+            <p>
+              Fuente de verdad comercial vigente: catálogo de planes y
+              motor de tarifas de la aplicación. Los planes anteriores
+              ({INTERNAL_PLAN_KEYS_UNMAPPED.join(', ')}) se identifican como
+              pendientes de asignación comercial; no se recalculan permisos
+              automáticamente aquí.
             </p>
           </div>
         </div>
@@ -216,7 +221,7 @@ export function PlansTariffsPanel({
 
       <Card className="p-5 shadow-soft">
         <h3 className="text-sm font-semibold text-foreground">
-          Cuotas SaaS por cohorte (sin alquiler de kiosko)
+          Cuotas SaaS por cohorte (sin cuota de uso del kiosko)
         </h3>
         <p className="mt-1 text-xs text-muted-foreground">
           El descuento de lanzamiento 2027 no se aplica a altas de otros años.
@@ -268,8 +273,14 @@ export function PlansTariffsPanel({
 
       <Card className="p-5 shadow-soft">
         <h3 className="text-sm font-semibold text-foreground">
-          Parámetros globales (provisional)
+          Parámetros globales y hipótesis financieras
         </h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Distingue tarifas comerciales oficiales (IVA, dto. anual SaaS,{' '}
+          cuota mensual de uso del kiosko FarmaFácil) de hipótesis internas
+          usadas solo en previsiones (bajas, seguro, adopción prepago,
+          costes).
+        </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field
             label="IVA (%)"
@@ -293,7 +304,7 @@ export function PlansTariffsPanel({
                 equivalenceSurchargeBps: Math.max(0, Math.round(v * 100)),
               })
             }
-            hint="Editable. 0 % por defecto; 4 % si se confirma. No altera tarifas base, costes ni alquiler."
+            hint="Editable. 0 % por defecto; 4 % si se confirma. No altera tarifas base, costes ni la cuota de uso del kiosko."
           />
           <Field
             label="Personalización kiosko (€)"
@@ -305,7 +316,7 @@ export function PlansTariffsPanel({
             }
           />
           <Field
-            label="Alquiler kiosko / mes (€)"
+            label="Cuota mensual de uso del kiosko FarmaFácil (€)"
             value={config.kioskLicenseMonthlyCents / 100}
             onChange={(v) =>
               updateGlobal({
@@ -332,13 +343,13 @@ export function PlansTariffsPanel({
                   kioskInternalCostCents: Math.round(v * 100),
                 })
               }
+              hint="Hipótesis de coste interno. No es un cargo al cliente."
             />
           ) : (
             <div className="space-y-1.5">
               <Label className="text-xs">Coste interno kiosko (€)</Label>
               <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                No incluido en datos de servidor sin
-                platform.commercial_tariffs.write (RPC 052).
+                Hipótesis de coste interno no disponible con el permiso actual.
               </p>
             </div>
           )}
@@ -350,6 +361,7 @@ export function PlansTariffsPanel({
                 kioskInsuranceAnnualCents: Math.round(v * 100),
               })
             }
+            hint="Hipótesis de coste interno de FarmaFácil. No es un servicio asegurador vendido al cliente."
           />
           <Field
             label="Adopción prepago anual (%)"
@@ -362,14 +374,14 @@ export function PlansTariffsPanel({
             hint="0 % hasta validarlo. Tesorería sigue en cobros mensuales."
           />
           <Field
-            label="Churn mensual (%)"
+            label="Tasa estimada de bajas mensuales (%)"
             value={assumptions.monthlyChurnBps / 100}
             onChange={(v) =>
               updateAssumptions({
                 monthlyChurnBps: Math.max(0, Math.round(v * 100)),
               })
             }
-            hint={`Equivalente anual aproximado: ${formatBpsPercent(assumptions.approximateAnnualChurnBps)}.`}
+            hint={`Porcentaje estimado de farmacias que cancelan su suscripción cada mes, utilizado exclusivamente en las previsiones financieras. Equivalente anual aproximado: ${formatBpsPercent(assumptions.approximateAnnualChurnBps)}.`}
           />
         </div>
       </Card>
@@ -427,7 +439,9 @@ export function PlansTariffsPanel({
             Comparativa de funcionalidades
           </h3>
           <p className="mt-1 text-xs text-muted-foreground">
-            Descripción comercial. No activa módulos en la plataforma.
+            Descripción comercial. El piloto gratuito es una modalidad temporal
+            de acceso al plan seleccionado (General, Personalizado o Asistente
+            IA); no activa módulos por sí mismo.
           </p>
         </div>
         <div className="overflow-x-auto">

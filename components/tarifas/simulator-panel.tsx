@@ -7,13 +7,16 @@ import { useRouter } from 'next/navigation';
 
 import {
   calculateQuote,
+  buildCommercialYearProjection,
   getPlan,
   formatCentsEur,
   formatBpsPercent,
+  KIOSK_USAGE_FEE_LABEL_ES,
+  TARIFF_REVISION_NOTE_ES,
   type BillingInterval,
   type CommercialPlanId,
   type CommercialTariffConfig,
-  type SaasCohortPricing,
+  type SelectableCommercialOffer,
 } from '@/lib/tarifas';
 import type { QuotePharmacyOption } from '@/lib/commercial/quote-types';
 import { defaultValidUntilIso } from '@/lib/commercial/quote-document';
@@ -53,10 +56,11 @@ export function SimulatorPanel({
   const [contactEmail, setContactEmail] = React.useState('');
   const [planId, setPlanId] = React.useState<CommercialPlanId>('general');
   const [interval, setInterval] = React.useState<BillingInterval>('monthly');
-  const [cohortPricing, setCohortPricing] =
-    React.useState<SaasCohortPricing>('normal');
+  const [offer, setOffer] =
+    React.useState<SelectableCommercialOffer>('normal');
   const [kioskCount, setKioskCount] = React.useState(1);
   const [onsiteIncluded, setOnsiteIncluded] = React.useState(false);
+  const [serviceStart, setServiceStart] = React.useState('2027-01-01');
   const [notes, setNotes] = React.useState('');
   const [validUntil, setValidUntil] = React.useState(defaultValidUntilIso());
   const [saving, setSaving] = React.useState(false);
@@ -72,7 +76,7 @@ export function SimulatorPanel({
     if (isPilot) {
       setKioskCount(0);
       setOnsiteIncluded(false);
-      setCohortPricing('normal');
+      setOffer('normal');
     }
   }, [isPilot]);
 
@@ -84,6 +88,7 @@ export function SimulatorPanel({
     }
   }, [selectedPharmacy]);
 
+  /** Simular/guardar no reserva plaza: cohortPricing solo fija el año 1 mostrado. */
   const quote = React.useMemo(
     () =>
       calculateQuote(config, {
@@ -91,17 +96,44 @@ export function SimulatorPanel({
         interval,
         kioskCount: isPilot ? 0 : kioskCount,
         onsiteInstallIncluded: isPilot ? false : onsiteIncluded,
-        cohortPricing: isPilot ? 'normal' : cohortPricing,
+        cohortPricing: isPilot
+          ? 'normal'
+          : offer === 'launch_2027'
+            ? 'launch_2027'
+            : 'normal',
         includeAppSignupFee: !isPilot,
       }),
     [
       config,
       planId,
       interval,
-      cohortPricing,
+      offer,
       kioskCount,
       isPilot,
       onsiteIncluded,
+    ]
+  );
+
+  const projection = React.useMemo(
+    () =>
+      buildCommercialYearProjection(config, {
+        planId,
+        offer: isPilot ? 'normal' : offer,
+        interval,
+        kioskCount: isPilot ? 0 : kioskCount,
+        onsiteInstallIncluded: isPilot ? false : onsiteIncluded,
+        includeAppSignupFee: !isPilot,
+        serviceStartDate: serviceStart || null,
+      }),
+    [
+      config,
+      planId,
+      offer,
+      interval,
+      kioskCount,
+      isPilot,
+      onsiteIncluded,
+      serviceStart,
     ]
   );
 
@@ -120,7 +152,7 @@ export function SimulatorPanel({
         contactEmail,
         planId,
         interval,
-        cohortPricing,
+        cohortPricing: offer === 'launch_2027' ? 'launch_2027' : 'normal',
         kioskCount,
         onsiteInstallIncluded: onsiteIncluded,
         notes,
@@ -243,10 +275,10 @@ export function SimulatorPanel({
         </div>
 
         <div className="space-y-1.5">
-          <Label>Cohorte / descuento SaaS</Label>
+          <Label>Oferta comercial</Label>
           <Select
-            value={cohortPricing}
-            onValueChange={(v) => setCohortPricing(v as SaasCohortPricing)}
+            value={offer}
+            onValueChange={(v) => setOffer(v as SelectableCommercialOffer)}
             disabled={isPilot}
           >
             <SelectTrigger>
@@ -255,19 +287,16 @@ export function SimulatorPanel({
             <SelectContent>
               <SelectItem value="normal">Tarifa normal</SelectItem>
               <SelectItem value="launch_2027">
-                Lanzamiento 2027 (−60 % SaaS · máx.{' '}
-                {config.assumptions.launchSlots2027} plazas)
-              </SelectItem>
-              <SelectItem value="cohort_2027_in_2028">
-                Cohorte 2027 en 2028 (−30 % SaaS)
+                Lanzamiento 2027 — primeras{' '}
+                {config.assumptions.launchSlots2027} farmacias
               </SelectItem>
             </SelectContent>
           </Select>
           <p className="text-[11px] text-muted-foreground">
-            El alquiler del kiosko no entra en el descuento SaaS. Prepago anual
-            previsto:{' '}
-            {formatBpsPercent(config.assumptions.annualPrepayAdoptionBps)}{' '}
-            (tesorería sigue mensual).
+            Lanzamiento aplica automáticamente −60 % SaaS en 2027, −30 % en
+            2028 y tarifa normal desde 2029 (años naturales). Simular o guardar{' '}
+            <strong>no reserva</strong> plaza. {KIOSK_USAGE_FEE_LABEL_ES} no
+            recibe descuento SaaS ni prepago anual.
           </p>
         </div>
 
@@ -332,7 +361,17 @@ export function SimulatorPanel({
               Extra contractual sin importe: no modifica precios, IVA ni cuotas.
             </p>
           </div>
-          <div className="space-y-1.5 sm:col-span-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="sim-start">Inicio de servicio previsto</Label>
+            <Input
+              id="sim-start"
+              type="date"
+              value={serviceStart}
+              onChange={(e) => setServiceStart(e.target.value)}
+              disabled={isPilot}
+            />
+          </div>
+          <div className="space-y-1.5">
             <Label htmlFor="sim-valid">Vigencia de la oferta</Label>
             <Input
               id="sim-valid"
@@ -415,7 +454,7 @@ export function SimulatorPanel({
               value={formatCentsEur(quote.planRecurringCents)}
             />
             <Row
-              label={`Alquiler kiosko (${quote.kioskCount})`}
+              label={`${KIOSK_USAGE_FEE_LABEL_ES} (${quote.kioskCount})`}
               value={formatCentsEur(quote.kioskLicenseRecurringCents)}
             />
             <Row
@@ -469,17 +508,122 @@ export function SimulatorPanel({
               strong
               highlight
             />
-            <Row
-              label="Recurrente años posteriores (sin IVA)"
-              value={formatCentsEur(quote.laterYearsRecurringNetCents)}
-            />
           </dl>
           <p className="mt-3 text-[11px] text-muted-foreground">
-            El alta de la aplicación forma parte del pago inicial / año 1 y no
-            se incluye en las cuotas de años posteriores. Vigencia de oferta:{' '}
-            {validUntil || '—'}.
+            El alta forma parte del pago inicial (año 2027) y no se repite. Los
+            importes de «años posteriores» se detallan en la proyección 2027–
+            2029. Vigencia: {validUntil || '—'}.
           </p>
         </Card>
+
+        {!isPilot ? (
+          <Card className="p-5 shadow-soft">
+            <h3 className="text-sm font-semibold text-foreground">
+              Proyección económica 2027–2029
+            </h3>
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              Años naturales · 12 meses completos por ejercicio (referencia).
+              Coste anualizado ≠ calendario real de cobros mensuales.
+            </p>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[520px] border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b border-border text-muted-foreground">
+                    <th className="py-1.5 pr-2 font-medium">Concepto</th>
+                    {projection.rows.map((r) => (
+                      <th key={String(r.calendarYear)} className="py-1.5 px-1 font-medium">
+                        {r.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="text-foreground">
+                  <tr className="border-b border-border/60">
+                    <td className="py-1.5 pr-2">Dto. SaaS</td>
+                    {projection.rows.map((r) => (
+                      <td key={`d-${String(r.calendarYear)}`} className="py-1.5 px-1">
+                        {r.saasDiscountBps
+                          ? `−${formatBpsPercent(r.saasDiscountBps)}`
+                          : '—'}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-border/60">
+                    <td className="py-1.5 pr-2">Cuota mens. SaaS</td>
+                    {projection.rows.map((r) => (
+                      <td key={`s-${String(r.calendarYear)}`} className="py-1.5 px-1">
+                        {formatCentsEur(r.saasMonthlyCents)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-border/60">
+                    <td className="py-1.5 pr-2">Cuota mens. kioskos</td>
+                    {projection.rows.map((r) => (
+                      <td key={`k-${String(r.calendarYear)}`} className="py-1.5 px-1">
+                        {formatCentsEur(r.kioskMonthlyCents)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-border/60">
+                    <td className="py-1.5 pr-2">Recurrente anual</td>
+                    {projection.rows.map((r) => (
+                      <td key={`a-${String(r.calendarYear)}`} className="py-1.5 px-1">
+                        {formatCentsEur(r.recurringAnnualCents)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-border/60">
+                    <td className="py-1.5 pr-2">Pagos iniciales</td>
+                    {projection.rows.map((r) => (
+                      <td key={`o-${String(r.calendarYear)}`} className="py-1.5 px-1">
+                        {formatCentsEur(r.oneTimeNetCents)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-border/60">
+                    <td className="py-1.5 pr-2 font-medium">Total sin IVA</td>
+                    {projection.rows.map((r) => (
+                      <td
+                        key={`n-${String(r.calendarYear)}`}
+                        className="py-1.5 px-1 font-medium"
+                      >
+                        {formatCentsEur(r.yearNetCents)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr className="border-b border-border/60">
+                    <td className="py-1.5 pr-2">IVA ({formatBpsPercent(config.vatBps)})</td>
+                    {projection.rows.map((r) => (
+                      <td key={`v-${String(r.calendarYear)}`} className="py-1.5 px-1">
+                        {formatCentsEur(r.yearVatCents)}
+                      </td>
+                    ))}
+                  </tr>
+                  <tr>
+                    <td className="py-1.5 pr-2 font-semibold">Total con IVA</td>
+                    {projection.rows.map((r) => (
+                      <td
+                        key={`g-${String(r.calendarYear)}`}
+                        className="py-1.5 px-1 font-semibold text-primary"
+                      >
+                        {formatCentsEur(r.yearGrossCents)}
+                      </td>
+                    ))}
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            {offer === 'launch_2027' ? (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                Ahorro SaaS acumulado 3 años vs tarifa normal:{' '}
+                {formatCentsEur(projection.cumulativeSaasSavingsCents)}.
+              </p>
+            ) : null}
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {TARIFF_REVISION_NOTE_ES}
+            </p>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

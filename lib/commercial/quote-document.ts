@@ -3,12 +3,14 @@ import {
   formatCentsEur,
   formatBpsPercent,
   getPlan,
+  KIOSK_USAGE_FEE_LABEL_ES,
   type BillingInterval,
   type CommercialPlanId,
   type CommercialTariffConfig,
   type SaasCohortPricing,
   type SimulatorBreakdown,
 } from '@/lib/tarifas';
+import { commercialPlanLabel } from '@/lib/commercial/commercial-plan-labels';
 import {
   DEFAULT_COMMERCIAL_CONDITIONS,
   DEFAULT_QUOTE_VALIDITY_DAYS,
@@ -74,7 +76,7 @@ export function buildCommercialQuoteSnapshot(
     pharmacyId: input.pharmacyId,
     pharmacyName: input.pharmacyName,
     planId: plan.id,
-    planName: plan.name,
+    planName: commercialPlanLabel(plan.id) || plan.name,
     interval: quote.interval,
     cohortPricing: quote.cohortPricing,
     kioskCount: quote.kioskCount,
@@ -178,7 +180,7 @@ export function buildCommercialQuoteLines(
   if (snapshot.kioskCount > 0) {
     lines.push({
       lineType: 'kiosk_license',
-      description: `Alquiler kiosko (${snapshot.kioskCount}) / ${period}`,
+      description: `${KIOSK_USAGE_FEE_LABEL_ES} (${snapshot.kioskCount}) / ${period}`,
       quantity: snapshot.kioskCount,
       unitCents:
         snapshot.kioskCount > 0
@@ -243,7 +245,7 @@ export function buildQuoteDocumentHtml(input: {
     ),
     s.kioskCount > 0
       ? tr(
-          `Alquiler kiosko / ${period}`,
+          `${KIOSK_USAGE_FEE_LABEL_ES} / ${period}`,
           String(s.kioskCount),
           formatCentsEur(
             Math.round(
@@ -288,7 +290,6 @@ export function buildQuoteDocumentHtml(input: {
 </style>
 </head>
 <body>
-  <p class="no-print muted">Usa «Guardar como PDF» o «Imprimir → PDF» en el diálogo del sistema.</p>
   <h1>Presupuesto comercial FarmaFácil</h1>
   <p class="muted">Referencia ${escapeHtml(ref)} · Creado ${escapeHtml(created)} · Vigencia hasta ${escapeHtml(validUntil)}</p>
 

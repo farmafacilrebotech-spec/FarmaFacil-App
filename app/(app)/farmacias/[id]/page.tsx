@@ -35,12 +35,32 @@ import type { SaCustomerRow } from '@/lib/platform/sa-customers';
 
 export const dynamic = 'force-dynamic';
 
+const PHARMACY_TABS = [
+  'general',
+  'personalizacion',
+  'contrato',
+  'qr',
+  'usuarios',
+  'clientes',
+  'catalogo',
+  'kiosko',
+  'asistente',
+  'pedidos',
+  'actividad',
+] as const;
+
 export default async function PharmacyDetailPage({
   params,
+  searchParams,
 }: {
   params: { id: string };
+  searchParams?: { tab?: string };
 }) {
   const pharmacyId = params.id;
+  const tabParam = (searchParams?.tab || '').trim();
+  const initialTab = (PHARMACY_TABS as readonly string[]).includes(tabParam)
+    ? tabParam
+    : 'general';
 
   const [
     pharmacy,
@@ -118,6 +138,7 @@ export default async function PharmacyDetailPage({
 
   return (
     <PharmacyDetailClient
+      initialTab={initialTab}
       pharmacy={pharmacy}
       plans={plans}
       launchSeats={launchSeats}

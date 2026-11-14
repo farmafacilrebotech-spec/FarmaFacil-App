@@ -95,11 +95,29 @@ export type CommercialPlanId =
 
 export type BillingInterval = 'monthly' | 'annual';
 
-/** Modo de cuota SaaS según cohorte / año de facturación. */
+/**
+ * Modo de cuota SaaS según cohorte / año de facturación.
+ * `cohort_2027_in_2028` solo para presupuestos históricos / cálculo interno año 2028.
+ * En UI de nuevos presupuestos: usar `SelectableCommercialOffer`.
+ */
 export type SaasCohortPricing =
   | 'normal'
   | 'launch_2027'
   | 'cohort_2027_in_2028';
+
+/** Ofertas seleccionables en simulador / nuevos presupuestos. */
+export type SelectableCommercialOffer = 'normal' | 'launch_2027';
+
+/**
+ * Etiqueta comercial de la cuota de kiosko (no es seguro ni cobertura).
+ * Centralizada para poder cambiarse tras revisión de asesoría.
+ */
+export const KIOSK_USAGE_FEE_LABEL_ES =
+  'Cuota mensual de uso del kiosko FarmaFácil' as const;
+
+/** Nota contractual sobre revisiones de tarifa. */
+export const TARIFF_REVISION_NOTE_ES =
+  'Las tarifas podrán revisarse conforme al contrato. Los importes de este presupuesto se mantienen para el periodo indicado.' as const;
 
 export type FeatureMatrixKey =
   | 'monthlyPrice'
@@ -234,7 +252,8 @@ export const DEFAULT_COMMERCIAL_TARIFF_CONFIG: CommercialTariffConfig = {
     {
       id: 'pilot',
       name: 'Piloto gratuito',
-      tagline: '15 días naturales · ampliación excepcional +15 días',
+      tagline:
+        'Modalidad temporal de acceso a General, Personalizado o Asistente IA · 15 días · ampliación excepcional +15 (1 vez)',
       monthlyCents: 0,
       trialDays: 15,
       extensionDays: 15,
@@ -275,9 +294,9 @@ export const DEFAULT_COMMERCIAL_TARIFF_CONFIG: CommercialTariffConfig = {
     },
     {
       id: 'ai_personalized',
-      name: 'IA',
+      name: 'Asistente IA personalizado',
       tagline:
-        'Todo lo Personalizado + asistente ligado al catálogo · kiosko opcional (alquiler aparte)',
+        'Todo lo Personalizado + asistente ligado al catálogo · kiosko opcional (cuota de uso aparte)',
       monthlyCents: eurosToCents(247.5),
       trialDays: null,
       extensionDays: null,
@@ -401,7 +420,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'monthlyPrice',
     label: 'Precio mensual',
     values: {
-      pilot: 'Gratis',
+      pilot: 'SaaS gratuito',
       general: '97,50 €',
       personalized: '172,50 €',
       ai_personalized: '247,50 €',
@@ -411,7 +430,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'duration',
     label: 'Duración',
     values: {
-      pilot: '15 días',
+      pilot: '15 días · ampliación excepcional +15 días (1 vez)',
       general: 'Suscripción',
       personalized: 'Suscripción',
       ai_personalized: 'Suscripción',
@@ -421,7 +440,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'pharmacyQr',
     label: 'QR de farmacia',
     values: {
-      pilot: true,
+      pilot: 'Según plan seleccionado',
       general: true,
       personalized: true,
       ai_personalized: true,
@@ -431,7 +450,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'genericCatalog',
     label: 'Catálogo genérico',
     values: {
-      pilot: true,
+      pilot: 'Según plan seleccionado',
       general: true,
       personalized: false,
       ai_personalized: false,
@@ -441,7 +460,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'ownCatalog',
     label: 'Catálogo propio',
     values: {
-      pilot: false,
+      pilot: 'Según plan seleccionado',
       general: false,
       personalized: true,
       ai_personalized: true,
@@ -451,7 +470,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'genericAssistant',
     label: 'Asistente genérico',
     values: {
-      pilot: true,
+      pilot: 'Según plan seleccionado',
       general: true,
       personalized: true,
       ai_personalized: true,
@@ -461,7 +480,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'catalogAssistant',
     label: 'Asistente conectado a catálogo propio',
     values: {
-      pilot: false,
+      pilot: 'Según plan seleccionado',
       general: false,
       personalized: false,
       ai_personalized: true,
@@ -471,7 +490,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'orders',
     label: 'Solicitudes / pedidos',
     values: {
-      pilot: true,
+      pilot: 'Según plan seleccionado',
       general: true,
       personalized: true,
       ai_personalized: true,
@@ -481,7 +500,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'namePhone',
     label: 'Nombre y teléfono del cliente',
     values: {
-      pilot: true,
+      pilot: 'Según plan seleccionado',
       general: true,
       personalized: true,
       ai_personalized: true,
@@ -491,7 +510,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'clientAccount',
     label: 'Cuenta de cliente',
     values: {
-      pilot: false,
+      pilot: 'Según plan seleccionado',
       general: false,
       personalized: true,
       ai_personalized: true,
@@ -501,7 +520,7 @@ export const FEATURE_COMPARISON_ROWS: Array<{
     key: 'clientHistory',
     label: 'Historial del cliente',
     values: {
-      pilot: false,
+      pilot: 'Según plan seleccionado',
       general: false,
       personalized: true,
       ai_personalized: true,
@@ -509,9 +528,9 @@ export const FEATURE_COMPARISON_ROWS: Array<{
   },
   {
     key: 'physicalKioskOptional',
-    label: 'Kiosko físico opcional (alquiler aparte)',
+    label: 'Kiosko físico (cuota de uso aparte)',
     values: {
-      pilot: false,
+      pilot: 'Según condiciones del piloto',
       general: true,
       personalized: true,
       ai_personalized: true,
@@ -778,5 +797,250 @@ export function calculateQuote(
     hardwareProfitCents,
     hardwareMarginPercent,
     equivalenceSurchargeBps: surchargeBps,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Proyección económica 2027–2029 (años naturales · oferta launch_2027)
+// -----------------------------------------------------------------------------
+
+export type ProjectionCalendarYear = 2027 | 2028 | 2029;
+
+export type YearProjectionRow = {
+  calendarYear: ProjectionCalendarYear | '2029+';
+  label: string;
+  saasDiscountBps: BasisPoints;
+  saasMonthlyCents: number;
+  kioskMonthlyCents: number;
+  recurringMonthlyCents: number;
+  /** 12 meses completos del año (anualizado calendario). */
+  recurringAnnualCents: number;
+  oneTimeNetCents: number;
+  yearNetCents: number;
+  yearVatCents: number;
+  yearGrossCents: number;
+  cohortPricingUsed: SaasCohortPricing;
+};
+
+export type LaunchCohortProjection = {
+  offer: SelectableCommercialOffer;
+  planId: CommercialPlanId;
+  interval: BillingInterval;
+  kioskCount: number;
+  serviceStartDate: string | null;
+  rows: YearProjectionRow[];
+  /** Suma de pagos iniciales (alta + personalización kioskos). */
+  initialPaymentNetCents: number;
+  /** Ahorro acumulado 3 años vs tarifa normal (solo SaaS; kiosko igual). */
+  cumulativeSaasSavingsCents: number;
+  tariffRevisionNote: typeof TARIFF_REVISION_NOTE_ES;
+  kioskFeeLabel: typeof KIOSK_USAGE_FEE_LABEL_ES;
+};
+
+function cohortForCalendarYear(
+  offer: SelectableCommercialOffer,
+  year: ProjectionCalendarYear
+): SaasCohortPricing {
+  if (offer === 'normal') return 'normal';
+  if (year === 2027) return 'launch_2027';
+  if (year === 2028) return 'cohort_2027_in_2028';
+  return 'normal';
+}
+
+/**
+ * Proyección 2027 / 2028 / 2029+ para oferta normal o lanzamiento.
+ * Por defecto asume 12 meses completos por año natural (validación comercial).
+ * `serviceStartDate` se reserva para prorrateos futuros (periodos parciales).
+ *
+ * No reserva plazas. No muta presupuestos históricos.
+ */
+export function buildCommercialYearProjection(
+  config: CommercialTariffConfig,
+  input: {
+    planId: CommercialPlanId;
+    offer: SelectableCommercialOffer;
+    interval: BillingInterval;
+    kioskCount: number;
+    onsiteInstallIncluded?: boolean;
+    includeAppSignupFee?: boolean;
+    /** ISO date YYYY-MM-DD; null = simulación 12+12+12 meses completos. */
+    serviceStartDate?: string | null;
+  }
+): LaunchCohortProjection {
+  const plan = getPlan(config, input.planId);
+  const isPilot = plan.id === 'pilot';
+  const kioskCount = isPilot
+    ? 0
+    : Math.max(0, Math.floor(input.kioskCount || 0));
+  const offer: SelectableCommercialOffer = isPilot ? 'normal' : input.offer;
+  const interval: BillingInterval = isPilot ? 'monthly' : input.interval;
+  const licenseMonthly = config.kioskLicenseMonthlyCents;
+  const surchargeBps = config.assumptions.equivalenceSurchargeBps;
+
+  const years: ProjectionCalendarYear[] = [2027, 2028, 2029];
+  const rows: YearProjectionRow[] = [];
+
+  let initialPaymentNetCents = 0;
+  if (!isPilot) {
+    const signup =
+      input.includeAppSignupFee !== false
+        ? applySaleSurchargeBps(
+            config.assumptions.appSignupFeeCents,
+            surchargeBps
+          )
+        : 0;
+    const hardware = applySaleSurchargeBps(
+      kioskCount * config.kioskHardwareUnitCents,
+      surchargeBps
+    );
+    initialPaymentNetCents = signup + hardware;
+  }
+
+  let cumulativeSaasSavingsCents = 0;
+  const normalSaasMonthly = isPilot
+    ? 0
+    : saasMonthlySaleCents(config, input.planId, 'normal');
+
+  for (const year of years) {
+    const cohort = cohortForCalendarYear(offer, year);
+    const saasDiscountBps = cohortDiscountBps(config.assumptions, cohort);
+    let saasMonthly = isPilot
+      ? 0
+      : saasMonthlySaleCents(config, input.planId, cohort);
+    const kioskMonthly = isPilot ? 0 : kioskCount * licenseMonthly;
+
+    let saasPeriod: number;
+    let kioskPeriod: number;
+    if (interval === 'monthly') {
+      saasPeriod = saasMonthly;
+      kioskPeriod = kioskMonthly;
+    } else {
+      saasPeriod = applySaleSurchargeBps(
+        annualFromMonthly(
+          saasMonthlyCentsForCohort(
+            plan.monthlyCents,
+            config.assumptions,
+            cohort
+          ),
+          config.saasAnnualDiscountBps
+        ),
+        surchargeBps
+      );
+      kioskPeriod =
+        kioskCount *
+        annualFromMonthly(
+          licenseMonthly,
+          config.kioskLicenseAnnualDiscountBps
+        );
+      saasMonthly = Math.round(saasPeriod / 12);
+    }
+
+    const recurringMonthlyCents =
+      interval === 'monthly' ? saasPeriod + kioskPeriod : Math.round((saasPeriod + kioskPeriod) / 12);
+    const recurringAnnualCents =
+      interval === 'monthly'
+        ? (saasPeriod + kioskPeriod) * 12
+        : saasPeriod + kioskPeriod;
+
+    const oneTime = year === 2027 ? initialPaymentNetCents : 0;
+    const yearNetCents = oneTime + recurringAnnualCents;
+    const yearVatCents = applyBps(yearNetCents, config.vatBps);
+    const yearGrossCents = yearNetCents + yearVatCents;
+
+    if (!isPilot && offer === 'launch_2027') {
+      const normalAnnual =
+        interval === 'monthly'
+          ? (normalSaasMonthly + kioskMonthly) * 12
+          : applySaleSurchargeBps(
+              annualFromMonthly(
+                getPlan(config, input.planId).monthlyCents,
+                config.saasAnnualDiscountBps
+              ),
+              surchargeBps
+            ) +
+            kioskCount *
+              annualFromMonthly(
+                licenseMonthly,
+                config.kioskLicenseAnnualDiscountBps
+              );
+      // Ahorro solo SaaS: diferencia de cuota anual SaaS vs normal
+      const launchSaasAnnual =
+        interval === 'monthly'
+          ? saasMonthlySaleCents(config, input.planId, cohort) * 12
+          : applySaleSurchargeBps(
+              annualFromMonthly(
+                saasMonthlyCentsForCohort(
+                  plan.monthlyCents,
+                  config.assumptions,
+                  cohort
+                ),
+                config.saasAnnualDiscountBps
+              ),
+              surchargeBps
+            );
+      const normalSaasAnnual =
+        interval === 'monthly'
+          ? normalSaasMonthly * 12
+          : applySaleSurchargeBps(
+              annualFromMonthly(
+                plan.monthlyCents,
+                config.saasAnnualDiscountBps
+              ),
+              surchargeBps
+            );
+      cumulativeSaasSavingsCents += Math.max(
+        0,
+        normalSaasAnnual - launchSaasAnnual
+      );
+      void normalAnnual;
+    }
+
+    rows.push({
+      calendarYear: year === 2029 ? '2029+' : year,
+      label:
+        year === 2027
+          ? '2027'
+          : year === 2028
+            ? '2028'
+            : '2029 en adelante',
+      saasDiscountBps,
+      saasMonthlyCents:
+        interval === 'monthly'
+          ? saasMonthlySaleCents(config, input.planId, cohort)
+          : Math.round(
+              applySaleSurchargeBps(
+                annualFromMonthly(
+                  saasMonthlyCentsForCohort(
+                    plan.monthlyCents,
+                    config.assumptions,
+                    cohort
+                  ),
+                  config.saasAnnualDiscountBps
+                ),
+                surchargeBps
+              ) / 12
+            ),
+      kioskMonthlyCents: kioskMonthly,
+      recurringMonthlyCents,
+      recurringAnnualCents,
+      oneTimeNetCents: oneTime,
+      yearNetCents,
+      yearVatCents,
+      yearGrossCents,
+      cohortPricingUsed: cohort,
+    });
+  }
+
+  return {
+    offer,
+    planId: input.planId,
+    interval,
+    kioskCount,
+    serviceStartDate: input.serviceStartDate ?? null,
+    rows,
+    initialPaymentNetCents,
+    cumulativeSaasSavingsCents,
+    tariffRevisionNote: TARIFF_REVISION_NOTE_ES,
+    kioskFeeLabel: KIOSK_USAGE_FEE_LABEL_ES,
   };
 }

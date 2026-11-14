@@ -11,12 +11,13 @@ import type {
 } from './types';
 
 const SUBSCRIPTION_STATUS_LABELS: Record<string, string> = {
-  trialing: 'Periodo de prueba',
+  trialing: 'En prueba',
   active: 'Activa',
   past_due: 'Pago atrasado',
   paused: 'Pausada',
+  suspended: 'Suspendida',
   cancelled: 'Cancelada',
-  expired: 'Expirada',
+  expired: 'Vencida',
 };
 
 export type TenantSubscriptionSummary = {

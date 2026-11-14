@@ -16,6 +16,7 @@ import {
   eurosToCents,
   formatCentsEur,
   calculateQuote,
+  buildCommercialYearProjection,
   saasMonthlyCentsForCohort,
   saasMonthlySaleCents,
   roundCentsToEuro,
@@ -265,6 +266,31 @@ describe('lanzamiento 2027 en simulador', () => {
     assert.equal(q.planRecurringCents, eurosToCents(39));
     assert.equal(q.kioskLicenseRecurringCents, eurosToCents(49));
     assert.equal(q.recurringNetCents, eurosToCents(88));
+  });
+});
+
+describe('proyección cohorte lanzamiento 2027 (12 meses/año)', () => {
+  it('General + 1 kiosko mensual: importes de control 2027–2029', () => {
+    const proj = buildCommercialYearProjection(cfg, {
+      planId: 'general',
+      offer: 'launch_2027',
+      interval: 'monthly',
+      kioskCount: 1,
+      includeAppSignupFee: true,
+    });
+    assert.equal(proj.initialPaymentNetCents, eurosToCents(1280));
+    const y2027 = proj.rows.find((r) => r.calendarYear === 2027);
+    const y2028 = proj.rows.find((r) => r.calendarYear === 2028);
+    const y2029 = proj.rows.find((r) => r.calendarYear === '2029+');
+    assert.ok(y2027 && y2028 && y2029);
+    assert.equal(y2027.recurringAnnualCents, eurosToCents(1056));
+    assert.equal(y2027.yearNetCents, eurosToCents(2336));
+    assert.equal(y2027.yearGrossCents, eurosToCents(2826.56));
+    assert.equal(y2028.recurringAnnualCents, eurosToCents(1407));
+    assert.equal(y2029.recurringAnnualCents, eurosToCents(1758));
+    assert.equal(y2027.saasMonthlyCents, eurosToCents(39));
+    assert.equal(y2028.saasMonthlyCents, eurosToCents(68.25));
+    assert.equal(y2029.saasMonthlyCents, eurosToCents(97.5));
   });
 });
 

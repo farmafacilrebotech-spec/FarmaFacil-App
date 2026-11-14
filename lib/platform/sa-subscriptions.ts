@@ -1,6 +1,6 @@
 /**
  * Suscripciones (facturación/servicio) — lectura SuperAdmin.
- * Distinto de contratos legales PDF (069 pendiente).
+ * Distinto de la formalización contractual (pendiente de validación jurídica).
  */
 
 import { createClient } from '@/lib/supabase/server';
@@ -14,8 +14,12 @@ export type SaSubscriptionRow = {
   status: string;
   planName: string | null;
   planLabel: string;
-  trialEndsAt: string | null;
+  /** Fin del periodo de suscripción (current_period_end). */
   currentPeriodEnd: string | null;
+  /** Fin del piloto/prueba en la fila de suscripción (trial_end). */
+  trialEndsAt: string | null;
+  /** true si el estado indica suscripción vigente (active|trialing). */
+  isCurrent: boolean;
 };
 
 export async function listSaSubscriptions(limit = 100): Promise<
@@ -28,6 +32,7 @@ export async function listSaSubscriptions(limit = 100): Promise<
   }
 
   const supabase = createClient();
+  // Columnas reales (008/027): trial_end, current_period_end — no trial_ends_at.
   const { data, error } = await supabase
     .from('subscriptions')
     .select(
@@ -35,7 +40,7 @@ export async function listSaSubscriptions(limit = 100): Promise<
       id,
       pharmacy_id,
       status,
-      trial_ends_at,
+      trial_end,
       current_period_end,
       pharmacies ( name ),
       plans ( name, key )
@@ -48,7 +53,8 @@ export async function listSaSubscriptions(limit = 100): Promise<
     console.error('[sa-subscriptions]', error.code, error.message);
     const fallback = await supabase
       .from('subscriptions')
-      .select('id, pharmacy_id, status, pharmacies ( name ), plans ( name )')
+      .select('id, pharmacy_id, status, pharmacies ( name ), plans ( name, key )')
+      .order('updated_at', { ascending: false })
       .limit(Math.min(Math.max(limit, 1), 200));
     if (fallback.error) {
       return { ok: false, error: 'No se han podido cargar las suscripciones.' };
@@ -72,15 +78,18 @@ function mapRow(row: Record<string, unknown>): SaSubscriptionRow {
   const plan = row.plans as { name?: string; code?: string; key?: string } | null;
   const raw =
     plan?.key ?? plan?.code ?? plan?.name ?? null;
+  const status = String(row.status ?? '');
+  const statusLower = status.toLowerCase();
   return {
     id: String(row.id),
     pharmacyId: String(row.pharmacy_id),
     pharmacyName: ph?.name ?? null,
-    status: String(row.status ?? ''),
+    status,
     planName: plan?.name ?? null,
     planLabel: commercialPlanLabel(raw),
-    trialEndsAt: row.trial_ends_at == null ? null : String(row.trial_ends_at),
+    trialEndsAt: row.trial_end == null ? null : String(row.trial_end),
     currentPeriodEnd:
       row.current_period_end == null ? null : String(row.current_period_end),
+    isCurrent: statusLower === 'active' || statusLower === 'trialing',
   };
 }

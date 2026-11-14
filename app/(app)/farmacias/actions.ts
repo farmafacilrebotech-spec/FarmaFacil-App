@@ -84,7 +84,7 @@ function isHexColor(value: string): boolean {
 /**
  * Alta SuperAdmin unificada.
  * - Piloto → ff_create_pharmacy_commercial_prep_v1 (sin trial 30d, sin reloj).
- * - General / Personalizado / IA → rechazado hasta migración 056 (no se simula contrato).
+ * - General / Personalizado / IA → asignación vía ff_assign_commercial_plan_v1 (no alta directa).
  * - Ya no llama a ff_create_pharmacy_v1.
  */
 export async function createPharmacyAction(
@@ -468,12 +468,20 @@ export async function changePharmacyPlanAction(
 
   // Planes comerciales: únicamente ff_assign_commercial_plan_v1 (nunca 017).
   if (commercialSku) {
+    // 093: assign no reserva plaza. useLaunchPromo → error orientativo del RPC.
+    if (options?.useLaunchPromo === true) {
+      return {
+        ok: false,
+        error:
+          'La plaza promocional se gestiona aparte (Reservar plaza). La asignación de plan ya no reserva ni libera plazas.',
+      };
+    }
     const { data, error } = await supabase.rpc('ff_assign_commercial_plan_v1', {
       p_pharmacy_id: pharmacyId,
       p_commercial_plan_key: commercialSku,
       p_reason: options?.reason?.trim() || 'sa_change_plan_dialog',
       p_end_open_pilot: options?.endOpenPilot === true,
-      p_use_launch_promo: options?.useLaunchPromo === true,
+      p_use_launch_promo: false,
     });
     if (error) {
       if (process.env.NODE_ENV === 'development') {

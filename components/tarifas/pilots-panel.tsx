@@ -19,8 +19,10 @@ import Link from 'next/link';
 import type {
   CommercialPilotRow,
   PilotKpis,
+  PilotTrialPlanSku,
   ReadinessCheck,
 } from '@/lib/commercial/pilots-queries';
+import { commercialPlanLabel } from '@/lib/commercial/commercial-plan-labels';
 import {
   activateCommercialTrialAction,
   createPharmacyCommercialPrepAction,
@@ -51,10 +53,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 
 const COLUMNS = [
   'Farmacia',
+  'Plan en prueba',
   'Estado piloto',
   'Catálogo',
   'Activación',
@@ -63,6 +73,18 @@ const COLUMNS = [
   'Ampliación',
   'Acciones',
 ] as const;
+
+const TRIAL_PLAN_OPTIONS: {
+  value: PilotTrialPlanSku;
+  label: string;
+}[] = [
+  { value: 'general', label: commercialPlanLabel('general') },
+  { value: 'personalized', label: commercialPlanLabel('personalized') },
+  {
+    value: 'ai_personalized',
+    label: commercialPlanLabel('ai_personalized'),
+  },
+];
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
@@ -116,6 +138,8 @@ export function PilotsPanel({
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [activateTarget, setActivateTarget] =
     React.useState<CommercialPilotRow | null>(null);
+  const [activatePlan, setActivatePlan] =
+    React.useState<PilotTrialPlanSku>('general');
   const [endTarget, setEndTarget] = React.useState<CommercialPilotRow | null>(
     null
   );
@@ -192,10 +216,11 @@ export function PilotsPanel({
     if (!activateTarget || mutationLock.current) return;
     mutationLock.current = true;
     const pharmacyId = activateTarget.pharmacyId;
+    const planSku = activatePlan;
     setBusyId(pharmacyId);
     setActivateTarget(null);
     try {
-      const result = await activateCommercialTrialAction(pharmacyId);
+      const result = await activateCommercialTrialAction(pharmacyId, planSku);
       if (!result.ok) {
         toast.error(result.error);
         return;
@@ -403,6 +428,11 @@ export function PilotsPanel({
                             </p>
                           </div>
                         </td>
+                        <td className="px-4 py-3 text-sm">
+                          {row.trialPlanSku
+                            ? commercialPlanLabel(row.trialPlanSku)
+                            : '—'}
+                        </td>
                         <td className="px-4 py-3">{statusBadge(row.trialStatus)}</td>
                         <td className="px-4 py-3 text-xs text-muted-foreground">
                           {row.catalogMode} · {row.genericProductCount} genéricos
@@ -442,14 +472,19 @@ export function PilotsPanel({
                               onClick={() => void openReadiness(row)}
                             >
                               <ClipboardCheck className="h-3.5 w-3.5" />
-                              Readiness
+                              Comprobar preparación
                             </Button>
                             <Button
                               type="button"
                               size="sm"
                               className="h-8 gap-1 px-2"
                               disabled={!canManage || !canActivate || busy}
-                              onClick={() => setActivateTarget(row)}
+                              onClick={() => {
+                                setActivatePlan(
+                                  row.trialPlanSku ?? 'general'
+                                );
+                                setActivateTarget(row);
+                              }}
                             >
                               {busy && canActivate ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -575,9 +610,12 @@ export function PilotsPanel({
       <Dialog open={readinessOpen} onOpenChange={setReadinessOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Readiness · {readinessPharmacy}</DialogTitle>
+            <DialogTitle>
+              Comprobar preparación · {readinessPharmacy}
+            </DialogTitle>
             <DialogDescription>
-              Checklist de condiciones para activar el piloto.
+              Checklist de condiciones para activar el piloto (sin iniciar el
+              reloj).
             </DialogDescription>
           </DialogHeader>
           {readinessLoading ? (
@@ -626,11 +664,30 @@ export function PilotsPanel({
           <AlertDialogHeader>
             <AlertDialogTitle>¿Activar piloto de 15 días?</AlertDialogTitle>
             <AlertDialogDescription>
-              Arrancará el reloj comercial y la suscripción trial de{' '}
-              <strong>{activateTarget?.pharmacyName}</strong>. Solo si el
-              checklist de readiness está completo.
+              Arrancará el reloj comercial de{' '}
+              <strong>{activateTarget?.pharmacyName}</strong> sobre el plan
+              seleccionado. No reserva plaza ni genera cobros. Solo si la
+              preparación está completa.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-1.5 py-2">
+            <Label>Plan que se probará</Label>
+            <Select
+              value={activatePlan}
+              onValueChange={(v) => setActivatePlan(v as PilotTrialPlanSku)}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {TRIAL_PLAN_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction

@@ -48,6 +48,15 @@ function mapRpcError(message: string): string {
   if (m.includes('launch_release_reason_required')) {
     return 'Indique un motivo de liberación (mínimo 3 caracteres).';
   }
+  if (m.includes('launch_extend_reason_required')) {
+    return 'Indique un motivo de ampliación (mínimo 3 caracteres).';
+  }
+  if (m.includes('launch_confirm_requires_formalization') || m.includes('fixture')) {
+    return 'Confirmación bloqueada: formalización válida o fixture [STAGING_FIXTURE] en staging.';
+  }
+  if (m.includes('forbidden_holder_reserve')) {
+    return 'Solo el titular de la farmacia puede reservar la plaza promocional.';
+  }
   if (m.includes('launch_promo_invalid_sku') || m.includes('launch_promo_not_for_pilot')) {
     return 'El plan seleccionado no admite plaza de lanzamiento.';
   }
@@ -134,5 +143,117 @@ export async function releaseLaunchSeatAction(
     message:
       'Plaza liberada. La farmacia, su plan y su suscripción no se han modificado.',
     payload,
+  };
+}
+
+/** Ampliación de caducidad (solo SA Total). Motivo obligatorio. */
+export async function extendLaunchSeatAction(
+  pharmacyId: string,
+  extraDays: number,
+  reason: string
+): Promise<LaunchSeatActionResult> {
+  const gate = await requireSuperAdminTotal();
+  if (!gate.ok) return gate;
+
+  const trimmed = reason.trim();
+  if (trimmed.length < 3) {
+    return { ok: false, error: 'Indique un motivo de ampliación (mínimo 3 caracteres).' };
+  }
+  if (!Number.isFinite(extraDays) || extraDays < 1 || extraDays > 90) {
+    return { ok: false, error: 'Días de ampliación inválidos (1–90).' };
+  }
+
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('ff_extend_launch_seat_v1', {
+    p_pharmacy_id: pharmacyId,
+    p_extra_days: Math.floor(extraDays),
+    p_reason: trimmed,
+  });
+
+  if (error) {
+    console.error('[launch-seat] extend', error.code, error.message);
+    return { ok: false, error: mapRpcError(error.message) };
+  }
+
+  revalidateLaunchPaths(pharmacyId);
+  return {
+    ok: true,
+    message: 'Caducidad de la reserva ampliada. Plan y suscripción sin cambios.',
+    payload: (data as Record<string, unknown>) ?? undefined,
+  };
+}
+
+/**
+ * Confirmación irreversible. En staging exige fixture [STAGING_FIXTURE]
+ * mientras la formalización jurídica esté bloqueada.
+ */
+export async function confirmLaunchSeatAction(
+  pharmacyId: string,
+  commitmentKind: string,
+  notes: string
+): Promise<LaunchSeatActionResult> {
+  const gate = await requireSuperAdminTotal();
+  if (!gate.ok) return gate;
+
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('ff_confirm_launch_seat_v1', {
+    p_pharmacy_id: pharmacyId,
+    p_commitment_kind: commitmentKind.trim() || 'staging_fixture',
+    p_notes: notes.trim() || '[STAGING_FIXTURE]',
+  });
+
+  if (error) {
+    console.error('[launch-seat] confirm', error.code, error.message);
+    return { ok: false, error: mapRpcError(error.message) };
+  }
+
+  revalidateLaunchPaths(pharmacyId);
+  return {
+    ok: true,
+    message: 'Plaza confirmada (irreversible por operaciones ordinarias).',
+    payload: (data as Record<string, unknown>) ?? undefined,
+  };
+}
+
+/** Reserva por titular (OWNER). Empleados: denegado en RPC. */
+export async function holderReserveLaunchSeatAction(
+  pharmacyId: string,
+  commercialSkuKey: string,
+  ackConditions: boolean
+): Promise<LaunchSeatActionResult> {
+  const sku = plansKeyToPaidSku(commercialSkuKey) as PaidCommercialSku | null;
+  if (!sku) {
+    return {
+      ok: false,
+      error: 'Seleccione un plan promocional (General / Personalizado / IA).',
+    };
+  }
+  if (!ackConditions) {
+    return {
+      ok: false,
+      error: 'Debe aceptar las condiciones y la fecha de caducidad.',
+    };
+  }
+
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc(
+    'ff_holder_reserve_launch_2027_seat_v1',
+    {
+      p_pharmacy_id: pharmacyId,
+      p_commercial_sku_key: sku,
+      p_ack_conditions: true,
+    }
+  );
+
+  if (error) {
+    console.error('[launch-seat] holder_reserve', error.code, error.message);
+    return { ok: false, error: mapRpcError(error.message) };
+  }
+
+  revalidateLaunchPaths(pharmacyId);
+  return {
+    ok: true,
+    message: 'Plaza reservada. SuperAdmin ha sido notificado internamente.',
+    payload: (data as Record<string, unknown>) ?? undefined,
   };
 }

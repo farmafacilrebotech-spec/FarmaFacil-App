@@ -245,9 +245,9 @@ export function NewPharmacyForm() {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
               Modalidad comercial. Solo <strong>Piloto</strong> está disponible
-              para alta hoy (preparación sin reloj). General, Personalizado e IA
-              personalizado requieren la asignación de plan (migración 056, no
-              aplicada).
+              para el alta inicial (preparación sin reloj). General,
+              Personalizado e IA personalizado se asignan después desde la
+              ficha de la farmacia.
             </p>
             <div className="grid gap-3 sm:grid-cols-2">
               {MODALITIES.map((modality) => {

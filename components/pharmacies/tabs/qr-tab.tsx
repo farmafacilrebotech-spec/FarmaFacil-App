@@ -162,8 +162,8 @@ export function QrTab({
   if (!entrypoint) {
     return (
       <div className="rounded-xl border border-dashed border-border px-6 py-10 text-center text-sm text-muted-foreground">
-        Esta farmacia aún no tiene QR oficial provisionado. Aplica la migración
-        042 o vuelve a abrir esta ficha tras el alta.
+        Esta farmacia aún no tiene QR oficial. Vuelve a abrir esta ficha tras
+        completar el alta o contacta con soporte si el problema continúa.
       </div>
     );
   }

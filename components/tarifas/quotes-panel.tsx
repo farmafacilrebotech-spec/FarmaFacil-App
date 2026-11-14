@@ -16,10 +16,6 @@ import {
   COMMERCIAL_QUOTE_STATUS_LABELS,
   type CommercialQuoteStatus,
 } from '@/lib/commercial/quote-types';
-import {
-  downloadQuoteHtmlFile,
-  openQuotePrintWindow,
-} from '@/lib/commercial/quote-document';
 import { formatCentsEur } from '@/lib/tarifas';
 import {
   getCommercialQuoteDocumentAction,
@@ -89,11 +85,20 @@ export function QuotesPanel({
         toast.error(result.error);
         return;
       }
-      openQuotePrintWindow(result.html);
-      downloadQuoteHtmlFile(result.html, result.filename);
-      toast.success('Presupuesto listo para guardar como PDF.', {
-        description:
-          'Se ha abierto la impresión del sistema y una copia HTML descargable.',
+      const binary = atob(result.pdfBase64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: result.mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = result.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('PDF corporativo descargado.', {
+        description: result.filename,
       });
     } catch (err) {
       toast.error(
@@ -272,8 +277,9 @@ export function QuotesPanel({
                         {q.referenceCode ?? q.id.slice(0, 8)}
                       </div>
                     </td>
-                    <td className="px-4 py-2.5 capitalize">
-                      {q.commercialSkuKey.replace('_', ' ')}
+                    <td className="px-4 py-2.5">
+                      {q.snapshot?.planName ||
+                        q.commercialSkuKey.replace(/_/g, ' ')}
                     </td>
                     <td className="px-4 py-2.5">
                       {q.billingInterval === 'monthly' ? 'Mensual' : 'Anual'}
@@ -442,6 +448,7 @@ export function QuotesPanel({
                     'accepted',
                     'rejected',
                     'expired',
+                    'cancelled',
                   ] as CommercialQuoteStatus[]
                 ).map((s) => (
                   <SelectItem key={s} value={s} disabled={s === selected.status}>

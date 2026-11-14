@@ -13,7 +13,12 @@ import { commercialPlanLabel } from '@/lib/commercial/commercial-plan-labels';
 
 export const LAUNCH_2027_COHORT = 'launch_2027' as const;
 
-export type LaunchSeatStatus = 'none' | 'reserved' | 'confirmed' | 'released';
+export type LaunchSeatStatus =
+  | 'none'
+  | 'reserved'
+  | 'confirmed'
+  | 'released'
+  | 'expired';
 
 export type LaunchSeatsSummary = {
   cohortKey: typeof LAUNCH_2027_COHORT;
@@ -31,7 +36,7 @@ export type LaunchSeatDetail = {
   pharmacyName: string | null;
   pharmacyStatus: string | null;
   status: LaunchSeatStatus;
-  rawStatus: 'active' | 'released';
+  rawStatus: 'active' | 'released' | 'expired';
   commercialSkuKey: string;
   planLabel: string;
   listMonthlyCents: number;
@@ -47,7 +52,9 @@ export type LaunchSeatDetail = {
   confirmedAt: string | null;
   commitmentKind: string | null;
   commitmentNotes: string | null;
+  expiresAt: string | null;
   canRelease: boolean;
+  canExtend: boolean;
   releaseBlockReason: string | null;
 };
 
@@ -76,17 +83,27 @@ function skuLabel(sku: string): string {
   }
 }
 
+export {
+  launchPromoEconomyForSku,
+  launchSeatEventLabelEs,
+} from '@/lib/pharmacies/launch-seats-ui';
+
 function mapSeatRow(
   row: Record<string, unknown>,
   pharmacyName?: string | null,
   pharmacyStatus?: string | null,
   reservedByLabel?: string | null
 ): LaunchSeatDetail {
-  const rawStatus = String(row.status ?? '') as 'active' | 'released';
+  const rawStatus = String(row.status ?? '') as
+    | 'active'
+    | 'released'
+    | 'expired';
   const confirmedAt =
     typeof row.confirmed_at === 'string' ? row.confirmed_at : null;
   const commitmentKind =
     typeof row.commitment_kind === 'string' ? row.commitment_kind : null;
+  const expiresAt =
+    typeof row.expires_at === 'string' ? row.expires_at : null;
   const list = Number(row.list_monthly_cents ?? 0);
   const promo = Number(row.promo_monthly_cents ?? 0);
   const discountPct =
@@ -94,14 +111,17 @@ function mapSeatRow(
 
   let status: LaunchSeatStatus = 'none';
   if (rawStatus === 'released') status = 'released';
+  else if (rawStatus === 'expired') status = 'expired';
   else if (rawStatus === 'active' && (confirmedAt || commitmentKind))
     status = 'confirmed';
   else if (rawStatus === 'active') status = 'reserved';
 
-  let canRelease = rawStatus === 'active';
+  let canRelease = rawStatus === 'active' && !confirmedAt && !commitmentKind;
+  let canExtend = canRelease;
   let releaseBlockReason: string | null = null;
   if (rawStatus === 'active' && (confirmedAt || commitmentKind)) {
     canRelease = false;
+    canExtend = false;
     releaseBlockReason =
       'Plaza confirmada o con compromiso (contrato / factura / descuento bloqueado). Liberación simple no permitida: contacte jurídico/comercial.';
   }
@@ -134,7 +154,9 @@ function mapSeatRow(
     commitmentKind,
     commitmentNotes:
       typeof row.commitment_notes === 'string' ? row.commitment_notes : null,
+    expiresAt,
     canRelease,
+    canExtend,
     releaseBlockReason,
   };
 }
@@ -193,7 +215,7 @@ export async function getPharmacyLaunchSeatDetail(
       `
       id, pharmacy_id, commercial_sku_key, list_monthly_cents, promo_monthly_cents,
       status, reserved_at, reserved_by, released_at, release_reason,
-      confirmed_at, confirmed_by, commitment_kind, commitment_notes,
+      confirmed_at, confirmed_by, commitment_kind, commitment_notes, expires_at,
       pharmacies ( name, status ),
       profiles:reserved_by ( email, full_name )
     `
@@ -212,7 +234,22 @@ export async function getPharmacyLaunchSeatDetail(
         .eq('pharmacy_id', pharmacyId)
         .maybeSingle();
       if (!basic) return null;
-      return mapSeatRow(basic as Record<string, unknown>);
+      const basicRow = basic as Record<string, unknown>;
+      const byId =
+        basicRow.reserved_by == null ? null : String(basicRow.reserved_by);
+      let label: string | null = null;
+      if (byId) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('email, full_name')
+          .eq('id', byId)
+          .maybeSingle();
+        label =
+          (prof?.full_name as string | null)?.trim() ||
+          (prof?.email as string | null)?.trim() ||
+          byId.slice(0, 8);
+      }
+      return mapSeatRow(basicRow, null, null, label);
     }
     return null;
   }
@@ -220,10 +257,22 @@ export async function getPharmacyLaunchSeatDetail(
   const row = data as Record<string, unknown>;
   const ph = row.pharmacies as { name?: string; status?: string } | null;
   const pr = row.profiles as { email?: string; full_name?: string } | null;
-  const label =
+  let label =
     pr?.full_name?.trim() ||
     pr?.email?.trim() ||
-    (row.reserved_by ? String(row.reserved_by).slice(0, 8) : null);
+    null;
+  if (!label && row.reserved_by) {
+    const byId = String(row.reserved_by);
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('email, full_name')
+      .eq('id', byId)
+      .maybeSingle();
+    label =
+      (prof?.full_name as string | null)?.trim() ||
+      (prof?.email as string | null)?.trim() ||
+      byId.slice(0, 8);
+  }
 
   return mapSeatRow(row, ph?.name ?? null, ph?.status ?? null, label);
 }
@@ -236,7 +285,7 @@ export async function listLaunchSeatReservations(): Promise<LaunchSeatDetail[]> 
       `
       id, pharmacy_id, commercial_sku_key, list_monthly_cents, promo_monthly_cents,
       status, reserved_at, reserved_by, released_at, release_reason,
-      confirmed_at, confirmed_by, commitment_kind, commitment_notes,
+      confirmed_at, confirmed_by, commitment_kind, commitment_notes, expires_at,
       pharmacies ( name, status ),
       profiles:reserved_by ( email, full_name )
     `

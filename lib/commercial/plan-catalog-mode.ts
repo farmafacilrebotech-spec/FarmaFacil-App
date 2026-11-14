@@ -1,6 +1,6 @@
 /**
- * Mapeo plan comercial → modalidad de catálogo (contrato Fase 5).
- * La asignación real de plan/suscripción técnica requiere migración 056 (no aplicada).
+ * Mapeo plan comercial → modalidad de catálogo.
+ * Asignación operativa vía ff_assign_commercial_plan_v1 (083+).
  */
 
 export type CommercialPlanCode =

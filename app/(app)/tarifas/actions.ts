@@ -143,11 +143,16 @@ export async function getTrialReadinessAction(
 }
 
 /**
- * Activa el piloto de 15 días (relój comercial). Requiere readiness.
- * No llamar al crear la farmacia.
+ * Activa el piloto de 15 días (reloj comercial) con plan explícito.
+ * Requiere readiness. No llamar al crear la farmacia.
+ * Plan: general | personalized | ai_personalized (migración 095).
  */
 export async function activateCommercialTrialAction(
-  pharmacyId: string
+  pharmacyId: string,
+  trialPlanSku:
+    | 'general'
+    | 'personalized'
+    | 'ai_personalized' = 'general'
 ): Promise<ActionResult<{ trialStatus: string; endsAt: string | null }>> {
   const gate = await requireTrialsManage();
   if (!gate.ok) return gate;
@@ -156,7 +161,10 @@ export async function activateCommercialTrialAction(
   const supabase = createClient();
   const { data, error } = await supabase.rpc(
     'ff_commercial_trial_activate_v1',
-    { p_pharmacy_id: pharmacyId }
+    {
+      p_pharmacy_id: pharmacyId,
+      p_trial_plan_sku: trialPlanSku,
+    }
   );
 
   if (error) {
