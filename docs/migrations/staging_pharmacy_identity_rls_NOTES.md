@@ -108,3 +108,5 @@ Mismo SQL, archivo espejo a crear en publish:
 `docs/migrations/prod_pharmacy_identity_rls_v1.sql` (contenido idéntico + header prod + backup/PITR previo).
 
 Orden publish PR #23 sugerido: Storage logos (si no en prod) → identity RLS → app.
+
+-- PROMOVIDO A: supabase/migrations/099_pharmacy_identity_sa_only_v1.sql
