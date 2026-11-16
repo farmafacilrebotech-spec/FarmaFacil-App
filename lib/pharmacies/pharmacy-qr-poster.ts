@@ -36,10 +36,14 @@ import {
 export {
   isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
+  pharmacyQrPosterLayoutForFormat,
+  posterPageFormatLabel,
   PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE,
   PHARMACY_QR_POSTER_LAYOUT,
   PHARMACY_QR_POSTER_LOGO_LOAD_ERROR,
   PHARMACY_QR_POSTER_TEMPLATE_PENDING_MESSAGE,
+  POSTER_PAGE_MM,
+  type PosterPageFormat,
 } from '@/lib/pharmacies/pharmacy-qr-poster-layout';
 
 export type PharmacyQrPosterBuildResult = {
@@ -428,7 +432,7 @@ export async function buildPharmacyQrPosterPdf(input: {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
-    format: 'a4',
+    format: [layout.page.widthMm, layout.page.heightMm],
     compress: true,
   });
 

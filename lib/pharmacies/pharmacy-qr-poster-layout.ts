@@ -135,10 +135,21 @@ function px(
  *   VERDE ann (161,29)–(681,130) → HD (983,177,3180×623)
  * Entre líneas turquesa HD ≈ y 122 y 861. QR sin cambios.
  */
+/** Formatos de impresión soportados (misma proporción √2). */
+export type PosterPageFormat = 'a4' | 'a3';
+
+export const POSTER_PAGE_MM: Record<
+  PosterPageFormat,
+  { widthMm: number; heightMm: number }
+> = {
+  a4: { widthMm: 210, heightMm: 297 },
+  a3: { widthMm: 297, heightMm: 420 },
+};
+
 export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
   backgroundSrc: '/images/posters/pharmacy-qr-a4.png',
   templatePx: { ...TEMPLATE_PX },
-  page: { widthMm: 210, heightMm: 297 },
+  page: { ...POSTER_PAGE_MM.a4 },
   logo: {
     configured: true,
     rect: px(275, 177, 604, 610),
@@ -163,6 +174,31 @@ export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
   },
   pdfDownloadEnabled: true,
 };
+
+/**
+ * Misma plantilla Canva (zonas normalizadas) en A4 o A3.
+ * A3 escala tipografía ≈ √2 para mantener proporción visual.
+ */
+export function pharmacyQrPosterLayoutForFormat(
+  format: PosterPageFormat = 'a4'
+): PharmacyQrPosterLayout {
+  if (format === 'a4') return PHARMACY_QR_POSTER_LAYOUT;
+  const scale = Math.SQRT2;
+  const base = PHARMACY_QR_POSTER_LAYOUT;
+  return {
+    ...base,
+    page: { ...POSTER_PAGE_MM.a3 },
+    name: {
+      ...base.name,
+      maxFontSizePt: Math.round(base.name.maxFontSizePt * scale),
+      minFontSizePt: Math.round(base.name.minFontSizePt * scale),
+    },
+  };
+}
+
+export function posterPageFormatLabel(format: PosterPageFormat): string {
+  return format === 'a3' ? 'A3' : 'A4';
+}
 
 export function isPharmacyQrPosterTemplateReady(
   layout: PharmacyQrPosterLayout = PHARMACY_QR_POSTER_LAYOUT
