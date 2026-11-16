@@ -1,8 +1,8 @@
-import type { CommercialQuoteSnapshot } from '../commercial/quote-types.ts';
+import type { CommercialQuoteSnapshot } from '../commercial/quote-types';
 
-import { formatCentsEs, formatVatPercent, intervalLabel } from './money.ts';
-import { commercialOfferLabel } from './offer-label.ts';
-import type { ContractCommercialAmounts } from './types.ts';
+import { formatCentsEs, formatVatPercent, intervalLabel } from './money';
+import { commercialOfferLabel } from './offer-label';
+import type { ContractCommercialAmounts } from './types';
 
 /** Alquiler según periodicidad del snapshot (anual: total periodo + equivalencia mensual). */
 export function formatKioskRentFromSnapshot(

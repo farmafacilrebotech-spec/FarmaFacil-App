@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { selectContractTemplateKey } from './select-template.ts';
+import { selectContractTemplateKey } from './select-template';
 
 describe('selectContractTemplateKey', () => {
   it('elige full-kiosk si hay kioscos', () => {

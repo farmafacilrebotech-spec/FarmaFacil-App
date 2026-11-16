@@ -16,7 +16,7 @@ export type HelpDoc = {
   id: string;
   title: string;
   summary: string;
-  audiences: HelpAudience[];
+  audiences: readonly HelpAudience[];
   /** Ruta relativa al repo (solo referencia; render fase A = metadatos). */
   repoPath: string;
   module: string;

@@ -101,9 +101,9 @@ export function rewriteEmailHtmlAssetsForProvider(html: string): string {
 
 /** true si el HTML aún tiene assets no enviables (relativos o localhost). */
 export function htmlHasNonPublicImageSrc(html: string): boolean {
-  const srcs = [...(html || '').matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)].map(
-    (m) => m[1]
-  );
+  const srcs = Array.from(
+    (html || '').matchAll(/<img\b[^>]*?\bsrc\s*=\s*["']([^"']+)["']/gi)
+  ).map((m) => m[1]);
   return srcs.some((src) => {
     if (src.startsWith('data:image/')) return false;
     if (src.startsWith('/')) return true;

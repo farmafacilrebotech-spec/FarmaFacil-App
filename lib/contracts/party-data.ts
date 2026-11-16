@@ -1,7 +1,7 @@
 import type {
   ContractPartyFarmafacil,
   ContractPartyPharmacy,
-} from './types.ts';
+} from './types';
 
 function trimOrNull(value: string | null | undefined): string | null {
   if (typeof value !== 'string') return null;

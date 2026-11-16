@@ -1,13 +1,13 @@
-import type { CommercialQuoteSnapshot } from '../commercial/quote-types.ts';
+import type { CommercialQuoteSnapshot } from '../commercial/quote-types';
 
-import { buildContractPreview } from './build-preview.ts';
-import { loadFarmafacilParty, buildPharmacyParty } from './party-data.ts';
-import { selectContractTemplateKey } from './select-template.ts';
+import { buildContractPreview } from './build-preview';
+import { loadFarmafacilParty, buildPharmacyParty } from './party-data';
+import { selectContractTemplateKey } from './select-template';
 import {
   loadContractsStatus,
   loadLegalApprovalStatus,
-} from './template-loader.ts';
-import type { ContractPreviewModel } from './types.ts';
+} from './template-loader';
+import type { ContractPreviewModel } from './types';
 
 export async function composeContractPreviewFromQuote(input: {
   quoteId: string;

@@ -3,8 +3,8 @@ import path from 'node:path';
 
 import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } from 'pdf-lib';
 
-import { commercialOfferLabel } from './offer-label.ts';
-import type { ContractPreviewModel } from './types.ts';
+import { commercialOfferLabel } from './offer-label';
+import type { ContractPreviewModel } from './types';
 
 const LOGO_RELATIVE = 'public/images/logos/farmafacil-logo-512.png';
 
@@ -829,10 +829,10 @@ export async function buildContractPdfBytes(
     ctx,
     'POR EL PROVEEDOR',
     [
-      ['Razón social', preview.farmafacil.legalName],
-      ['Nombre', preview.farmafacil.representativeName],
-      ['Cargo', preview.farmafacil.representativeTitle],
-      ['NIF/DNI', preview.farmafacil.representativeNif],
+      ['Razón social', preview.farmafacil.legalName ?? ''],
+      ['Nombre', preview.farmafacil.representativeName ?? ''],
+      ['Cargo', preview.farmafacil.representativeTitle ?? ''],
+      ['NIF/DNI', preview.farmafacil.representativeNif ?? ''],
     ],
     asDraft
   );
@@ -842,11 +842,11 @@ export async function buildContractPdfBytes(
     [
       [
         'Farmacia / razón social',
-        preview.pharmacy.legalName ?? preview.pharmacy.displayName,
+        preview.pharmacy.legalName ?? preview.pharmacy.displayName ?? '',
       ],
-      ['Nombre', preview.pharmacy.representativeName],
-      ['Cargo/condición', preview.pharmacy.representativeTitle],
-      ['NIF/DNI', preview.pharmacy.representativeNif],
+      ['Nombre', preview.pharmacy.representativeName ?? ''],
+      ['Cargo/condición', preview.pharmacy.representativeTitle ?? ''],
+      ['NIF/DNI', preview.pharmacy.representativeNif ?? ''],
     ],
     asDraft
   );

@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildContractPreview } from './build-preview.ts';
-import { buildContractPdfBytes, contractPdfFilename } from './pdf.ts';
-import type { CommercialQuoteSnapshot } from '../commercial/quote-types.ts';
-import type { ContractPartyFarmafacil, ContractPartyPharmacy } from './types.ts';
+import { buildContractPreview } from './build-preview';
+import { buildContractPdfBytes, contractPdfFilename } from './pdf';
+import type { CommercialQuoteSnapshot } from '../commercial/quote-types';
+import type { ContractPartyFarmafacil, ContractPartyPharmacy } from './types';
 
 const snapshot: CommercialQuoteSnapshot = {
   v: 1,
