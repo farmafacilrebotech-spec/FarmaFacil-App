@@ -11,10 +11,11 @@
 --
 -- Dependencias previas en staging: 064, 067, 071, 072, staff_hide v1/v1b/v1c.
 -- =============================================================================
-
--- (Aplicado interactivamente en staging el 2026-11-16. Este archivo documenta
---  el estado esperado para auditoría / reaplicación controlada.)
-
--- Ver también:
---   staging_public_entrypoint_logo_url_v1.sql
---   supabase/migrations/064|067|071|072_*.sql
+--
+-- PROMOVIDO A MIGRACIÓN OFICIAL:
+--   supabase/migrations/098_cli_public_branding_order_items_rls_v1.sql
+--
+-- Este archivo queda como referencia de auditoría. Para entornos nuevos o
+-- reconstrucción, usar 098. En staging ya aplicado vía CLI el 2026-11-16;
+-- 098 es idempotente (CREATE OR REPLACE / DROP POLICY IF EXISTS).
+-- =============================================================================
