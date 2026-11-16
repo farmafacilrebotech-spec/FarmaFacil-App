@@ -1,0 +1,112 @@
+# Gate E2E FarmaFácil — SOLO staging. Nunca producción.
+# Baseline: farmafacil-staging-validated-20261116 (56/56 local).
+name: e2e-staging
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Suite a ejecutar'
+        required: true
+        default: full
+        type: choice
+        options:
+          - p0
+          - p1
+          - responsive
+          - full
+  pull_request:
+    branches:
+      - 'integration/**'
+      - 'integration/farmafacil-release'
+
+concurrency:
+  group: e2e-staging-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright ${{ github.event.inputs.suite || 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: '1'
+      E2E_BASE_URL: http://127.0.0.1:3070
+      # Staging only — secrets must point to dazfdcjscnpfvhcyjddt
+      NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.STAGING_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.STAGING_SUPABASE_ANON_KEY }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY }}
+      E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
+      APP_URL: http://127.0.0.1:3070
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3070
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert staging project ref
+        run: |
+          echo "$NEXT_PUBLIC_SUPABASE_URL" | grep -q 'dazfdcjscnpfvhcyjddt' \
+            || { echo 'Abort: STAGING_SUPABASE_URL no es dazfdcjscnpfvhcyjddt'; exit 2; }
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Build Next.js (staging env)
+        run: npm run build
+
+      - name: Start next start :3070
+        run: |
+          npx next start -H 127.0.0.1 -p 3070 > /tmp/next-3070.log 2>&1 &
+          echo $! > /tmp/next-3070.pid
+          for i in $(seq 1 60); do
+            if curl -sf -o /dev/null http://127.0.0.1:3070/login; then
+              echo "3070 ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "3070 failed to start"; cat /tmp/next-3070.log; exit 1
+
+      - name: Prepare E2E credentials
+        run: |
+          # Escribe .env.staging.local mínimo para el prepare script
+          cat > .env.staging.local <<EOF
+          NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+          SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+          EOF
+          E2E_PASSWORD="$E2E_PASSWORD" npm run test:e2e:prepare
+
+      - name: Run suite
+        run: |
+          SUITE="${{ github.event.inputs.suite || 'full' }}"
+          case "$SUITE" in
+            p0) npm run test:e2e:p0 ;;
+            p1) npm run test:e2e:p1 ;;
+            responsive) npm run test:e2e:responsive ;;
+            *) npm run test:e2e:full ;;
+          esac
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: |
+            playwright-report/
+            tmp/e2e-results.json
+          retention-days: 30
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f /tmp/next-3070.pid ]; then kill "$(cat /tmp/next-3070.pid)" || true; fi

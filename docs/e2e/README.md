@@ -39,13 +39,21 @@ Informe consolidado: `docs/releases/integration/INFORME_P0_P1_20261116.md`.
 - JSON: `tmp/e2e-results.json`
 - Traces/screenshots: `test-results/` (solo fallos)
 
-## CI (propuesta)
+## Gate obligatorio (post-baseline)
 
-1. Job `e2e-staging` con secrets `E2E_PASSWORD` + anon URL staging.
-2. Arrancar `next start` o preview 3070.
-3. `npm run test:e2e:p0`.
-4. Subir `playwright-report` como artefacto.
-5. **No** apuntar a producción.
+```bash
+npm run validate:release   # prepare + test:e2e:full contra 3070
+```
+
+Tag baseline: `farmafacil-staging-validated-20261116`.
+Procedimiento: `docs/releases/integration/VALIDATION_GATE.md`.
+
+## CI
+
+Workflow `.github/workflows/e2e-staging.yml` (`workflow_dispatch` + PRs a `integration/**`).
+
+Secrets: `STAGING_SUPABASE_URL`, `STAGING_SUPABASE_ANON_KEY`, `STAGING_SUPABASE_SERVICE_ROLE_KEY`, `E2E_PASSWORD`.
+**Solo** proyecto `dazfdcjscnpfvhcyjddt`. **No** producción.
 
 ## Alcance manual restante
 

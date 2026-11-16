@@ -55,7 +55,9 @@
     "test:e2e:p0": "playwright test --project=chromium-p0",
     "test:e2e:p1": "playwright test --project=chromium-p1",
     "test:e2e:responsive": "playwright test --project=responsive --project=webkit-smoke",
-    "test:e2e:full": "playwright test"
+    "test:e2e:full": "playwright test",
+    "validate:release": "bash scripts/validate-release.sh",
+    "https:pwa": "bash scripts/https-pwa-tunnel.sh"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
