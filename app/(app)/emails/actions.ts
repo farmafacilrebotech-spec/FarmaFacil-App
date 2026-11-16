@@ -1983,8 +1983,11 @@ export async function sendCorporateEmailAction(input: {
     p_recipient_name: recipientName,
     p_from_address: fromAddress,
     p_reply_to: replyTo,
-    p_purpose: policy.purpose,
-    p_legal_basis: policy.legalBasis,
+    // Visual test: no inventar base jurídica comercial (check constraint
+    // solo admite consent|legitimate_interest_documented|contractual).
+    // Se registra como operativo + template_slug piloto/demo.
+    p_purpose: visualTestSend ? 'operational' : policy.purpose,
+    p_legal_basis: visualTestSend ? null : policy.legalBasis,
     p_payload_hash: hash,
     p_dry_run: mode.dryRun,
     p_attachment_count: attachments.length,

@@ -1,0 +1,25 @@
+ tables_public 
+---------------
+             0
+(1 row)
+
+ functions_public 
+------------------
+                0
+(1 row)
+
+ has_098_helper 
+----------------
+ f
+(1 row)
+
+ has_097_contracts 
+-------------------
+ f
+(1 row)
+
+ has_099_trigger 
+-----------------
+ f
+(1 row)
+
