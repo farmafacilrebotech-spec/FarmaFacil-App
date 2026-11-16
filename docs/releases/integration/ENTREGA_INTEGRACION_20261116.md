@@ -8,7 +8,7 @@
 |-------|--------|
 | Rama | `integration/farmafacil-release` |
 | Worktree | `.worktrees/integration-farmafacil-release` |
-| HEAD | `b515724` |
+| HEAD | `83a0fb1` |
 | Base | `origin/main` @ `53e0512` (tip remoto verificado) |
 | Puerto | **3070** (único) |
 | DB | staging `dazfdcjscnpfvhcyjddt` |
