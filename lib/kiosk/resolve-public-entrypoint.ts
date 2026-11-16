@@ -9,6 +9,7 @@ export type ResolvedPublicEntrypoint =
       ok: true;
       publicId: string;
       pharmacyName: string;
+      logoUrl: string | null;
     }
   | { ok: false; reason: 'not_found' | 'inactive' | 'error' };
 

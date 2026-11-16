@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { BrandLogo } from '@/components/brand';
 import { CustomerPwaRegister } from '@/components/customer/customer-pwa-register';
 import { SavePharmacyButton } from '@/components/customer/save-pharmacy-button';
+import { PharmacyPublicIdentity } from '@/components/kiosk/pharmacy-public-identity';
 import { getCustomerProfile } from '@/lib/customer/queries';
 import { isPharmacySaved } from '@/lib/customer/saved-pharmacies';
 import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
@@ -55,22 +56,23 @@ export default async function PublicPharmacyEntrypointPage({
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-[#2EC4C7] px-4">
       <CustomerPwaRegister />
-      <BrandLogo size={96} />
-      <div className="mt-8 w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
-        <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-          FarmaFácil
-        </p>
-        <h1 className="mt-2 text-2xl font-semibold text-slate-900">
-          {resolved.pharmacyName}
-        </h1>
+      <div className="mt-2">
+        <BrandLogo size={72} />
+      </div>
+      <div className="mt-6 w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
+        <PharmacyPublicIdentity
+          pharmacyName={resolved.pharmacyName}
+          logoUrl={resolved.logoUrl}
+          size="lg"
+          showFarmaFacilMark={false}
+        />
         <p className="mt-4 text-sm leading-relaxed text-slate-600">
           Has escaneado el código oficial de esta farmacia. Puedes consultar el
           catálogo y enviar una solicitud de productos sin registrarte ni crear
           una cuenta.
         </p>
-        <p className="mt-3 text-xs text-slate-400">
-          No hace falta teléfono con contraseña. La farmacia confirmará
-          disponibilidad y precio al gestionar tu solicitud.
+        <p className="mt-3 text-xs text-slate-500">
+          Precio y disponibilidad a confirmar por tu farmacia.
         </p>
         <Link
           href={`/e/${params.publicId}/catalogo`}

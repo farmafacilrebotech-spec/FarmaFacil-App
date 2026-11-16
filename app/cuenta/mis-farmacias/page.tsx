@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { LogOut } from 'lucide-react';
 
+import { globalCustomerSignOutAction } from '@/app/cuenta/sign-out-action';
 import { CustomerShell } from '@/components/customer/customer-shell';
 import { PendingPharmacyBanner } from '@/components/customer/pending-pharmacy-banner';
 import { SavedPharmaciesList } from '@/components/customer/saved-pharmacies-list';
@@ -48,6 +50,16 @@ export default async function MisFarmaciasPage() {
             </Link>
           </Button>
         ) : null}
+        <form action={globalCustomerSignOutAction}>
+          <Button
+            type="submit"
+            variant="ghost"
+            className="w-full justify-start text-slate-600"
+          >
+            <LogOut className="mr-2 h-4 w-4" />
+            Cerrar sesión
+          </Button>
+        </form>
       </div>
     </CustomerShell>
   );

@@ -58,18 +58,26 @@ export async function createPublicCatalogRequest(input: {
   const linkToCustomer = input.linkToCustomer === true;
 
   const supabase = createClient();
+  // Staging puede tener solo la firma 057 (sin p_link_to_customer).
+  // PostgREST exige coincidencia exacta de parámetros nombrados (PGRST202):
+  // - invitado / sin vínculo → no enviar p_link_to_customer (compatible 057 y 072).
+  // - vínculo pedido → enviar true (requiere migración 072).
+  const rpcArgs: Record<string, unknown> = {
+    p_public_id: validated.publicId,
+    p_items: payloadItems,
+    p_client_request_id: validated.clientRequestId,
+    p_customer_name: validated.customerName,
+    p_customer_phone: validated.customerPhone,
+    p_privacy_accepted: true,
+    p_customer_note: validated.customerNote,
+  };
+  if (linkToCustomer) {
+    rpcArgs.p_link_to_customer = true;
+  }
+
   const { data, error } = await supabase.rpc(
     'ff_public_catalog_create_request_v1',
-    {
-      p_public_id: validated.publicId,
-      p_items: payloadItems,
-      p_client_request_id: validated.clientRequestId,
-      p_customer_name: validated.customerName,
-      p_customer_phone: validated.customerPhone,
-      p_privacy_accepted: true,
-      p_customer_note: validated.customerNote,
-      p_link_to_customer: linkToCustomer,
-    }
+    rpcArgs
   );
 
   if (error) {
@@ -83,7 +91,9 @@ export async function createPublicCatalogRequest(input: {
 
     if (
       pgCode === '42883' ||
-      msg.includes('does not exist')
+      pgCode === 'PGRST202' ||
+      msg.includes('does not exist') ||
+      msg.includes('could not find the function')
     ) {
       return {
         ok: false,

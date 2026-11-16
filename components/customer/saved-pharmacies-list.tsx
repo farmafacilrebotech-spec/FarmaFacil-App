@@ -61,7 +61,19 @@ export function SavedPharmaciesList({ items }: { items: SavedPharmacy[] }) {
             key={item.id}
             className="rounded-2xl border border-border bg-card p-4 shadow-soft"
           >
-            <p className="font-medium text-[#0F2A2E]">{item.pharmacyName}</p>
+            <div className="flex items-center gap-3">
+              {item.logoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.logoUrl}
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 rounded-xl bg-white object-contain ring-1 ring-slate-100"
+                />
+              ) : null}
+              <p className="font-medium text-[#0F2A2E]">{item.pharmacyName}</p>
+            </div>
             <p className="mt-0.5 text-[11px] text-muted-foreground">
               Guardada el{' '}
               {new Date(item.savedAt).toLocaleDateString('es-ES', {

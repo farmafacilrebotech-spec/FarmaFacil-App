@@ -33,6 +33,8 @@ export type CustomerAddress = {
 export type CustomerOrderSummary = {
   id: string;
   pharmacyId: string;
+  pharmacyName: string | null;
+  pharmacyLogoUrl: string | null;
   displayNumber: string;
   status: string;
   /** Origen (public_qr, kiosk, …). Necesario para presentar el importe. */
@@ -47,6 +49,8 @@ export type CustomerOrderSummary = {
   amountConfirmedAt: string | null;
   createdAt: string;
   customerName: string | null;
+  productCount: number | null;
+  unitCount: number | null;
 };
 
 export async function getCustomerProfile(): Promise<
@@ -172,8 +176,7 @@ export async function listCustomerOrders(): Promise<
     console.error('[customer] orders rpc', error.code, error.message);
     return {
       ok: false,
-      error:
-        'No se han podido cargar los pedidos. Comprueba que staff_hide v1c está aplicada.',
+      error: 'No se han podido cargar los pedidos. Inténtalo de nuevo.',
     };
   }
 
@@ -197,6 +200,14 @@ export async function listCustomerOrders(): Promise<
     orders: (payload.orders ?? []).map((r) => ({
       id: String(r.id ?? ''),
       pharmacyId: String(r.pharmacyId ?? ''),
+      pharmacyName:
+        r.pharmacyName != null && String(r.pharmacyName).trim() !== ''
+          ? String(r.pharmacyName)
+          : null,
+      pharmacyLogoUrl:
+        r.pharmacyLogoUrl != null && String(r.pharmacyLogoUrl).trim() !== ''
+          ? String(r.pharmacyLogoUrl)
+          : null,
       displayNumber: String(r.displayNumber ?? ''),
       status: String(r.status ?? ''),
       source: String(r.source ?? 'other'),
@@ -206,6 +217,14 @@ export async function listCustomerOrders(): Promise<
       amountConfirmedAt: (r.amountConfirmedAt as string | null) ?? null,
       createdAt: String(r.createdAt ?? ''),
       customerName: (r.customerName as string | null) ?? null,
+      productCount:
+        r.productCount != null && Number.isFinite(Number(r.productCount))
+          ? Number(r.productCount)
+          : null,
+      unitCount:
+        r.unitCount != null && Number.isFinite(Number(r.unitCount))
+          ? Number(r.unitCount)
+          : null,
     })),
   };
 }

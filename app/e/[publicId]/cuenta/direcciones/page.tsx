@@ -14,6 +14,7 @@ export default async function CustomerAddressesPage({
   const publicId = params.publicId;
   const entry = await resolvePublicEntrypoint(publicId);
   const pharmacyLabel = entry.ok ? entry.pharmacyName : null;
+  const pharmacyLogoUrl = entry.ok ? entry.logoUrl : null;
   await requireCustomerForPublicId(publicId);
 
   const addresses = await listCustomerAddresses();
@@ -22,7 +23,9 @@ export default async function CustomerAddressesPage({
     <CustomerShell
       publicId={publicId}
       pharmacyLabel={pharmacyLabel}
+      pharmacyLogoUrl={pharmacyLogoUrl}
       title="Direcciones"
+      showInstallHint={false}
     >
       {!addresses.ok ? (
         <p className="rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">

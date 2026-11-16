@@ -7,6 +7,7 @@ export type SavedPharmacy = {
   pharmacyId: string;
   publicId: string;
   pharmacyName: string;
+  logoUrl: string | null;
   savedAt: string;
 };
 
@@ -25,15 +26,13 @@ export async function listSavedPharmacies(): Promise<
   );
 
   if (error) {
-    console.error('[customer] list saved pharmacies', error.message);
-    if (
-      error.code === '42883' ||
-      error.message.toLowerCase().includes('does not exist')
-    ) {
+    // Solo 42883 = función inexistente. Otros "does not exist" (p.ej. columna)
+    // no deben mostrarse como mensaje técnico de migración al cliente.
+    console.error('[customer] list saved pharmacies', error.code, error.message);
+    if (error.code === '42883') {
       return {
         ok: false,
-        error:
-          'Falta aplicar la migración 067 (Mis farmacias). Contacta con FarmaFácil.',
+        error: 'No se han podido cargar tus farmacias. Inténtalo de nuevo.',
         code: 'migration_missing',
       };
     }
@@ -47,11 +46,16 @@ export async function listSavedPharmacies(): Promise<
 
   const items = (body.items ?? []).map((raw) => {
     const r = raw as Record<string, unknown>;
+    const logo =
+      r.logo_url != null && String(r.logo_url).trim() !== ''
+        ? String(r.logo_url).trim()
+        : null;
     return {
       id: String(r.id),
       pharmacyId: String(r.pharmacy_id),
       publicId: String(r.public_id),
       pharmacyName: String(r.pharmacy_name ?? 'Farmacia'),
+      logoUrl: logo,
       savedAt: String(r.saved_at),
     };
   });

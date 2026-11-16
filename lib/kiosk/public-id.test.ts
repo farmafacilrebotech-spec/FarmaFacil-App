@@ -46,9 +46,25 @@ describe('mapResolveEntrypointRpcPayload — contrato mínimo 044', () => {
     if (result.ok) {
       assert.equal(result.pharmacyName, 'Farmacia Total PRO');
       assert.equal(result.publicId, 'abcdefghijklmnop');
+      assert.equal(result.logoUrl, null);
       assert.equal('pharmacyId' in result, false);
       assert.equal('internalRoute' in result, false);
       assert.equal('purpose' in result, false);
+    }
+  });
+
+  it('acepta logo_url público opcional sin exponer pharmacy_id', () => {
+    const result = mapResolveEntrypointRpcPayload({
+      status: 'ok',
+      public_id: 'abcdefghijklmnop',
+      pharmacy_name: 'Farmacia Total PRO',
+      logo_url: 'https://example.com/logo.jpg',
+      pharmacy_id: '11111111-1111-4111-8111-111111111111',
+    });
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.logoUrl, 'https://example.com/logo.jpg');
+      assert.equal('pharmacyId' in result, false);
     }
   });
 
@@ -64,6 +80,7 @@ describe('mapResolveEntrypointRpcPayload — contrato mínimo 044', () => {
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.deepEqual(Object.keys(result).sort(), [
+        'logoUrl',
         'ok',
         'pharmacyName',
         'publicId',

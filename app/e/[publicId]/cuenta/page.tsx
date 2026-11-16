@@ -1,10 +1,12 @@
 import Link from 'next/link';
+import { LogOut } from 'lucide-react';
 
 import { CustomerShell } from '@/components/customer/customer-shell';
 import { EnableCustomerForm } from '@/components/customer/enable-customer-form';
 import { PendingPharmacyBanner } from '@/components/customer/pending-pharmacy-banner';
 import { SavePharmacyButton } from '@/components/customer/save-pharmacy-button';
 import { Button } from '@/components/ui/button';
+import { customerSignOutAction } from '@/app/e/[publicId]/cuenta/sign-out-action';
 import { getCurrentProfile } from '@/lib/auth/platform';
 import { getCustomerProfile } from '@/lib/customer/queries';
 import { isPharmacySaved } from '@/lib/customer/saved-pharmacies';
@@ -20,6 +22,7 @@ export default async function CustomerAccountHubPage({
   const publicId = params.publicId;
   const entry = await resolvePublicEntrypoint(publicId);
   const pharmacyLabel = entry.ok ? entry.pharmacyName : null;
+  const pharmacyLogoUrl = entry.ok ? entry.logoUrl : null;
 
   const customer = await getCustomerProfile();
   const saved =
@@ -50,6 +53,7 @@ export default async function CustomerAccountHubPage({
     <CustomerShell
       publicId={publicId}
       pharmacyLabel={pharmacyLabel || null}
+      pharmacyLogoUrl={pharmacyLogoUrl}
       title="Mi cuenta"
     >
       {!customer.ok ? (
@@ -128,8 +132,19 @@ export default async function CustomerAccountHubPage({
               <Link href={`/e/${publicId}/cuenta/pedidos`}>Mis pedidos</Link>
             </Button>
             <Button asChild variant="secondary" className="justify-start">
-              <Link href={`/e/${publicId}/catalogo`}>Seguir comprando</Link>
+              <Link href={`/e/${publicId}/catalogo`}>Volver al catálogo</Link>
             </Button>
+            <form action={customerSignOutAction} className="pt-2">
+              <input type="hidden" name="publicId" value={publicId} />
+              <Button
+                type="submit"
+                variant="ghost"
+                className="w-full justify-start text-slate-600"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                Cerrar sesión
+              </Button>
+            </form>
           </nav>
         </div>
       )}

@@ -33,7 +33,7 @@ export function normalizePublicEntrypointId(
   return value;
 }
 
-/** Contrato mínimo de 044: status + public_id + pharmacy_name. */
+/** Contrato 044 (+ logo_url opcional en staging): status + public_id + pharmacy_name. */
 export function mapResolveEntrypointRpcPayload(
   data: unknown
 ):
@@ -41,6 +41,8 @@ export function mapResolveEntrypointRpcPayload(
       ok: true;
       publicId: string;
       pharmacyName: string;
+      /** Logo público de pharmacy_branding; null si no hay. */
+      logoUrl: string | null;
     }
   | { ok: false; reason: 'not_found' | 'inactive' | 'error' } {
   const payload =
@@ -63,9 +65,16 @@ export function mapResolveEntrypointRpcPayload(
     return { ok: false, reason: 'error' };
   }
 
+  const rawLogo = payload.logo_url;
+  const logoUrl =
+    rawLogo != null && String(rawLogo).trim() !== ''
+      ? String(rawLogo).trim()
+      : null;
+
   return {
     ok: true,
     publicId,
     pharmacyName,
+    logoUrl,
   };
 }

@@ -13,13 +13,16 @@ export default async function CustomerProfilePage({
   const publicId = params.publicId;
   const entry = await resolvePublicEntrypoint(publicId);
   const pharmacyLabel = entry.ok ? entry.pharmacyName : null;
+  const pharmacyLogoUrl = entry.ok ? entry.logoUrl : null;
   const profile = await requireCustomerForPublicId(publicId);
 
   return (
     <CustomerShell
       publicId={publicId}
       pharmacyLabel={pharmacyLabel}
+      pharmacyLogoUrl={pharmacyLogoUrl}
       title="Perfil"
+      showInstallHint={false}
     >
       <CustomerProfileForm publicId={publicId} profile={profile} />
     </CustomerShell>

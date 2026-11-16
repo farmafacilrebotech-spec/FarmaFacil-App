@@ -43,14 +43,11 @@ export async function savePharmacyAction(input: {
   });
 
   if (error) {
-    console.error('[customer] save pharmacy', error.message);
-    if (
-      error.code === '42883' ||
-      error.message.toLowerCase().includes('does not exist')
-    ) {
+    console.error('[customer] save pharmacy', error.code, error.message);
+    if (error.code === '42883') {
       return {
         ok: false,
-        error: 'Falta aplicar la migración 067 (Mis farmacias).',
+        error: 'No se ha podido guardar la farmacia. Inténtalo de nuevo.',
         code: 'migration_missing',
       };
     }

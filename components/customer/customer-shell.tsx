@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 export function CustomerShell({
   publicId,
   pharmacyLabel,
+  pharmacyLogoUrl,
   title,
   subtitle,
   children,
@@ -17,6 +18,7 @@ export function CustomerShell({
   /** Si falta, la navegación usa rutas globales `/cuenta`. */
   publicId?: string | null;
   pharmacyLabel?: string | null;
+  pharmacyLogoUrl?: string | null;
   title: string;
   /** Texto de apoyo bajo el título (solo variant auth; el form puede omitirlo). */
   subtitle?: string | null;
@@ -31,9 +33,9 @@ export function CustomerShell({
 
   if (variant === 'auth') {
     return (
-      <div className="relative z-0 flex min-h-[100dvh] min-h-screen items-start justify-center overflow-y-auto bg-background px-4 py-6 sm:items-center sm:py-8">
+      <div className="relative z-0 flex min-h-[100dvh] min-h-screen items-start justify-center overflow-x-hidden overflow-y-auto bg-background px-4 py-6 sm:items-center sm:py-8">
         <CustomerPwaRegister />
-        <div className="relative z-10 w-full max-w-[420px] animate-slide-up">
+        <div className="relative z-10 w-full min-w-0 max-w-[420px] animate-slide-up">
           <div className="mb-6 flex justify-center sm:mb-8">
             {/*
               Logo oficial completo, sin máscara circular ni scale que recorte
@@ -43,9 +45,21 @@ export function CustomerShell({
           </div>
 
           {pharmacyLabel ? (
-            <p className="mb-4 text-center text-sm text-muted-foreground">
-              Contexto farmacia: {pharmacyLabel}
-            </p>
+            <div className="mb-4 flex flex-col items-center gap-2 text-center">
+              {pharmacyLogoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={pharmacyLogoUrl}
+                  alt=""
+                  width={48}
+                  height={48}
+                  className="h-12 w-12 rounded-2xl bg-white object-contain shadow-sm ring-1 ring-border"
+                />
+              ) : null}
+              <p className="text-sm font-medium text-foreground">
+                {pharmacyLabel}
+              </p>
+            </div>
           ) : null}
 
           <div className="relative z-10 w-full">{children}</div>
@@ -82,12 +96,12 @@ export function CustomerShell({
   }
 
   return (
-    <div className="min-h-screen bg-[#F7FAFA] px-4 py-6">
+    <div className="min-h-screen overflow-x-hidden bg-[#F7FAFA] px-4 py-6">
       <CustomerPwaRegister />
-      <div className="mx-auto w-full max-w-lg">
-        <div className="mb-5 flex items-center justify-between gap-3">
+      <div className="mx-auto w-full min-w-0 max-w-lg">
+        <div className="mb-5 flex min-w-0 items-center justify-between gap-3">
           <BrandLogo size={56} />
-          <div className="flex flex-col items-end gap-1 text-right">
+          <div className="flex min-w-0 flex-col items-end gap-1 text-right">
             {publicId ? (
               <CustomerAuthLink
                 href={catalogHref}
@@ -110,9 +124,21 @@ export function CustomerShell({
           </p>
           <h1 className="mt-1 text-2xl font-semibold text-[#0F2A2E]">{title}</h1>
           {pharmacyLabel ? (
-            <p className="mt-1 text-sm text-slate-500">
-              Contexto farmacia: {pharmacyLabel}
-            </p>
+            <div className="mt-2 flex min-w-0 items-center gap-2">
+              {pharmacyLogoUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={pharmacyLogoUrl}
+                  alt=""
+                  width={32}
+                  height={32}
+                  className="h-8 w-8 shrink-0 rounded-lg bg-white object-contain ring-1 ring-slate-100"
+                />
+              ) : null}
+              <p className="min-w-0 truncate text-sm font-medium text-slate-700">
+                {pharmacyLabel}
+              </p>
+            </div>
           ) : null}
           {subtitle ? (
             <p className="mt-1 text-sm text-slate-500">{subtitle}</p>

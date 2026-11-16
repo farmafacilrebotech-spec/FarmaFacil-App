@@ -15,6 +15,7 @@ export default async function CustomerLoginPage({
   const publicId = params.publicId;
   const entry = await resolvePublicEntrypoint(publicId);
   const pharmacyLabel = entry.ok ? entry.pharmacyName : null;
+  const pharmacyLogoUrl = entry.ok ? entry.logoUrl : null;
 
   const customer = await getCustomerProfile();
   if (customer.ok) {
@@ -26,6 +27,7 @@ export default async function CustomerLoginPage({
       variant="auth"
       publicId={publicId}
       pharmacyLabel={pharmacyLabel}
+      pharmacyLogoUrl={pharmacyLogoUrl}
       title="Iniciar sesión"
     >
       <CustomerLoginForm
