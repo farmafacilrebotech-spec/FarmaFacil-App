@@ -1,0 +1,18 @@
+{
+  "legalApproval": "draft_pending_legal_review",
+  "approvedAt": null,
+  "approvedBy": null,
+  "masterTemplateVersion": "FF-MARCO-v1",
+  "rebotech": {
+    "entityConfirmed": false,
+    "provisionalLegalName": "ReBoTech Solutions, S.L.",
+    "legalName": null,
+    "cif": null,
+    "address": null,
+    "representativeName": null,
+    "representativeNif": null,
+    "representativeTitle": null,
+    "notes": "ReBoTech Solutions se constituirá en enero. Hasta confirmar razón social exacta, CIF, domicilio y representación, solo se permiten borradores y vista previa; firma, envío como contrato definitivo y emisión definitiva quedan bloqueados."
+  },
+  "notes": "Plantilla maestra pendiente de revisión y aprobación jurídica. No presentar el contrato como listo para firmar mientras legalApproval no sea approved y rebotech.entityConfirmed no sea true con todos los datos legales."
+}
