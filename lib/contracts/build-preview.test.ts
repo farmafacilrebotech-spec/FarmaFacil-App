@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import type { CommercialQuoteSnapshot } from '../commercial/quote-types';
-import { buildContractPreview } from './build-preview';
-import type { ContractPartyFarmafacil, ContractPartyPharmacy } from './types';
+import type { CommercialQuoteSnapshot } from '../commercial/quote-types.ts';
+import { buildContractPreview } from './build-preview.ts';
+import type { ContractPartyFarmafacil, ContractPartyPharmacy } from './types.ts';
 
 function sampleSnapshot(
   overrides: Partial<CommercialQuoteSnapshot> = {}

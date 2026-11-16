@@ -6,13 +6,13 @@ import {
   MODALITY_LABELS,
   composeMasterContractBody,
   findUnresolvedMarkers,
-} from '../../legal/contracts/v1/master-template';
-import type { RebotechStatusBlock } from './party-data';
+} from '../../legal/contracts/v1/master-template.ts';
+import type { RebotechStatusBlock } from './party-data.ts';
 import type {
   ContractTemplateKey,
   ContractTemplateMeta,
   LegalApprovalStatus,
-} from './types';
+} from './types.ts';
 
 export type ContractsStatusFile = {
   legalApproval?: string;

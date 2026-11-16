@@ -1,11 +1,11 @@
-import type { CommercialQuoteSnapshot } from '../commercial/quote-types';
+import type { CommercialQuoteSnapshot } from '../commercial/quote-types.ts';
 
 import {
   MASTER_TEMPLATE_VERSION,
   composeMasterContractBody,
   findUnresolvedMarkers,
-} from '../../legal/contracts/v1/master-template';
-import { amountsFromAcceptedSnapshot } from './amounts-from-snapshot';
+} from '../../legal/contracts/v1/master-template.ts';
+import { amountsFromAcceptedSnapshot } from './amounts-from-snapshot.ts';
 import type {
   ContractMissingField,
   ContractPartyFarmafacil,
@@ -13,8 +13,8 @@ import type {
   ContractPreviewModel,
   ContractTemplateKey,
   LegalApprovalStatus,
-} from './types';
-import { CONTRACT_TEMPLATE_LABELS } from './types';
+} from './types.ts';
+import { CONTRACT_TEMPLATE_LABELS } from './types.ts';
 
 function pushMissing(
   list: ContractMissingField[],

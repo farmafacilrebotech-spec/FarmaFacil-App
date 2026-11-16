@@ -1,4 +1,4 @@
-import type { ContractTemplateKey } from './types';
+import type { ContractTemplateKey } from './types.ts';
 
 /**
  * Elige plantilla según plan y servicios del presupuesto aceptado.

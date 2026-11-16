@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { hasPlatformPermission } from '@/lib/auth/platform';
 import type { CommercialQuoteSnapshot } from '@/lib/commercial/quote-types';
 
-import { composeContractPreviewFromQuote } from './compose-preview';
+import { composeContractPreviewFromQuote } from './compose-preview.ts';
 import type {
   CommercialContractListItem,
   ContractEmailSendEntry,
@@ -10,7 +10,7 @@ import type {
   ContractPreviewModel,
   ContractTemplateKey,
   LegalApprovalStatus,
-} from './types';
+} from './types.ts';
 
 export async function canManageCommercialContracts(): Promise<boolean> {
   const direct = await hasPlatformPermission(

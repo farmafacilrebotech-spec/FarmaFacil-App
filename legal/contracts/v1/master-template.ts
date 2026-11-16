@@ -7,7 +7,7 @@
  * Piloto y Anexo de Encargo quedan fuera de este módulo.
  */
 
-import type { ContractTemplateKey } from '../../../lib/contracts/types';
+import type { ContractTemplateKey } from '../../../lib/contracts/types.ts';
 
 export const MASTER_TEMPLATE_VERSION = 'FF-MARCO-v1' as const;
 export const MASTER_TEMPLATE_CODE = 'FF-MARCO-SELECCION-PLAN' as const;

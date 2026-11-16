@@ -3,8 +3,8 @@ import path from 'node:path';
 
 import { PDFDocument, StandardFonts, rgb, degrees, type PDFFont, type PDFPage } from 'pdf-lib';
 
-import { commercialOfferLabel } from './offer-label';
-import type { ContractPreviewModel } from './types';
+import { commercialOfferLabel } from './offer-label.ts';
+import type { ContractPreviewModel } from './types.ts';
 
 const LOGO_RELATIVE = 'public/images/logos/farmafacil-logo-512.png';
 
