@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Túnel HTTPS efímero (Cloudflare Quick Tunnel) → http://localhost:3070
+# Túnel HTTPS efímero (Cloudflare Quick Tunnel) → :3070
 # Solo pruebas PWA. No toca producción. URL cambia en cada arranque.
-# Preferir localhost (no 127.0.0.1): evita 530 intermitente en Quick Tunnel.
+# protocol http2: más estable que quic en este entorno (evita 530).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -28,11 +28,12 @@ if [[ -f tmp/https-pwa.pid ]]; then
 fi
 
 : > tmp/https-pwa.log
-cloudflared tunnel --url http://localhost:3070 --no-autoupdate > tmp/https-pwa.log 2>&1 &
+nohup cloudflared tunnel --url http://127.0.0.1:3070 --protocol http2 --no-autoupdate \
+  >> tmp/https-pwa.log 2>&1 &
 echo $! > tmp/https-pwa.pid
 
 url=""
-for i in $(seq 1 40); do
+for i in $(seq 1 45); do
   url="$(grep -Eo 'https://[a-zA-Z0-9.-]+\.trycloudflare\.com' tmp/https-pwa.log | head -1 || true)"
   if [[ -n "$url" ]]; then
     break
@@ -50,3 +51,4 @@ echo "HTTPS PWA (pruebas): $url"
 echo "Login: $url/login"
 echo "QR Fase7: $url/e/2mo6cq0yjss6ratr"
 echo "pid=$(cat tmp/https-pwa.pid) — para parar: kill \$(cat tmp/https-pwa.pid)"
+echo "Nota: Quick Tunnel sin uptime guarantee; reiniciar si Cloudflare 530."

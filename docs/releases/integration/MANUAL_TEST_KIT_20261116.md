@@ -30,7 +30,7 @@ npm run https:pwa
 
 Lee la URL vigente en `tmp/https-pwa.url` (subdominio `*.trycloudflare.com`). **Cambia en cada arranque** del túnel; no es hostname estable ni producción.
 
-Comprobado operativo el 2026-11-16 (HTTP 200 vía Quick Tunnel → `:3070`). Si ves Cloudflare **530**, reinicia el túnel (`kill $(cat tmp/https-pwa.pid)` + `npm run https:pwa`).
+Comprobado operativo el 2026-11-16 (HTTP 200 vía Quick Tunnel `http2` → `:3070`). URL vigente: `tmp/https-pwa.url`. Si ves **530** o DNS local raro, reinicia (`kill $(cat tmp/https-pwa.pid)` + `npm run https:pwa`).
 
 Usar esa base para: instalar PWA, Safari iPhone, escanear QR apuntando al host HTTPS.
 
