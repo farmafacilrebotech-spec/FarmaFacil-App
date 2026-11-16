@@ -22,6 +22,8 @@ DAEMON_PID = LOG_DIR / "keepalive-daemon.pid"
 PORT = 3070
 HEALTH = f"http://127.0.0.1:{PORT}/login"
 POLL = 20
+# prod = next start (estable para E2E); dev = next dev
+MODE = os.environ.get("FF_3070_MODE", "prod").strip().lower()
 
 
 def log(msg: str) -> None:
@@ -105,17 +107,34 @@ def start_next() -> int:
     log("starting next dev")
     env = os.environ.copy()
     env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:" + env.get("PATH", "")
-    # Prefer staging env file; Next also loads .env.local
-    cmd = [
-        "node",
-        "--env-file=.env.staging.local",
-        str(ROOT / "node_modules/next/dist/bin/next"),
-        "dev",
-        "-H",
-        "0.0.0.0",
-        "-p",
-        str(PORT),
-    ]
+    next_bin = str(ROOT / "node_modules/next/dist/bin/next")
+    if MODE == "dev":
+        cmd = [
+            "node",
+            "--env-file=.env.staging.local",
+            next_bin,
+            "dev",
+            "-H",
+            "0.0.0.0",
+            "-p",
+            str(PORT),
+        ]
+    else:
+        # Producción local: evita ReadableStream closed / flakiness de server actions en dev
+        if not (ROOT / ".next" / "BUILD_ID").exists():
+            log("missing .next build — run npm run build first")
+            return -1
+        cmd = [
+            "node",
+            "--env-file=.env.staging.local",
+            next_bin,
+            "start",
+            "-H",
+            "0.0.0.0",
+            "-p",
+            str(PORT),
+        ]
+    log(f"mode={MODE} cmd={' '.join(cmd[-6:])}")
     with LOG.open("a", encoding="utf-8") as f:
         proc = subprocess.Popen(
             cmd,

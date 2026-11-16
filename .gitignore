@@ -32,6 +32,14 @@ yarn-error.log*
 .env.staging.local
 .env.staging
 .env.*.staging*
+.env.e2e.local
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/tmp/e2e-results.json
 
 # local database backups (never commit)
 /backups/

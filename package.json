@@ -50,7 +50,12 @@
     "staging:assert": "node scripts/assert-staging-target.mjs",
     "staging:assert:filled": "node scripts/assert-staging-target.mjs --require-filled",
     "staging:ping": "node scripts/staging-ping.mjs",
-    "staging:guard": "node scripts/assert-staging-target.mjs --require-filled"
+    "staging:guard": "node scripts/assert-staging-target.mjs --require-filled",
+    "test:e2e:prepare": "node scripts/e2e-prepare-credentials.mjs",
+    "test:e2e:p0": "playwright test --project=chromium-p0",
+    "test:e2e:p1": "playwright test --project=chromium-p1",
+    "test:e2e:responsive": "playwright test --project=responsive --project=webkit-smoke",
+    "test:e2e:full": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
@@ -120,6 +125,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.49.1",
     "@types/qrcode": "^1.5.6"
   }
 }
