@@ -15,7 +15,7 @@ describe('mapCommercialRpcError', () => {
     );
     assert.match(
       mapCommercialRpcError('Faltan condiciones obligatorias para activar'),
-      /readiness/i
+      /preparaci[oó]n/i
     );
   });
 
