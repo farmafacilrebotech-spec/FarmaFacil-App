@@ -46,7 +46,11 @@ import {
   extractComposerNoteHtml,
   extractNoteAgainstLockedTemplate,
 } from '@/lib/email/composer-template-lock';
-import { COMMERCIAL_SEND_NOTICE_ES } from '@/lib/email/corporate-send-policy';
+import {
+  COMMERCIAL_SEND_NOTICE_ES,
+  resolveEffectivePurpose,
+  type EmailPurpose,
+} from '@/lib/email/corporate-send-policy';
 import type { CorporateSender } from '@/lib/email/senders';
 import {
   applySignaturePolicy,
@@ -364,13 +368,18 @@ export function EmailComposer({
         locked
       );
     }
+    const slug = dbTpl.systemKey || 'custom';
+    const purpose = resolveEffectivePurpose(
+      slug,
+      (dbTpl.purpose as EmailPurpose) || 'operational'
+    );
     patch({
-      templateSlug: dbTpl.systemKey || 'custom',
+      templateSlug: slug,
       templateId: dbTpl.id,
       subject: dbTpl.subject,
       htmlBody: locked,
       textBody: dbTpl.textBody || htmlToPlainText(locked),
-      purpose: dbTpl.purpose,
+      purpose,
     });
     setBusyTemplate(false);
   }
@@ -667,13 +676,23 @@ export function EmailComposer({
       toast.error(result.error);
       return;
     }
-    toast.success(
-      visualTest
-        ? 'Prueba visual enviada (asunto [PRUEBA]).'
-        : result.dryRun
-          ? 'Envío de prueba (dry-run) registrado.'
-          : 'Correo enviado.'
-    );
+    if (result.dryRun) {
+      toast.message(
+        visualTest
+          ? 'Envío simulado [PRUEBA] (sin Resend).'
+          : 'Envío simulado registrado (sin Resend).'
+      );
+    } else if (!result.providerMessageId) {
+      toast.error(
+        'El proveedor no devolvió identificador. Revisa Enviados antes de reintentar.'
+      );
+    } else {
+      toast.success(
+        visualTest
+          ? `Prueba enviada (Resend ${result.providerMessageId}).`
+          : `Correo aceptado por Resend (${result.providerMessageId}).`
+      );
+    }
     router.push('/emails/sends');
     router.refresh();
   }

@@ -1859,18 +1859,15 @@ export async function sendCorporateEmailAction(input: {
     templateSlug === 'custom' ? 'blank' : templateSlug,
     requestedPurpose
   );
-  // Prueba visual: no inventar consentimiento comercial
-  const legalBasis = visualTestSend
-    ? null
-    : input.legalBasis !== undefined
+  // EMAIL-10: nunca inventar consentimiento. legal_basis solo si viene informado.
+  const legalBasis =
+    input.legalBasis !== undefined
       ? input.legalBasis
       : draft?.legalBasis ?? null;
-  const commercialAuthAck = visualTestSend
-    ? false
-    : input.commercialAuthAck ?? draft?.commercialAuthAck ?? false;
-  const oppositionChecked = visualTestSend
-    ? false
-    : input.oppositionChecked ?? draft?.oppositionChecked ?? false;
+  const commercialAuthAck =
+    input.commercialAuthAck ?? draft?.commercialAuthAck ?? false;
+  const oppositionChecked =
+    input.oppositionChecked ?? draft?.oppositionChecked ?? false;
   const fromKeyRaw =
     input.fromKey || draft?.fromKey || defaultCorporateSenderKey();
   const senderCheck = assertAuthorizedSenderKey(fromKeyRaw);
@@ -1905,14 +1902,7 @@ export async function sendCorporateEmailAction(input: {
   );
   const recipientSuppressed = allRecipients.some((e) => suppressedSet.has(e));
 
-  if (visualTestSend && purpose !== 'commercial') {
-    return {
-      ok: false,
-      code: 'blocked',
-      error:
-        '«Enviar prueba» solo aplica a plantillas comerciales (demo/piloto). Usa Enviar normal para el resto.',
-    };
-  }
+  // EMAIL-10: «Enviar prueba» usa el mismo motor que «Enviar» (todas las plantillas).
 
   let attachments: EmailDraftAttachmentRow[] = [];
   if (draft?.id) {
@@ -1990,11 +1980,10 @@ export async function sendCorporateEmailAction(input: {
     p_recipient_name: recipientName,
     p_from_address: fromAddress,
     p_reply_to: replyTo,
-    // Visual test: no inventar base jurídica comercial (check constraint
-    // solo admite consent|legitimate_interest_documented|contractual).
-    // Se registra como operativo + template_slug piloto/demo.
-    p_purpose: visualTestSend ? 'operational' : policy.purpose,
-    p_legal_basis: visualTestSend ? null : policy.legalBasis,
+    // EMAIL-10: misma clasificación real en Enviar y Enviar prueba.
+    // legal_basis opcional; nunca se inventa consentimiento.
+    p_purpose: policy.purpose,
+    p_legal_basis: policy.legalBasis,
     p_payload_hash: hash,
     p_dry_run: mode.dryRun,
     p_attachment_count: attachments.length,
@@ -2057,7 +2046,25 @@ export async function sendCorporateEmailAction(input: {
         error: 'No autorizado a enviar.',
       };
     }
-    return { ok: false, error: 'No se pudo registrar el envío.' };
+    if (msg.includes('commercial_legal_basis_required')) {
+      return {
+        ok: false,
+        code: 'blocked',
+        error:
+          'El servidor aún exige base jurídica comercial. Aplica la migración 100 en staging.',
+      };
+    }
+    if (msg.includes('invalid_legal_basis')) {
+      return {
+        ok: false,
+        code: 'blocked',
+        error: 'Base jurídica no válida.',
+      };
+    }
+    return {
+      ok: false,
+      error: `No se pudo registrar el envío (${claimErr.code || 'error'}).`,
+    };
   }
 
   const claim = (claimData ?? {}) as Record<string, unknown>;

@@ -104,10 +104,13 @@ test.describe('P1 emails envío controlado Piloto/Demo', () => {
     await expect(
       page.getByText(testRecipient(), { exact: false }).first()
     ).toBeVisible();
-    // Simulación ≠ aceptación Resend
-    await expect(page.getByText(/env[ií]o simulado/i).first()).toBeVisible({
-      timeout: 15_000,
-    });
+    // Simulación ≠ aceptación Resend (evitar <option> oculto del filtro)
+    await expect(
+      page
+        .locator('li')
+        .filter({ hasText: claimed.subject })
+        .getByText(/env[ií]o simulado/i)
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test('Demostración: UI prueba + claim dry-run en Enviados', async ({
@@ -123,8 +126,11 @@ test.describe('P1 emails envío controlado Piloto/Demo', () => {
     await expect(
       page.getByText(testRecipient(), { exact: false }).first()
     ).toBeVisible();
-    await expect(page.getByText(/env[ií]o simulado/i).first()).toBeVisible({
-      timeout: 15_000,
-    });
+    await expect(
+      page
+        .locator('li')
+        .filter({ hasText: claimed.subject })
+        .getByText(/env[ií]o simulado/i)
+    ).toBeVisible({ timeout: 15_000 });
   });
 });

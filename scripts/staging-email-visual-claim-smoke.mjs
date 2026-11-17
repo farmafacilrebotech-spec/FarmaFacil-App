@@ -88,8 +88,8 @@ const { data: claim, error: claimErr } = await sb.rpc(
     p_recipient_name: null,
     p_from_address: 'Pilar Reyes · FarmaFácil <pilar@farmafacil.solutions>',
     p_reply_to: 'pilar@farmafacil.solutions',
-    // Visual test: purpose operativo (no inventa consentimiento comercial)
-    p_purpose: 'operational',
+    // EMAIL-10: conservar clasificación real; legal_basis opcional (no inventar).
+    p_purpose: slug === 'demo' || slug === 'piloto' ? 'commercial' : 'operational',
     p_legal_basis: null,
     p_payload_hash: randomUUID().replace(/-/g, ''),
     p_dry_run: true,

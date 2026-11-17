@@ -23,7 +23,8 @@ import {
 const ICON = 'h-4 w-4';
 
 const STATUS_OPTIONS = [
-  { key: 'pending_send', label: 'Pendiente' },
+  { key: 'pending_send', label: 'Pendiente de envío' },
+  { key: 'simulated', label: 'Envío simulado' },
   { key: 'accepted_by_provider', label: 'Aceptado por el proveedor' },
   { key: 'delivered', label: 'Entregado' },
   { key: 'error', label: 'Error de envío' },
