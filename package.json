@@ -61,7 +61,9 @@
     "test:email-delivery": "node --experimental-strip-types --test lib/email/delivery-status.test.ts lib/email/send-config.test.ts lib/email/template-sender-matrix.test.ts lib/email/senders.test.ts",
     "assert:email-manual-mode": "node scripts/assert-corporate-email-manual-mode.mjs",
     "staging:email-real-batch": "node scripts/staging-email-real-send-batch.mjs",
-    "staging:email10-real": "node scripts/staging-email10-real-sends.mjs"
+    "staging:email10-real": "node scripts/staging-email10-real-sends.mjs",
+    "test:e2e:email-circuit": "playwright test e2e/p1/emails-composer-circuit.spec.ts --project=chromium-p1",
+    "staging:email10-ui-final": "EMAIL10_UI_FINAL=1 playwright test e2e/p1/emails-ui-final-real.spec.ts --project=chromium-p1"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",
