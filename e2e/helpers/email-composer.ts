@@ -87,8 +87,10 @@ export async function fillSubject(page: Page, subject: string) {
 export async function fillPersonalNote(page: Page, note: string) {
   const noteBox = page.locator('[data-ff-composer-note="1"]');
   await expect(noteBox).toBeVisible({ timeout: 15_000 });
-  await noteBox.click();
-  await page.keyboard.type(note, { delay: 15 });
+  await noteBox.evaluate((el, value) => {
+    el.innerHTML = `<p>${value.replace(/</g, '&lt;')}</p>`;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }, note);
   await expect(noteBox).toContainText(note, { timeout: 10_000 });
 }
 

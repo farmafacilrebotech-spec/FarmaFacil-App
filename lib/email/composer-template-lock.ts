@@ -9,8 +9,56 @@
 export const FF_COMPOSER_NOTE_ATTR = 'data-ff-composer-note';
 export const FF_TEMPLATE_LOCKED_ATTR = 'data-ff-template-locked';
 
-const NOTE_HINT =
+/** Placeholder UI del área de nota — nunca debe viajar a Resend. */
+export const COMPOSER_NOTE_HINT =
   'Escribe aquí un mensaje adicional (opcional). La plantilla corporativa de debajo se conserva intacta.';
+
+/** Textos de ayuda exclusivos de la UI del compositor (no contenido del mensaje). */
+export const COMPOSER_UI_HINTS: readonly string[] = [
+  COMPOSER_NOTE_HINT,
+  'Escribe solo en la zona superior. El HTML original de la plantilla no se modifica al cambiar asunto, destinatario o firma.',
+  'Nota adicional (editable) · Plantilla corporativa bloqueada debajo',
+];
+
+/** @deprecated usar COMPOSER_NOTE_HINT */
+const NOTE_HINT = COMPOSER_NOTE_HINT;
+
+function normalizeHintText(raw: string): string {
+  return (raw || '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isKnownComposerUiHintText(text: string): boolean {
+  const t = normalizeHintText(text);
+  if (!t) return true;
+  return COMPOSER_UI_HINTS.some((h) => t === h);
+}
+
+/**
+ * Elimina párrafos/bloques cuyo texto es solo ayuda del compositor.
+ * Conserva la nota real del usuario aunque el hint haya quedado como hermano.
+ */
+export function stripComposerUiHints(html: string): string {
+  let out = sanitizeEmailHtml(html || '');
+  // Párrafos (con o sin style) cuyo texto coincide con un hint conocido
+  out = out.replace(/<p\b[^>]*>[\s\S]*?<\/p>/gi, (block) => {
+    return isKnownComposerUiHintText(block) ? '' : block;
+  });
+  // Texto suelto del hint (sin envolver) si el DOM lo aplastó
+  for (const hint of COMPOSER_UI_HINTS) {
+    const escaped = hint.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(escaped, 'g'), '');
+  }
+  out = out.replace(/(<br\s*\/?>\s*){2,}/gi, '<br/>');
+  const plain = normalizeHintText(out);
+  if (!plain) {
+    return '<p><br/></p>';
+  }
+  return out.trim() || '<p><br/></p>';
+}
 
 /** Sanitizado mínimo local (evita dependencia circular en tests Node). */
 function sanitizeEmailHtml(raw: string): string {
@@ -24,12 +72,8 @@ function sanitizeEmailHtml(raw: string): string {
 }
 
 export function isComposerHintParagraph(html: string): boolean {
-  const t = (html || '')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return !t || t === NOTE_HINT;
+  const stripped = stripComposerUiHints(html);
+  return isKnownComposerUiHintText(stripped);
 }
 
 /** HTML del shell del editor: nota editable + plantilla bloqueada. */
@@ -60,9 +104,7 @@ export function extractComposerNoteHtml(shellHtml: string): string {
     // Sin shell: todo es nota/cuerpo libre
     return sanitizeEmailHtml(html);
   }
-  const note = sanitizeEmailHtml(m[1] || '');
-  if (isComposerHintParagraph(note)) return '<p><br/></p>';
-  return note;
+  return stripComposerUiHints(m[1] || '');
 }
 
 export function shellHasLockedTemplate(shellHtml: string): boolean {
@@ -88,16 +130,14 @@ export function extractNoteAgainstLockedTemplate(
   }
 
   if (body.includes(TEMPLATE_SEND_SEP)) {
-    const note = sanitizeEmailHtml(body.split(TEMPLATE_SEND_SEP)[0] || '');
-    return isComposerHintParagraph(note) ? '<p><br/></p>' : note;
+    return stripComposerUiHints(body.split(TEMPLATE_SEND_SEP)[0] || '');
   }
 
   const noteMark = body.match(
     /<div\b[^>]*data-ff-user-note="1"[^>]*>([\s\S]*?)<\/div>/i
   );
   if (noteMark) {
-    const note = sanitizeEmailHtml(noteMark[1] || '');
-    return isComposerHintParagraph(note) ? '<p><br/></p>' : note;
+    return stripComposerUiHints(noteMark[1] || '');
   }
 
   const trimmedBody = body.trim();
@@ -112,8 +152,7 @@ export function extractNoteAgainstLockedTemplate(
   if (probe && trimmedBody.includes(probe)) {
     const idx = trimmedBody.indexOf(probe);
     if (idx <= 0) return '<p><br/></p>';
-    const note = sanitizeEmailHtml(trimmedBody.slice(0, idx));
-    return isComposerHintParagraph(note) ? '<p><br/></p>' : note;
+    return stripComposerUiHints(trimmedBody.slice(0, idx));
   }
 
   return extractComposerNoteHtml(body);
@@ -128,9 +167,9 @@ export function composeTemplateSendBody(input: {
   lockedTemplateHtml: string;
 }): string {
   const locked = sanitizeEmailHtml(input.lockedTemplateHtml || '');
-  const note = sanitizeEmailHtml(input.noteHtml || '');
-  if (!locked) return note || '<p><br/></p>';
-  if (!note || isComposerHintParagraph(note)) return locked;
+  const note = stripComposerUiHints(input.noteHtml || '');
+  if (!locked) return isComposerHintParagraph(note) ? '<p><br/></p>' : note;
+  if (isComposerHintParagraph(note)) return locked;
 
   // Nota al inicio, separador invisible para reducir clip de Gmail
   return `<div data-ff-user-note="1" style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.55;color:#111827;margin:0 0 20px;">${note}</div>

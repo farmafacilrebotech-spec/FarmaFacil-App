@@ -58,7 +58,7 @@
     "test:e2e:full": "playwright test",
     "validate:release": "bash scripts/validate-release.sh",
     "https:pwa": "bash scripts/https-pwa-tunnel.sh",
-    "test:email-delivery": "node --experimental-strip-types --test lib/email/delivery-status.test.ts lib/email/send-config.test.ts lib/email/template-sender-matrix.test.ts lib/email/senders.test.ts",
+    "test:email-delivery": "node --experimental-strip-types --test lib/email/delivery-status.test.ts lib/email/send-config.test.ts lib/email/template-sender-matrix.test.ts lib/email/senders.test.ts lib/email/composer-template-lock.test.ts",
     "assert:email-manual-mode": "node scripts/assert-corporate-email-manual-mode.mjs",
     "staging:email-real-batch": "node scripts/staging-email-real-send-batch.mjs",
     "staging:email10-real": "node scripts/staging-email10-real-sends.mjs",
