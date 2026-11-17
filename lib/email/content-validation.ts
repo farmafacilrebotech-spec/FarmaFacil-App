@@ -12,6 +12,9 @@ import {
   stripManagedSignature,
 } from './signature';
 import { htmlToPlainText } from './html-sanitize';
+import { EMAIL_EMPTY_BODY_ERROR } from './content-messages';
+
+export { EMAIL_EMPTY_BODY_ERROR } from './content-messages';
 
 /** Texto plano máximo de una tabla que aún consideramos «solo firma». */
 const SIGNATURE_TABLE_PLAIN_MAX = 800;
@@ -113,7 +116,6 @@ export function assertEmailHasAuthoredContent(input: {
   return {
     ok: false,
     code: 'empty_body',
-    error:
-      'No se puede enviar un correo vacío. Escribe el contenido (la firma automática no cuenta como texto).',
+    error: EMAIL_EMPTY_BODY_ERROR,
   };
 }

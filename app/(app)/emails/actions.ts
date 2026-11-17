@@ -170,6 +170,7 @@ function providerStatusLabelEs(status: string | null): string {
   if (!status) return '—';
   const s = status.toLowerCase();
   // Código técnico del proveedor (no duplicar el estado de historial)
+  if (s === 'simulated') return 'simulated (sin Resend)';
   if (s === 'accepted') return 'accepted (Resend)';
   if (s === 'delivered') return 'delivered';
   if (s === 'bounced') return 'bounced';
@@ -297,6 +298,10 @@ function mapSendRow(
     status: String(row.status ?? ''),
     providerStatus,
     dryRun: Boolean(row.dry_run),
+    providerMessageId:
+      row.provider_message_id == null
+        ? null
+        : String(row.provider_message_id),
     bouncedAt: row.bounced_at == null ? null : String(row.bounced_at),
     deliveredAt: row.delivered_at == null ? null : String(row.delivered_at),
   });
@@ -343,7 +348,9 @@ function mapSendRow(
         ? null
         : String(row.provider_message_id),
     providerStatus,
-    providerStatusLabel: providerStatusLabelEs(providerStatus),
+    providerStatusLabel: Boolean(row.dry_run)
+      ? 'simulated (sin Resend)'
+      : providerStatusLabelEs(providerStatus),
     attachmentCount: Number(row.attachment_count ?? 0),
     createdBy: row.created_by == null ? null : String(row.created_by),
     createdByLabel: profileLabel ?? null,
@@ -2081,6 +2088,10 @@ export async function sendCorporateEmailAction(input: {
       providerStatus:
         claim.provider_status == null ? null : String(claim.provider_status),
       dryRun: Boolean(claim.dry_run),
+      providerMessageId:
+        claim.provider_message_id == null
+          ? null
+          : String(claim.provider_message_id),
     });
     return {
       ok: true,
@@ -2140,21 +2151,23 @@ export async function sendCorporateEmailAction(input: {
   }
 
   if (mode.dryRun) {
+    const simulatedProviderId = `dry-run-${sendId.slice(0, 8)}`;
     const { data: fin, error: finErr } = await supabase.rpc(
       'ff_corporate_email_finalize_send_v1',
       {
         p_send_id: sendId,
         p_status: 'sent',
-        p_provider_message_id: `dry-run-${sendId.slice(0, 8)}`,
+        p_provider_message_id: simulatedProviderId,
         p_error: null,
-        p_provider_status: 'accepted',
+        // CHECK DB solo admite accepted|delivered|… — null evita fingir aceptación Resend.
+        p_provider_status: null,
       }
     );
     if (finErr) {
       console.error('[emails] finalize dry-run', finErr.message);
       return {
         ok: false,
-        error: 'Envío de prueba registrado, pero no se pudo cerrar el estado.',
+        error: 'Envío simulado registrado, pero no se pudo cerrar el estado.',
       };
     }
     const finRow = (fin ?? {}) as Record<string, unknown>;
@@ -2163,8 +2176,9 @@ export async function sendCorporateEmailAction(input: {
     revalidatePath('/emails/sends');
     const kind = resolveEmailHistoryKind({
       status: String(finRow.status ?? 'sent'),
-      providerStatus: 'accepted',
+      providerStatus: null,
       dryRun: true,
+      providerMessageId: simulatedProviderId,
     });
     return {
       ok: true,

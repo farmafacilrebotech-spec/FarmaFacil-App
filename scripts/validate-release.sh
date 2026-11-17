@@ -21,4 +21,9 @@ npm run test:e2e:prepare
 npm run test:e2e:full
 
 echo
+echo "== post-e2e: modo manual emails (no dry-run) =="
+node scripts/assert-corporate-email-manual-mode.mjs
+
+echo
 echo "OK validate:release — suite global verde. Conserva playwright-report/ y tmp/e2e-results.json."
+echo "Servidor 3070 debe permanecer en envío real allowlist (FF_CORPORATE_EMAIL_DRY_RUN=0)."

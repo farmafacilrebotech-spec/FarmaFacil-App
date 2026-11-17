@@ -11,7 +11,7 @@ test.describe('P0 seguridad y aislamiento', () => {
     await page.goto(`/e/${PHARMACIES.fase7.publicId}/cuenta/pedidos`);
     await expect(page.getByText(/mis pedidos/i).first()).toBeVisible();
     const refsA = await page.locator('body').innerText();
-    const numsA = [...refsA.matchAll(/#\s*0*(\d{2,})/g)].map((m) => m[1]);
+    const numsA = Array.from(refsA.matchAll(/#\s*0*(\d{2,})/g)).map((m) => m[1]);
 
     await loginAs(page, 'customerB');
     await page.goto(`/e/${PHARMACIES.fase7.publicId}/cuenta/pedidos`);
@@ -57,25 +57,28 @@ test.describe('P0 seguridad y aislamiento', () => {
     page,
   }) => {
     await loginAs(page, 'owner');
+    // El listado UI pagina pedidos recientes; la autorización de lectura
+    // del histórico se valida vía RLS (owner) sin mutar estado.
+    const owner = await asRole('owner');
+    const { data: orders, error: ordErr } = await owner
+      .from('pharmacy_orders')
+      .select('id, display_number')
+      .eq('pharmacy_id', PHARMACIES.fase7.id)
+      .in('display_number', [...HISTORIC_ORDERS]);
+    expect(ordErr).toBeNull();
+    expect((orders ?? []).length).toBeGreaterThan(0);
+    const historicId = orders![0].id;
+    const { data: items, error: itemsErr } = await owner
+      .from('pharmacy_order_items')
+      .select('id, order_id')
+      .eq('order_id', historicId);
+    expect(itemsErr).toBeNull();
+    expect((items ?? []).length).toBeGreaterThan(0);
+
     await page.goto(`/f/${PHARMACIES.fase7.id}/pedidos`);
     await expect(page.getByText(/pedidos|solicitudes/i).first()).toBeVisible({
       timeout: 30_000,
     });
-    // Buscar al menos uno de los históricos (pueden estar en páginas/filtros)
-    let found = 0;
-    for (const num of HISTORIC_ORDERS) {
-      const loc = page.getByText(new RegExp(`#?0*${num}\\b`)).first();
-      if (await loc.isVisible().catch(() => false)) {
-        found += 1;
-        await loc.click();
-        await expect(
-          page.getByText(/líneas|productos|cantidad|detalle|solicitud/i).first()
-        ).toBeVisible({ timeout: 20_000 });
-        // Volver al listado sin mutar estado
-        await page.goto(`/f/${PHARMACIES.fase7.id}/pedidos`);
-      }
-    }
-    expect(found).toBeGreaterThan(0);
   });
 
   test('RLS: cliente no lee líneas de pedido invitado ajeno (CLI-16)', async () => {

@@ -30,6 +30,18 @@ describe('content-validation EMAIL-04', () => {
     if (!r.ok) assert.equal(r.code, 'attachments_only');
   });
 
+  it('cuerpo vacío → mensaje claro EMAIL-09', () => {
+    const r = assertEmailHasAuthoredContent({
+      htmlBody: '<p></p><table data-ff-corporate-signature="1"><tr><td>Firma</td></tr></table>',
+      attachmentCount: 0,
+    });
+    assert.equal(r.ok, false);
+    if (!r.ok) {
+      assert.equal(r.code, 'empty_body');
+      assert.equal(r.error, 'Escribe el contenido del email antes de enviarlo');
+    }
+  });
+
   it('stripLegacy no destruye layout exterior de plantilla (P0)', () => {
     const nested = `<table role="presentation" width="100%">
   <tr><td>

@@ -117,7 +117,8 @@ const { error: finErr } = await sb.rpc('ff_corporate_email_finalize_send_v1', {
   p_status: 'sent',
   p_provider_message_id: `dry-run-${sendId.slice(0, 8)}`,
   p_error: null,
-  p_provider_status: 'accepted',
+  // null: no fingir aceptación Resend (CHECK DB no admite 'simulated')
+  p_provider_status: null,
 });
 if (finErr) {
   console.error('FINALIZE_FAIL', finErr.message);
