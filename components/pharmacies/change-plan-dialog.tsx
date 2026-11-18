@@ -78,8 +78,8 @@ export function ChangePlanDialog({
           const sku = normalizeCommercialPlanKey(o.assignKey);
           return (
             sku === 'general' ||
-            sku === 'personalized' ||
-            sku === 'ai_personalized'
+            sku === 'personalizado' ||
+            sku === 'asistente_ia_personalizado'
           );
         }
         return true;
