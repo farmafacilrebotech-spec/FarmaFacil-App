@@ -13,6 +13,7 @@ import {
   buildCommercialQuoteLines,
   buildCommercialQuoteSnapshot,
   buildQuoteBreakdown,
+  buildQuoteDocumentHtml,
   defaultValidUntilIso,
 } from '@/lib/commercial/quote-document';
 import {
@@ -409,6 +410,52 @@ export async function getCommercialQuoteDocumentAction(
     filename: pdf.filename,
     referenceCode,
     mimeType: 'application/pdf',
+  };
+}
+
+/**
+ * HTML corporativo PRE-05 (plantilla aprobada) para imprimir / descargar.
+ * Logo oficial incrustado en servidor; importes desde el snapshot guardado.
+ */
+export async function getCommercialQuoteHtmlAction(
+  quoteId: string
+): Promise<
+  QuoteActionResult<{
+    html: string;
+    filename: string;
+    referenceCode: string;
+  }>
+> {
+  const perm = await requireQuotesManage();
+  if (!perm.ok) return perm;
+
+  const supabase = createClient();
+  const { data: row, error } = await supabase
+    .from('commercial_quotes')
+    .select('id, reference_code, created_at, snapshot')
+    .eq('id', quoteId)
+    .maybeSingle();
+
+  if (error || !row) {
+    return { ok: false, error: 'Presupuesto no encontrado.' };
+  }
+  const snapshot = row.snapshot as CommercialQuoteSnapshot | null;
+  if (!snapshot || snapshot.v !== 1) {
+    return { ok: false, error: 'El presupuesto no tiene snapshot válido.' };
+  }
+
+  const referenceCode =
+    (row.reference_code as string | null) ?? quoteId.slice(0, 8);
+  const html = buildQuoteDocumentHtml({
+    referenceCode,
+    createdAt: row.created_at as string,
+    snapshot,
+  });
+  return {
+    ok: true,
+    html,
+    filename: `presupuesto-${referenceCode}.html`,
+    referenceCode,
   };
 }
 

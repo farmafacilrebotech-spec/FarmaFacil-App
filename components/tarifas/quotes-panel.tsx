@@ -3,6 +3,7 @@
 import * as React from 'react';
 import {
   Download,
+  Printer,
   FileStack,
   Mail,
   FileSignature,
@@ -18,7 +19,12 @@ import {
 } from '@/lib/commercial/quote-types';
 import { formatCentsEur } from '@/lib/tarifas';
 import {
+  downloadQuoteHtmlFile,
+  openQuotePrintWindow,
+} from '@/lib/commercial/quote-document';
+import {
   getCommercialQuoteDocumentAction,
+  getCommercialQuoteHtmlAction,
   getCommercialEmailSendReadiness,
   sendCommercialQuoteEmailAction,
   updateCommercialQuoteStatusAction,
@@ -103,6 +109,34 @@ export function QuotesPanel({
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'No se ha podido generar el PDF.'
+      );
+    } finally {
+      setBusy(false);
+      lock.current = false;
+    }
+  }
+
+  async function htmlSelected(mode: 'download' | 'print') {
+    if (!selected || lock.current) return;
+    lock.current = true;
+    setBusy(true);
+    try {
+      const result = await getCommercialQuoteHtmlAction(selected.id);
+      if (!result.ok) {
+        toast.error(result.error);
+        return;
+      }
+      if (mode === 'print') {
+        openQuotePrintWindow(result.html);
+      } else {
+        downloadQuoteHtmlFile(result.html, result.filename);
+        toast.success('HTML corporativo descargado.', {
+          description: result.filename,
+        });
+      }
+    } catch (err) {
+      toast.error(
+        err instanceof Error ? err.message : 'No se ha podido generar el documento.'
       );
     } finally {
       setBusy(false);
@@ -382,6 +416,28 @@ export function QuotesPanel({
                 <Download className="h-4 w-4" />
               )}
               Descargar presupuesto
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={busy}
+              onClick={() => void htmlSelected('print')}
+            >
+              <Printer className="h-4 w-4" />
+              Imprimir
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={busy}
+              onClick={() => void htmlSelected('download')}
+            >
+              <Download className="h-4 w-4" />
+              Descargar HTML
             </Button>
             <Button
               type="button"
