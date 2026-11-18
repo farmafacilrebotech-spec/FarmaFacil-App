@@ -444,6 +444,8 @@ export async function changePharmacyPlanAction(
   options?: {
     useLaunchPromo?: boolean;
     endOpenPilot?: boolean;
+    /** Contratación explícita (no cambio de plan en prueba). */
+    confirmContract?: boolean;
     reason?: string;
   }
 ): Promise<UpdatePharmacyResult> {
@@ -476,12 +478,63 @@ export async function changePharmacyPlanAction(
           'La plaza promocional se gestiona aparte (Reservar plaza). La asignación de plan ya no reserva ni libera plazas.',
       };
     }
+
+    // Piloto abierto: cambiar plan EN PRUEBA (no contratar / no suscripción).
+    if (commercialSku !== 'pilot' && options?.confirmContract !== true) {
+      const { data: openTrials } = await supabase
+        .from('pharmacy_commercial_trials')
+        .select('id,status')
+        .eq('pharmacy_id', pharmacyId)
+        .in('status', ['ready', 'active', 'extended'])
+        .limit(1);
+      if (openTrials && openTrials.length > 0) {
+        const trialSku =
+          commercialSku === 'general' ||
+          commercialSku === 'personalized' ||
+          commercialSku === 'ai_personalized'
+            ? commercialSku
+            : null;
+        if (!trialSku) {
+          return {
+            ok: false,
+            error:
+              'Con piloto abierto solo puedes cambiar a General, Personalizado o Asistente IA.',
+          };
+        }
+        const { data, error } = await supabase.rpc(
+          'ff_commercial_trial_set_plan_v1',
+          {
+            p_pharmacy_id: pharmacyId,
+            p_trial_plan_sku: trialSku,
+          }
+        );
+        if (error) {
+          return {
+            ok: false,
+            error: mapAssignCommercialError(error.message, error.code),
+          };
+        }
+        const payload = data as { status?: string } | null;
+        if (payload?.status && payload.status !== 'ok') {
+          return {
+            ok: false,
+            error: mapAssignCommercialError(String(payload.status)),
+          };
+        }
+        revalidatePath('/farmacias');
+        revalidatePath(`/farmacias/${pharmacyId}`);
+        revalidatePath('/tarifas');
+        return { ok: true };
+      }
+    }
+
     const { data, error } = await supabase.rpc('ff_assign_commercial_plan_v1', {
       p_pharmacy_id: pharmacyId,
       p_commercial_plan_key: commercialSku,
       p_reason: options?.reason?.trim() || 'sa_change_plan_dialog',
       p_end_open_pilot: options?.endOpenPilot === true,
       p_use_launch_promo: false,
+      p_confirm_contract: options?.confirmContract === true,
     });
     if (error) {
       if (process.env.NODE_ENV === 'development') {

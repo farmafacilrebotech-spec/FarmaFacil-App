@@ -39,6 +39,10 @@ type LaunchSeats = {
   pharmacyHasActiveSeat: boolean;
 };
 
+/**
+ * Con piloto abierto: cambia plan EN PRUEBA (sin suscripción).
+ * Sin piloto: asignación comercial (contratación) — la plaza se gestiona aparte.
+ */
 export function ChangePlanDialog({
   open,
   onOpenChange,
@@ -46,6 +50,8 @@ export function ChangePlanDialog({
   currentPlan,
   plans,
   launchSeats,
+  hasOpenTrial = false,
+  openTrialSku = null,
   onSuccess,
 }: {
   open: boolean;
@@ -54,48 +60,54 @@ export function ChangePlanDialog({
   currentPlan: PlanSummary | null;
   plans: PlanSummary[];
   launchSeats?: LaunchSeats;
+  hasOpenTrial?: boolean;
+  openTrialSku?: string | null;
   onSuccess: (plan: PlanSummary) => void;
 }) {
   const [selectedKey, setSelectedKey] = React.useState('');
-  const [useLaunchPromo, setUseLaunchPromo] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
 
   const options = React.useMemo(() => buildChangePlanOptions(plans), [plans]);
   const commercial = React.useMemo(
-    () => options.filter((o) => o.kind === 'commercial' && o.assignable),
-    [options]
+    () =>
+      options.filter((o) => {
+        if (o.kind !== 'commercial' || !o.assignable) return false;
+        if (hasOpenTrial) {
+          const sku = normalizeCommercialPlanKey(o.assignKey);
+          return (
+            sku === 'general' ||
+            sku === 'personalized' ||
+            sku === 'ai_personalized'
+          );
+        }
+        return true;
+      }),
+    [options, hasOpenTrial]
   );
   const legacy = React.useMemo(
     () =>
-      options.filter(
-        (o) => (o.kind === 'legacy' || o.kind === 'other') && o.assignable
-      ),
-    [options]
+      hasOpenTrial
+        ? []
+        : options.filter(
+            (o) => (o.kind === 'legacy' || o.kind === 'other') && o.assignable
+          ),
+    [options, hasOpenTrial]
   );
   const selected = options.find((o) => o.assignKey === selectedKey) ?? null;
   const selectedIsCommercial = Boolean(
     selected && normalizeCommercialPlanKey(selected.assignKey)
   );
-  const slotsRemaining = launchSeats?.remaining ?? 0;
-  const canOfferLaunch =
-    selectedIsCommercial &&
-    (slotsRemaining > 0 || Boolean(launchSeats?.pharmacyHasActiveSeat));
 
   React.useEffect(() => {
     if (open) {
       setSelectedKey('');
-      setUseLaunchPromo(false);
       setError(null);
       setSubmitting(false);
       setConfirmOpen(false);
     }
   }, [open]);
-
-  React.useEffect(() => {
-    if (!canOfferLaunch) setUseLaunchPromo(false);
-  }, [canOfferLaunch, selectedKey]);
 
   async function handleConfirm() {
     if (!selectedKey || submitting || !selected?.assignable) return;
@@ -104,8 +116,11 @@ export function ChangePlanDialog({
 
     try {
       const result = await changePharmacyPlanAction(pharmacyId, selectedKey, {
-        useLaunchPromo: selectedIsCommercial && useLaunchPromo,
-        reason: 'sa_change_plan_dialog',
+        useLaunchPromo: false,
+        reason: hasOpenTrial
+          ? 'sa_change_trial_plan_dialog'
+          : 'sa_change_plan_dialog',
+        confirmContract: hasOpenTrial ? false : undefined,
       });
       if (!result.ok) {
         setError(result.error);
@@ -138,51 +153,55 @@ export function ChangePlanDialog({
   }
 
   const currentIsLegacy = isLegacyKernelPlanKey(currentPlan?.key);
+  const currentLabel = hasOpenTrial
+    ? openTrialSku
+      ? `En prueba · ${commercialPlanLabel(openTrialSku)}`
+      : 'Piloto abierto'
+    : currentPlan
+      ? commercialPlanLabel(currentPlan.key) || currentPlan.name
+      : '—';
 
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-h-[min(90vh,760px)] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>Cambiar plan</DialogTitle>
+            <DialogTitle>
+              {hasOpenTrial ? 'Cambiar plan en prueba' : 'Cambiar plan'}
+            </DialogTitle>
             <DialogDescription>
-              Solo se listan planes realmente asignables. Los comerciales
-              (General / Personalizado / IA) usan el flujo atómico de
-              asignación; no pasan por el procedimiento legacy.
+              {hasOpenTrial
+                ? 'Actualiza el plan del piloto sin crear suscripción de pago, sin reservar plaza y sin reiniciar el contador.'
+                : 'Asignación comercial. La reserva de plaza de lanzamiento se gestiona aparte.'}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm">
-              <span className="text-muted-foreground">Plan actual: </span>
-              <span className="font-medium text-foreground">
-                {currentPlan
-                  ? commercialPlanLabel(currentPlan.key) || currentPlan.name
-                  : '—'}
+              <span className="text-muted-foreground">
+                {hasOpenTrial ? 'Plan en prueba: ' : 'Plan actual: '}
               </span>
-              {currentIsLegacy ? (
+              <span className="font-medium text-foreground">{currentLabel}</span>
+              {currentIsLegacy && !hasOpenTrial ? (
                 <span className="ml-2 text-xs text-amber-700">
                   (legacy interno)
                 </span>
               ) : null}
             </div>
 
-            {launchSeats ? (
+            {launchSeats && !hasOpenTrial ? (
               <p className="text-xs text-muted-foreground">
                 Plazas lanzamiento 2027: {launchSeats.remaining} libres de{' '}
-                {launchSeats.maxSlots}
-                {launchSeats.pharmacyHasActiveSeat
-                  ? ' · esta farmacia ya tiene plaza promocional'
-                  : null}
-                . La promo (−60 % → 39 / 69 / 99 €) es independiente del plan
-                contratado. Prepago anual: −15 % adicional sobre la cuota
-                mensual aplicable.
+                {launchSeats.maxSlots}. La reserva es independiente de este
+                diálogo.
               </p>
             ) : null}
 
             <section className="space-y-2">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Oferta comercial vigente
+                {hasOpenTrial
+                  ? 'Planes disponibles en prueba'
+                  : 'Oferta comercial vigente'}
               </h3>
               <div className="grid gap-2">
                 {commercial.map((plan) => (
@@ -201,51 +220,26 @@ export function ChangePlanDialog({
                     <p className="text-sm font-semibold text-foreground">
                       {plan.label}
                     </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Tarifa normal {plan.listMonthlyLabel}/mes
-                      {plan.promoMonthlyLabel
-                        ? ` · promo lanzamiento ${plan.promoMonthlyLabel}/mes`
-                        : null}
-                      {plan.annualListLabel
-                        ? ` · anual lista ~${plan.annualListLabel}`
-                        : null}
-                    </p>
+                    {!hasOpenTrial ? (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Tarifa normal {plan.listMonthlyLabel}/mes
+                        {plan.annualListLabel
+                          ? ` · anual lista ~${plan.annualListLabel}`
+                          : null}
+                      </p>
+                    ) : null}
                     <p className="mt-1 text-xs text-muted-foreground">
                       {plan.description}
                     </p>
                   </button>
                 ))}
-                {commercial.length === 0 ? (
-                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                    No hay planes comerciales asignables (faltan filas técnicas
-                    en `plans`).
-                  </p>
-                ) : null}
               </div>
             </section>
-
-            {selectedIsCommercial && canOfferLaunch ? (
-              <label className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm">
-                <input
-                  type="checkbox"
-                  className="mt-1"
-                  checked={useLaunchPromo}
-                  disabled={submitting}
-                  onChange={(e) => setUseLaunchPromo(e.target.checked)}
-                />
-                <span>
-                  Aplicar promoción lanzamiento 2027 (
-                  {selected?.promoMonthlyLabel}/mes) y reservar plaza. Si no se
-                  marca, se asigna a tarifa normal ({selected?.listMonthlyLabel}
-                  /mes).
-                </span>
-              </label>
-            ) : null}
 
             {legacy.length > 0 ? (
               <section className="space-y-2">
                 <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Planes legacy (solo kernel)
+                  Planes legacy (solo kernel · no oferta comercial)
                 </h3>
                 <div className="grid gap-2">
                   {legacy.map((plan) => (
@@ -263,9 +257,6 @@ export function ChangePlanDialog({
                     >
                       <p className="text-sm font-semibold text-foreground">
                         {plan.label}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {plan.description}
                       </p>
                     </button>
                   ))}
@@ -306,43 +297,36 @@ export function ChangePlanDialog({
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar cambio de plan</AlertDialogTitle>
+            <AlertDialogTitle>
+              {hasOpenTrial
+                ? 'Confirmar plan en prueba'
+                : 'Confirmar cambio de plan'}
+            </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
-                  Plan actual:{' '}
-                  <strong className="text-foreground">
-                    {currentPlan
-                      ? commercialPlanLabel(currentPlan.key) || currentPlan.name
-                      : '—'}
-                  </strong>
+                  {hasOpenTrial ? 'Plan en prueba actual' : 'Plan actual'}:{' '}
+                  <strong className="text-foreground">{currentLabel}</strong>
                 </p>
                 <p>
-                  Nuevo plan:{' '}
+                  Nuevo:{' '}
                   <strong className="text-foreground">
                     {selected?.label ?? '—'}
                   </strong>
                 </p>
-                {selectedIsCommercial ? (
+                {hasOpenTrial ? (
                   <p>
-                    Tarifa:{' '}
-                    <strong className="text-foreground">
-                      {useLaunchPromo
-                        ? `promo lanzamiento ${selected?.promoMonthlyLabel}/mes`
-                        : `normal ${selected?.listMonthlyLabel}/mes`}
-                    </strong>
-                    . El plan contratado y la tarifa promocional son conceptos
-                    distintos.
+                    No se crea suscripción de pago ni se reserva plaza de
+                    lanzamiento.
                   </p>
-                ) : null}
-                <p>
-                  La operación es atómica: si falla, no se aplican cambios
-                  parciales de plan, catálogo ni plaza.
-                </p>
-                {selected?.kind === 'legacy' ? (
-                  <p className="text-amber-800">
-                    Estás asignando un plan legacy interno, no la oferta
-                    comercial vigente.
+                ) : selectedIsCommercial ? (
+                  <p>
+                    Tarifa normal{' '}
+                    <strong className="text-foreground">
+                      {selected?.listMonthlyLabel}/mes
+                    </strong>
+                    . Reserva de plaza y contratación formal son procesos
+                    aparte.
                   </p>
                 ) : null}
               </div>
@@ -358,9 +342,13 @@ export function ChangePlanDialog({
               }}
             >
               {submitting ? (
-                <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
-              ) : null}
-              Confirmar cambio
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Aplicando…
+                </>
+              ) : (
+                'Confirmar'
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

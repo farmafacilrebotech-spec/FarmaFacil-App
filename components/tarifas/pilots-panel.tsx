@@ -103,10 +103,11 @@ function statusBadge(status: CommercialPilotRow['trialStatus']) {
     { label: string; variant: 'default' | 'secondary' | 'outline' | 'destructive' }
   > = {
     draft: { label: 'Borrador', variant: 'outline' },
-    ready: { label: 'Listo (sin reloj)', variant: 'secondary' },
+    ready: { label: 'Preparado', variant: 'secondary' },
     active: { label: 'Activo', variant: 'default' },
     extended: { label: 'Ampliado', variant: 'default' },
     ended: { label: 'Finalizado', variant: 'outline' },
+    converted: { label: 'Convertido en cliente', variant: 'default' },
     cancelled: { label: 'Cancelado', variant: 'destructive' },
   };
   const cfg = map[status] ?? { label: status, variant: 'outline' as const };
@@ -133,6 +134,8 @@ export function PilotsPanel({
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
   const [city, setCity] = React.useState('');
+  const [prepTrialPlan, setPrepTrialPlan] =
+    React.useState<PilotTrialPlanSku>('general');
   const [lastQrUrl, setLastQrUrl] = React.useState<string | null>(null);
 
   const [busyId, setBusyId] = React.useState<string | null>(null);
@@ -172,21 +175,31 @@ export function PilotsPanel({
         email,
         phone,
         city,
+        trialPlanSku: prepTrialPlan,
       });
       if (!result.ok) {
         toast.error(result.error);
         return;
       }
       toast.success('Farmacia comercial preparada (piloto sin activar).', {
-        description: result.publicUrl
-          ? `QR: ${result.publicUrl}`
-          : 'Revisa la ficha de farmacia para el QR.',
+        description: [
+          result.trialPlanSku
+            ? `Plan en prueba: ${commercialPlanLabel(result.trialPlanSku)}`
+            : null,
+          result.catalogMode
+            ? `Catálogo: ${result.catalogMode === 'own' ? 'propio' : 'genérico'}`
+            : null,
+          result.publicUrl ? `QR: ${result.publicUrl}` : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
       });
       setLastQrUrl(result.publicUrl);
       setName('');
       setEmail('');
       setPhone('');
       setCity('');
+      setPrepTrialPlan('general');
       setCreateOpen(false);
       router.refresh();
     } finally {
@@ -538,8 +551,9 @@ export function PilotsPanel({
           <DialogHeader>
             <DialogTitle>Preparar farmacia comercial</DialogTitle>
             <DialogDescription>
-              Crea la farmacia en pending_setup, trial ready, catálogo genérico
-              (100) y QR. No inicia el piloto.
+              Crea la farmacia en preparación, piloto Preparado, QR y el plan
+              que desea probar. No inicia el contador, no reserva plaza ni crea
+              suscripción de pago.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={(e) => void onCreate(e)} className="space-y-3">
@@ -552,6 +566,29 @@ export function PilotsPanel({
                 required
                 disabled={creating}
               />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="prep-plan">Plan que desea probar *</Label>
+              <select
+                id="prep-plan"
+                className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                value={prepTrialPlan}
+                disabled={creating}
+                onChange={(e) =>
+                  setPrepTrialPlan(e.target.value as PilotTrialPlanSku)
+                }
+                required
+              >
+                {TRIAL_PLAN_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground">
+                General: catálogo genérico. Personalizado / IA: catálogo propio
+                (sin tratar genéricos como propios).
+              </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">

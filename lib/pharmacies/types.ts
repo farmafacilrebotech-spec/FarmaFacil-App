@@ -103,6 +103,8 @@ export interface PharmacyCommercialTrial {
   ended_at: string | null;
   extension_used: boolean;
   subscription_id: string | null;
+  /** Plan G/P/IA en prueba (migración 095+). */
+  trial_plan_sku?: string | null;
 }
 
 export interface PharmacyDetail {

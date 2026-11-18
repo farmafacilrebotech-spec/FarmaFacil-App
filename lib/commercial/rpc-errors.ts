@@ -23,6 +23,15 @@ const KNOWN: Record<string, string> = {
   starter_plan_missing: 'Falta el plan técnico starter en la base de datos.',
   generic_catalog_readonly: 'El catálogo maestro no es editable por la farmacia.',
   invalid_catalog_mode: 'Modalidad de catálogo no válida.',
+  no_open_commercial_trial: 'No hay un piloto abierto para cambiar el plan en prueba.',
+  invalid_trial_plan_sku:
+    'Plan en prueba no válido. Usa General, Personalizado o Asistente IA.',
+  use_trial_set_plan_or_confirm_contract:
+    'Hay un piloto abierto. Cambia el plan en prueba o confirma la contratación desde Comercial.',
+  pilot_must_end_first:
+    'Hay un piloto en curso. Finalízalo o confirma la contratación explícita.',
+  launch_promo_use_dedicated_rpc:
+    'La plaza promocional se gestiona aparte (Reservar plaza).',
 };
 
 export function mapCommercialRpcError(

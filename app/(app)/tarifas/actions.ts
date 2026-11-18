@@ -46,12 +46,15 @@ export async function createPharmacyCommercialPrepAction(input: {
   phone?: string;
   city?: string;
   legalName?: string;
+  /** Plan que desea probar: general | personalized | ai_personalized */
+  trialPlanSku?: 'general' | 'personalized' | 'ai_personalized';
 }): Promise<
   ActionResult<{
     pharmacyId: string;
     trialId: string;
     trialStatus: string;
     catalogMode: string;
+    trialPlanSku: string | null;
     publicUrl: string | null;
     attachInserted: number | null;
     ready: boolean | null;
@@ -63,6 +66,18 @@ export async function createPharmacyCommercialPrepAction(input: {
   const name = input.name?.trim() ?? '';
   if (!name) {
     return { ok: false, error: 'El nombre de la farmacia es obligatorio.' };
+  }
+  const trialPlanSku = input.trialPlanSku ?? 'general';
+  if (
+    trialPlanSku !== 'general' &&
+    trialPlanSku !== 'personalized' &&
+    trialPlanSku !== 'ai_personalized'
+  ) {
+    return {
+      ok: false,
+      error:
+        'Selecciona el plan a probar: General, Personalizado o Asistente IA personalizado.',
+    };
   }
 
   const supabase = createClient();
@@ -121,6 +136,33 @@ export async function createPharmacyCommercialPrepAction(input: {
     }
   }
 
+  let catalogMode = String(payload.catalog_mode ?? 'generic');
+  let appliedSku: string | null = null;
+  if (pharmacyId) {
+    const { data: setPlan, error: setErr } = await supabase.rpc(
+      'ff_commercial_trial_set_plan_v1',
+      {
+        p_pharmacy_id: pharmacyId,
+        p_trial_plan_sku: trialPlanSku,
+      }
+    );
+    if (setErr) {
+      console.error('[commercial] prep_set_plan', setErr.code, setErr.message);
+      return {
+        ok: false,
+        error: mapCommercialRpcError(setErr.message, setErr.code),
+      };
+    }
+    const setPayload =
+      setPlan && typeof setPlan === 'object'
+        ? (setPlan as Record<string, unknown>)
+        : null;
+    if (setPayload?.status === 'ok') {
+      catalogMode = String(setPayload.catalog_mode ?? catalogMode);
+      appliedSku = String(setPayload.trial_plan_sku ?? trialPlanSku);
+    }
+  }
+
   revalidateCommercialPaths(pharmacyId || undefined);
 
   return {
@@ -128,11 +170,52 @@ export async function createPharmacyCommercialPrepAction(input: {
     pharmacyId,
     trialId,
     trialStatus: String(payload.trial_status ?? 'ready'),
-    catalogMode: String(payload.catalog_mode ?? 'generic'),
+    catalogMode,
+    trialPlanSku: appliedSku,
     publicUrl,
     attachInserted:
       attach?.inserted != null ? Number(attach.inserted) : null,
     ready: readiness?.ready != null ? Boolean(readiness.ready) : null,
+  };
+}
+
+/** Cambia el plan en prueba de un piloto abierto (sin contratar). */
+export async function setCommercialTrialPlanAction(
+  pharmacyId: string,
+  trialPlanSku: 'general' | 'personalized' | 'ai_personalized'
+): Promise<
+  ActionResult<{
+    trialStatus: string;
+    trialPlanSku: string;
+    catalogMode: string;
+  }>
+> {
+  const gate = await requireTrialsManage();
+  if (!gate.ok) return gate;
+  if (!pharmacyId) return { ok: false, error: 'Farmacia no indicada.' };
+
+  const supabase = createClient();
+  const { data, error } = await supabase.rpc('ff_commercial_trial_set_plan_v1', {
+    p_pharmacy_id: pharmacyId,
+    p_trial_plan_sku: trialPlanSku,
+  });
+  if (error) {
+    return {
+      ok: false,
+      error: mapCommercialRpcError(error.message, error.code),
+    };
+  }
+  const payload =
+    data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  if (!payload || payload.status !== 'ok') {
+    return { ok: false, error: 'No se ha podido cambiar el plan en prueba.' };
+  }
+  revalidateCommercialPaths(pharmacyId);
+  return {
+    ok: true,
+    trialStatus: String(payload.trial_status ?? ''),
+    trialPlanSku: String(payload.trial_plan_sku ?? trialPlanSku),
+    catalogMode: String(payload.catalog_mode ?? ''),
   };
 }
 

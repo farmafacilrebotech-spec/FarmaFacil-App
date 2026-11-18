@@ -39,6 +39,7 @@ import {
   DEFAULT_PRIMARY_COLOR,
   DEFAULT_SECONDARY_COLOR,
 } from '@/lib/pharmacies/labels';
+import { pharmacyPlanDisplayLabel } from '@/lib/commercial/commercial-ui-labels';
 import {
   updatePharmacyGeneralAction,
   updatePharmacyPersonalizationAction,
@@ -518,7 +519,14 @@ export function PharmacyDetailClient({
                   <span>
                     Plan:{' '}
                     <span className="font-medium text-foreground">
-                      {pharmacy.plan?.name ?? '—'}
+                      {pharmacyPlanDisplayLabel({
+                        openTrialStatus: pharmacy.commercialTrial?.status,
+                        openTrialSku:
+                          (pharmacy.commercialTrial as { trial_plan_sku?: string | null } | null)
+                            ?.trial_plan_sku ?? null,
+                        planKey: pharmacy.plan?.key,
+                        planName: pharmacy.plan?.name,
+                      })}
                     </span>
                   </span>
                   <Button
@@ -528,7 +536,12 @@ export function PharmacyDetailClient({
                     className="h-7 px-2 text-xs"
                     onClick={() => setChangePlanOpen(true)}
                   >
-                    Cambiar plan
+                    {pharmacy.commercialTrial &&
+                    ['ready', 'active', 'extended'].includes(
+                      pharmacy.commercialTrial.status
+                    )
+                      ? 'Cambiar plan en prueba'
+                      : 'Cambiar plan'}
                   </Button>
                 </span>
                 {pharmacy.commercialTrial &&
@@ -1314,6 +1327,16 @@ export function PharmacyDetailClient({
         currentPlan={pharmacy.plan}
         plans={plans}
         launchSeats={launchSeats}
+        hasOpenTrial={Boolean(
+          pharmacy.commercialTrial &&
+            ['ready', 'active', 'extended'].includes(
+              pharmacy.commercialTrial.status
+            )
+        )}
+        openTrialSku={
+          (pharmacy.commercialTrial as { trial_plan_sku?: string | null } | null)
+            ?.trial_plan_sku ?? null
+        }
         onSuccess={(plan) => {
           setPharmacy((prev) => ({
             ...prev,
@@ -1322,7 +1345,14 @@ export function PharmacyDetailClient({
               ? { ...prev.subscription, plan }
               : prev.subscription,
           }));
-          setSuccess(`Plan actualizado a ${plan.name}.`);
+          setSuccess(
+            pharmacy.commercialTrial &&
+              ['ready', 'active', 'extended'].includes(
+                pharmacy.commercialTrial.status
+              )
+              ? `Plan en prueba actualizado a ${plan.name}.`
+              : `Plan actualizado a ${plan.name}.`
+          );
           setError(null);
           router.refresh();
         }}

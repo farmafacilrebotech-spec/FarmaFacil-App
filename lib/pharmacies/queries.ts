@@ -267,7 +267,8 @@ async function loadPharmacyCommercialTrialRow(
       ends_at,
       ended_at,
       extension_used,
-      subscription_id
+      subscription_id,
+      trial_plan_sku
     `
     )
     .eq('pharmacy_id', pharmacyId)
@@ -290,7 +291,8 @@ async function loadPharmacyCommercialTrialRow(
       ends_at,
       ended_at,
       extension_used,
-      subscription_id
+      subscription_id,
+      trial_plan_sku
     `
       )
       .eq('pharmacy_id', pharmacyId)

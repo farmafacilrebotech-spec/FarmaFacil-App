@@ -12,6 +12,7 @@ export type CommercialTrialStatus =
   | 'active'
   | 'extended'
   | 'ended'
+  | 'converted'
   | 'cancelled';
 
 /** Plan comercial en prueba (piloto ≠ 4º plan). */
