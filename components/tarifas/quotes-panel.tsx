@@ -107,8 +107,20 @@ export function QuotesPanel({
         description: result.filename,
       });
     } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'No se ha podido generar el PDF.';
+      const sessionLost =
+        /failed to fetch|networkerror|load failed|cors/i.test(msg) ||
+        /failed to fetch/i.test(String(err));
       toast.error(
-        err instanceof Error ? err.message : 'No se ha podido generar el PDF.'
+        sessionLost
+          ? 'No se ha podido descargar el PDF (sesión o origen).'
+          : msg,
+        {
+          description: sessionLost
+            ? 'Recarga la página en http://127.0.0.1:3070 e inicia sesión de nuevo. No uses localhost ni otra IP en paralelo.'
+            : undefined,
+        }
       );
     } finally {
       setBusy(false);
@@ -204,9 +216,29 @@ export function QuotesPanel({
         });
         return;
       }
-      toast.success(`Presupuesto enviado a ${result.to}`);
+      toast.success(
+        result.dryRun
+          ? `Envío simulado (dry-run) a ${result.to}`
+          : `Presupuesto enviado a ${result.to}`
+      );
       setSendOpen(false);
       router.refresh();
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : 'No se ha podido enviar el email.';
+      const sessionLost = /failed to fetch|networkerror|load failed|cors/i.test(
+        msg
+      );
+      toast.error(
+        sessionLost
+          ? 'No se ha podido enviar el presupuesto (sesión o origen).'
+          : msg,
+        {
+          description: sessionLost
+            ? 'Recarga en http://127.0.0.1:3070 e inicia sesión de nuevo. No se ha enviado ningún correo.'
+            : 'No se ha enviado ningún correo.',
+        }
+      );
     } finally {
       setBusy(false);
       lock.current = false;

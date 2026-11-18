@@ -150,6 +150,14 @@ function buildConditions(s: CommercialQuoteSnapshot): string[] {
     const t = c?.trim();
     if (t && !defaults.has(t)) out.push(t);
   }
+  if (
+    s.implantationCompensation &&
+    s.implantationCompensation.compensatedCents > 0
+  ) {
+    out.push(
+      `Se compensan ${formatQuoteEur(s.implantationCompensation.compensatedCents)} de implantaciones ya abonadas (no es un descuento comercial).`
+    );
+  }
   if (s.notes?.trim()) out.push(`Nota: ${s.notes.trim()}`);
   return out;
 }
@@ -184,6 +192,13 @@ export function mapCommercialQuoteToTemplateData(
       : 'Instalación presencial (no incluida)',
     valor: formatQuoteEur(0),
   });
+  const compensation = s.implantationCompensation;
+  if (compensation && compensation.compensatedCents > 0) {
+    iniciales.push({
+      label: 'Compensación implantaciones ya abonadas',
+      valor: `−${formatQuoteEur(compensation.compensatedCents)}`,
+    });
+  }
 
   const cuotas: QuoteTemplateRow[] = [
     {

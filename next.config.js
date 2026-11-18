@@ -6,11 +6,19 @@ const nextConfig = {
     ignoreDuringBuilds: true,
   },
   images: { unoptimized: true },
+  // PRE-05C: no reescribir Location 127.0.0.1→localhost en middleware
+  // (rompe cookies host-only y Server Actions con Failed to fetch / CORS).
+  skipMiddlewareUrlNormalize: true,
   experimental: {
     // Necesario en Next 13.5 para 'use server' (logout / actions).
     serverActions: true,
     // pdf-parse v2 (pdfjs) no debe empaquetarse en el bundle de server actions.
-    serverComponentsExternalPackages: ['pdf-parse'],
+    // Chromium / puppeteer-core: PRE-05B HTML→PDF en Vercel y server actions.
+    serverComponentsExternalPackages: [
+      'pdf-parse',
+      'puppeteer-core',
+      '@sparticuz/chromium',
+    ],
   },
 };
 

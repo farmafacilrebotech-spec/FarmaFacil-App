@@ -68,6 +68,8 @@ export function ChangePlanDialog({
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = React.useState(false);
+  /** Contratación explícita (crea suscripción). Obligatorio sin piloto abierto. */
+  const [contractAck, setContractAck] = React.useState(false);
 
   const options = React.useMemo(() => buildChangePlanOptions(plans), [plans]);
   const commercial = React.useMemo(
@@ -106,11 +108,19 @@ export function ChangePlanDialog({
       setError(null);
       setSubmitting(false);
       setConfirmOpen(false);
+      setContractAck(false);
     }
   }, [open]);
 
   async function handleConfirm() {
     if (!selectedKey || submitting || !selected?.assignable) return;
+    if (!hasOpenTrial && selectedIsCommercial && !contractAck) {
+      setError(
+        'Debes confirmar expresamente la contratación antes de asignar el plan de pago.'
+      );
+      setConfirmOpen(false);
+      return;
+    }
     setError(null);
     setSubmitting(true);
 
@@ -120,7 +130,11 @@ export function ChangePlanDialog({
         reason: hasOpenTrial
           ? 'sa_change_trial_plan_dialog'
           : 'sa_change_plan_dialog',
-        confirmContract: hasOpenTrial ? false : undefined,
+        confirmContract: hasOpenTrial
+          ? false
+          : selectedIsCommercial
+            ? true
+            : undefined,
       });
       if (!result.ok) {
         setError(result.error);
@@ -320,14 +334,29 @@ export function ChangePlanDialog({
                     lanzamiento.
                   </p>
                 ) : selectedIsCommercial ? (
-                  <p>
-                    Tarifa normal{' '}
-                    <strong className="text-foreground">
-                      {selected?.listMonthlyLabel}/mes
-                    </strong>
-                    . Reserva de plaza y contratación formal son procesos
-                    aparte.
-                  </p>
+                  <>
+                    <p>
+                      Tarifa normal{' '}
+                      <strong className="text-foreground">
+                        {selected?.listMonthlyLabel}/mes
+                      </strong>
+                      . Esto crea la suscripción comercial. La plaza de
+                      lanzamiento se reserva aparte.
+                    </p>
+                    <label className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 px-3 py-2 text-left text-foreground">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={contractAck}
+                        disabled={submitting}
+                        onChange={(e) => setContractAck(e.target.checked)}
+                      />
+                      <span>
+                        Confirmo la <strong>contratación</strong> de este plan
+                        (no es un cambio de plan en prueba).
+                      </span>
+                    </label>
+                  </>
                 ) : null}
               </div>
             </AlertDialogDescription>
@@ -335,7 +364,10 @@ export function ChangePlanDialog({
           <AlertDialogFooter>
             <AlertDialogCancel disabled={submitting}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
-              disabled={submitting}
+              disabled={
+                submitting ||
+                (!hasOpenTrial && selectedIsCommercial && !contractAck)
+              }
               onClick={(e) => {
                 e.preventDefault();
                 void handleConfirm();
@@ -346,6 +378,10 @@ export function ChangePlanDialog({
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Aplicando…
                 </>
+              ) : hasOpenTrial ? (
+                'Confirmar'
+              ) : selectedIsCommercial ? (
+                'Contratar plan'
               ) : (
                 'Confirmar'
               )}

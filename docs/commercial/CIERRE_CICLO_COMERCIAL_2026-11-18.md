@@ -17,6 +17,7 @@ Rama: `integration/farmafacil-release` · Servidor `:3070` · Staging.
 | B3 | Estados en castellano; labels comerciales; emisor en Configuración |
 | B4 | Tabla `pharmacy_implantation_payments` (102) + compensación sin doble uso |
 | B5 | Generador HTML corporativo PRE-05 + regresiones BHP4 |
+| PRE-05B | PDF descarga/email = misma plantilla HTML via Chromium (`lib/pdf/html-to-pdf.ts`) |
 | B6 | `platform_issuer_profile` (103); NIF/IBAN vacíos hasta verificación |
 | B7 | E2E prep selector / emisor / no Starter comercial |
 

@@ -55,6 +55,8 @@ export type QuoteInternalMeta = {
     sha256: string;
     generatedAt: string;
     generatedBy: string | null;
+    /** PRE-05B: html-template (Chromium) vs legacy jsPDF. */
+    engine?: 'html-template' | 'jspdf';
   } | null;
 };
 
@@ -82,6 +84,20 @@ export type CommercialQuoteSnapshot = {
   notes: string | null;
   validUntil: string | null;
   commercialConditions: string[];
+  /**
+   * Compensación de implantaciones ya abonadas (no es descuento comercial).
+   * Los importes de breakdown.oneTime* ya vienen netos de esta compensación.
+   */
+  implantationCompensation?: {
+    originalOneTimeNetCents: number;
+    compensatedCents: number;
+    allocations: Array<{
+      paymentId: string;
+      appliedCents: number;
+      concept?: string;
+      label?: string;
+    }>;
+  } | null;
   breakdown: {
     oneTimeNetCents: number;
     oneTimeVatCents: number;

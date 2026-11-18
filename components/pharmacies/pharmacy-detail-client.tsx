@@ -58,6 +58,7 @@ import { PharmacyLogo } from '@/components/brand';
 import { PharmacyLogoManager } from '@/components/pharmacies/pharmacy-logo-manager';
 import { ChangePlanDialog } from '@/components/pharmacies/change-plan-dialog';
 import { PharmacySubscriptionPanel } from '@/components/pharmacies/pharmacy-subscription-panel';
+import { ImplantationPaymentsPanel } from '@/components/pharmacies/implantation-payments-panel';
 import { LaunchPromoPharmacyBlock } from '@/components/pharmacies/launch-promo-2027-panel';
 import type {
   LaunchSeatDetail,
@@ -1279,6 +1280,10 @@ export function PharmacyDetailClient({
             <PharmacySubscriptionPanel
               pharmacy={pharmacy}
               launchSeatActive={Boolean(launchSeats?.pharmacyHasActiveSeat)}
+            />
+            <ImplantationPaymentsPanel
+              pharmacyId={pharmacy.id}
+              canManage={canManageLaunchSeats}
             />
           </div>
         )}

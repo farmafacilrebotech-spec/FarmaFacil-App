@@ -52,11 +52,21 @@ start_server() {
   : >>"$LOG"
   echo "==== keepalive restart $(date -u +%Y-%m-%dT%H:%M:%SZ) ====" >>"$LOG"
 
+  # PRE-05C: origen coherente con E2E (127.0.0.1). skipMiddlewareUrlNormalize
+  # está en next.config.js; no hace falta el env __NEXT_* aquí.
+  export APP_URL="http://127.0.0.1:${PORT}"
+  export NEXT_PUBLIC_APP_URL="http://127.0.0.1:${PORT}"
+  export FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN="${FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN:-1}"
+
   # setsid (si existe) desacopla del grupo de señales del launcher
   if command -v setsid >/dev/null 2>&1; then
-    setsid node --env-file=.env.staging.local ./node_modules/next/dist/bin/next dev -H "$HOST" -p "$PORT" >>"$LOG" 2>&1 &
+    setsid env APP_URL="$APP_URL" NEXT_PUBLIC_APP_URL="$NEXT_PUBLIC_APP_URL" \
+      FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN="$FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN" \
+      node --env-file=.env.staging.local ./node_modules/next/dist/bin/next dev -H "$HOST" -p "$PORT" >>"$LOG" 2>&1 &
   else
-    nohup node --env-file=.env.staging.local ./node_modules/next/dist/bin/next dev -H "$HOST" -p "$PORT" >>"$LOG" 2>&1 &
+    nohup env APP_URL="$APP_URL" NEXT_PUBLIC_APP_URL="$NEXT_PUBLIC_APP_URL" \
+      FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN="$FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN" \
+      node --env-file=.env.staging.local ./node_modules/next/dist/bin/next dev -H "$HOST" -p "$PORT" >>"$LOG" 2>&1 &
   fi
   local pid=$!
   echo "$pid" >"$PID_FILE"

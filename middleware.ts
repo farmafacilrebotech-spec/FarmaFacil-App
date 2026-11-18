@@ -1,4 +1,4 @@
-import type { NextRequest, NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 import { updateSession } from '@/lib/supabase/middleware';
 import { middlewareRedirect } from '@/lib/auth/middleware-redirect';
 
@@ -53,9 +53,10 @@ export async function middleware(request: NextRequest) {
 
   // Sin sesión en ruta protegida → login del panel (farmacia/plataforma).
   // /cuenta y /e/* son públicos: no usar /login ahí.
-  // Nota: Next Edge puede normalizar 127.0.0.1→localhost en Location absoluta.
-  // El flujo invite (callback→first-access) usa Location relativa y no pasa por aquí.
-  // La redirección login→continue se hace en login/page.tsx con redirect() relativo.
+  // PRE-05C: Location absoluta desde Host + arranque con
+  // __NEXT_NO_MIDDLEWARE_URL_NORMALIZE=1 (si no, Next reescribe 127.0.0.1→localhost
+  // y las Server Actions fallan con Failed to fetch / CORS).
+  // Location relativa no sirve en middleware Next 13.5 (Invalid URL en adapter).
   if (!user && !isPublicRoute) {
     const params = new URLSearchParams();
     // Nunca poner tokens (/q/...) ni secretos en ?next=

@@ -34,6 +34,12 @@ import {
   type CommercialQuoteStatus,
 } from '@/lib/commercial/quote-types';
 import {
+  applyImplantationCompensation,
+  IMPLANTATION_CONCEPTS,
+  implantationPendingCents,
+  type ImplantationConcept,
+} from '@/lib/commercial/implantation-payments';
+import {
   type BillingInterval,
   type CommercialPlanId,
   type CommercialTariffConfig,
@@ -42,6 +48,12 @@ import {
 import { loadTariffConfigForSession } from '@/lib/commercial/tariff-queries';
 import { sendTransactionalEmail } from '@/lib/email/send';
 import { buildCommercialQuoteEmailBodies } from '@/lib/email/commercial-quote-email';
+import { getCorporateEmailSendMode } from '@/lib/email/send-config';
+import { assertCorporateEmailRecipientsAllowed } from '@/lib/email/send-recipient-allowlist';
+
+function vatFromNet(netCents: number, vatBps: number): number {
+  return Math.round((Math.max(0, netCents) * vatBps) / 10_000);
+}
 
 export type QuoteActionResult<T = Record<string, unknown>> =
   | ({ ok: true } & T)
@@ -173,8 +185,106 @@ export async function saveCommercialQuoteAction(input: {
 
   const breakdown = buildQuoteBreakdown(docInput);
   const snapshot = buildCommercialQuoteSnapshot(docInput, breakdown);
-  const lines = buildCommercialQuoteLines(snapshot);
   const referenceCode = makeReferenceCode();
+  const supabase = createClient();
+
+  // Compensación de implantaciones ya abonadas (farmacia vinculada).
+  let compensationAllocations: Array<{
+    paymentId: string;
+    appliedCents: number;
+  }> = [];
+  if (pharmacyId) {
+    const { data: payRows } = await supabase
+      .from('pharmacy_implantation_payments')
+      .select(
+        'id, concept, amount_paid_cents, applied_cents, payment_status'
+      )
+      .eq('pharmacy_id', pharmacyId);
+
+    const pendingPayments = (payRows ?? [])
+      .filter((r) => {
+        const st = String(r.payment_status ?? '');
+        return st !== 'void' && st !== 'refunded';
+      })
+      .map((r) => {
+        const pending = implantationPendingCents({
+          amountPaidCents: Number(r.amount_paid_cents) || 0,
+          appliedCents: Number(r.applied_cents) || 0,
+        });
+        return {
+          id: String(r.id),
+          concept: r.concept as ImplantationConcept,
+          pendingCents: pending,
+        };
+      })
+      .filter((p) => p.pendingCents > 0);
+
+    if (pendingPayments.length > 0) {
+      const applied = applyImplantationCompensation({
+        initialNetCents: snapshot.breakdown.oneTimeNetCents,
+        payments: pendingPayments.map((p) => ({
+          id: p.id,
+          pendingCents: p.pendingCents,
+        })),
+      });
+      if (applied.compensatedCents > 0) {
+        const oneTimeNet = applied.pendingInitialNetCents;
+        const oneTimeVat = vatFromNet(oneTimeNet, snapshot.vatBps);
+        const oneTimeGross = oneTimeNet + oneTimeVat;
+        const delta = applied.compensatedCents;
+        const firstYearNet = Math.max(
+          0,
+          snapshot.breakdown.firstYearNetCents - delta
+        );
+        const firstYearVat = vatFromNet(firstYearNet, snapshot.vatBps);
+        snapshot.implantationCompensation = {
+          originalOneTimeNetCents: applied.originalInitialNetCents,
+          compensatedCents: applied.compensatedCents,
+          allocations: applied.allocations.map((a) => {
+            const src = pendingPayments.find((p) => p.id === a.paymentId);
+            const concept = src?.concept;
+            return {
+              paymentId: a.paymentId,
+              appliedCents: a.appliedCents,
+              concept,
+              label: concept
+                ? IMPLANTATION_CONCEPTS[concept]?.label
+                : undefined,
+            };
+          }),
+        };
+        snapshot.breakdown = {
+          ...snapshot.breakdown,
+          oneTimeNetCents: oneTimeNet,
+          oneTimeVatCents: oneTimeVat,
+          oneTimeGrossCents: oneTimeGross,
+          firstYearNetCents: firstYearNet,
+          firstYearVatCents: firstYearVat,
+          firstYearGrossCents: firstYearNet + firstYearVat,
+        };
+        compensationAllocations = applied.allocations;
+      }
+    }
+  }
+
+  const lines = buildCommercialQuoteLines(snapshot);
+  if (
+    snapshot.implantationCompensation &&
+    snapshot.implantationCompensation.compensatedCents > 0
+  ) {
+    lines.push({
+      lineType: 'one_time_discount',
+      description: 'Compensación implantaciones ya abonadas',
+      quantity: 1,
+      unitCents: -snapshot.implantationCompensation.compensatedCents,
+      lineNetCents: -snapshot.implantationCompensation.compensatedCents,
+      sortOrder: lines.length,
+      metadata: {
+        kind: 'implantation_compensation',
+        allocations: snapshot.implantationCompensation.allocations,
+      },
+    });
+  }
 
   const meta = appendStatusHistory(
     { v: 1, history: [], emailSends: [] },
@@ -187,7 +297,6 @@ export async function saveCommercialQuoteAction(input: {
     }
   );
 
-  const supabase = createClient();
   const { data: inserted, error } = await supabase
     .from('commercial_quotes')
     .insert({
@@ -200,15 +309,15 @@ export async function saveCommercialQuoteAction(input: {
       kiosk_count: breakdown.kioskCount,
       tariff_version_id: tariffVersionId,
       snapshot,
-      one_time_net_cents: breakdown.oneTimeNetCents,
-      one_time_vat_cents: breakdown.oneTimeVatCents,
-      one_time_gross_cents: breakdown.oneTimeGrossCents,
-      recurring_net_cents: breakdown.recurringNetCents,
-      recurring_vat_cents: breakdown.recurringVatCents,
-      recurring_gross_cents: breakdown.recurringGrossCents,
-      first_year_net_cents: breakdown.firstYearNetCents,
-      first_year_vat_cents: breakdown.firstYearVatCents,
-      first_year_gross_cents: breakdown.firstYearGrossCents,
+      one_time_net_cents: snapshot.breakdown.oneTimeNetCents,
+      one_time_vat_cents: snapshot.breakdown.oneTimeVatCents,
+      one_time_gross_cents: snapshot.breakdown.oneTimeGrossCents,
+      recurring_net_cents: snapshot.breakdown.recurringNetCents,
+      recurring_vat_cents: snapshot.breakdown.recurringVatCents,
+      recurring_gross_cents: snapshot.breakdown.recurringGrossCents,
+      first_year_net_cents: snapshot.breakdown.firstYearNetCents,
+      first_year_vat_cents: snapshot.breakdown.firstYearVatCents,
+      first_year_gross_cents: snapshot.breakdown.firstYearGrossCents,
       currency: 'EUR',
       valid_until: snapshot.validUntil,
       notes: snapshot.notes,
@@ -250,6 +359,30 @@ export async function saveCommercialQuoteAction(input: {
       );
       // Presupuesto ya creado; las líneas son auxiliares para PDF (snapshot basta).
     }
+  }
+
+  // Marcar compensaciones aplicadas (idempotente por fila).
+  for (const alloc of compensationAllocations) {
+    const { data: row } = await supabase
+      .from('pharmacy_implantation_payments')
+      .select('applied_cents, amount_paid_cents')
+      .eq('id', alloc.paymentId)
+      .maybeSingle();
+    if (!row) continue;
+    const nextApplied =
+      (Number(row.applied_cents) || 0) + alloc.appliedCents;
+    await supabase
+      .from('pharmacy_implantation_payments')
+      .update({
+        applied_cents: Math.min(
+          nextApplied,
+          Number(row.amount_paid_cents) || nextApplied
+        ),
+        applied_to_quote_id: inserted.id,
+        applied_at: new Date().toISOString(),
+      })
+      .eq('id', alloc.paymentId)
+      .is('applied_to_quote_id', null);
   }
 
   revalidateQuotes();
@@ -377,6 +510,7 @@ export async function getCommercialQuoteDocumentAction(
       sha256,
       generatedAt: new Date().toISOString(),
       generatedBy: by,
+      engine: pdf.source,
     },
   };
   await supabase
@@ -470,6 +604,8 @@ export async function sendCommercialQuoteEmailAction(input: {
   QuoteActionResult<{
     emailStatus: 'sent' | 'failed' | 'not_configured';
     to: string;
+    /** Transporte controlado: PDF generado, sin Resend. */
+    dryRun?: boolean;
   }>
 > {
   const perm = await requireQuotesManage();
@@ -560,6 +696,7 @@ export async function sendCommercialQuoteEmailAction(input: {
       sha256,
       generatedAt: new Date().toISOString(),
       generatedBy: by,
+      engine: pdf.source,
     },
   };
   if (!uploadError) {
@@ -580,6 +717,66 @@ export async function sendCommercialQuoteEmailAction(input: {
     clientName: snapshot.clientName,
     validUntil: snapshot.validUntil,
   });
+
+  // Transporte controlado: dry-run corporativo (PDF sí, Resend no).
+  const sendMode = getCorporateEmailSendMode();
+  const forceDry =
+    (sendMode.enabled && sendMode.dryRun) ||
+    ['1', 'true', 'yes'].includes(
+      (process.env.FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN ?? '')
+        .trim()
+        .toLowerCase()
+    );
+
+  if (forceDry) {
+    meta = appendEmailSend(meta, {
+      at: new Date().toISOString(),
+      to,
+      status: 'sent',
+      error: 'dry_run: PDF generado; no se llamó a Resend',
+      by,
+      providerId: `dry-run-${sha256.slice(0, 12)}`,
+    });
+    const currentStatus = row.status as CommercialQuoteStatus;
+    const updates: Record<string, unknown> = {
+      internal_notes: serializeQuoteInternalMeta(meta),
+      updated_by: by,
+    };
+    if (currentStatus === 'draft') {
+      meta = appendStatusHistory(meta, {
+        at: new Date().toISOString(),
+        from: 'draft',
+        to: 'sent',
+        by,
+        note: `Email dry-run a ${to}`,
+      });
+      updates.status = 'sent';
+      updates.internal_notes = serializeQuoteInternalMeta(meta);
+    }
+    await supabase.from('commercial_quotes').update(updates).eq('id', input.quoteId);
+    revalidateQuotes();
+    return { ok: true, emailStatus: 'sent', to, dryRun: true };
+  }
+
+  const recipientGate = assertCorporateEmailRecipientsAllowed([to]);
+  if (!recipientGate.ok) {
+    meta = appendEmailSend(meta, {
+      at: new Date().toISOString(),
+      to,
+      status: 'failed',
+      error: recipientGate.error,
+      by,
+    });
+    await supabase
+      .from('commercial_quotes')
+      .update({
+        internal_notes: serializeQuoteInternalMeta(meta),
+        updated_by: by,
+      })
+      .eq('id', input.quoteId);
+    revalidateQuotes();
+    return { ok: false, error: recipientGate.error, code: 'send_failed' };
+  }
 
   const sendResult = await sendTransactionalEmail({
     to,
