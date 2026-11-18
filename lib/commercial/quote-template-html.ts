@@ -168,7 +168,6 @@ export function mapCommercialQuoteToTemplateData(
   const s = input.snapshot;
   const b = s.breakdown;
   const monthly = s.interval === 'monthly';
-  const period = monthly ? 'mes' : 'año';
   const vatLabel = `IVA (${formatPercent(s.vatBps)})`;
 
   const iniciales: QuoteTemplateRow[] = [];
@@ -200,23 +199,48 @@ export function mapCommercialQuoteToTemplateData(
     });
   }
 
+  const vatOn = (netCents: number) =>
+    Math.round((Math.max(0, netCents) * s.vatBps) / 10_000);
+  const withVat = (netCents: number) => netCents + vatOn(netCents);
+
+  // Kiosko: cobro mensual conceptual (aunque el software sea prepago anual).
+  const kioskMonthlyNetCents =
+    s.kioskCount > 0 ? s.kioskLicenseMonthlyCents * s.kioskCount : 0;
+  const softwareRecurringNet = b.planRecurringCents;
+  const softwareRecurringGross = withVat(softwareRecurringNet);
+  const kioskMonthlyGross = withVat(kioskMonthlyNetCents);
+
   const cuotas: QuoteTemplateRow[] = [
     {
-      label: `Software ${s.planName} / ${period}`,
-      valor: formatQuoteEur(b.planRecurringCents),
+      label: monthly
+        ? `Software ${s.planName} / mes (neto)`
+        : `Software ${s.planName} / año · prepago anual (neto)`,
+      valor: formatQuoteEur(softwareRecurringNet),
+    },
+    {
+      label: monthly
+        ? `Software ${s.planName} / mes · con IVA`
+        : `Software ${s.planName} / año · con IVA`,
+      valor: formatQuoteEur(softwareRecurringGross),
     },
   ];
   if (s.kioskCount > 0) {
     cuotas.push({
-      label: monthly
-        ? KIOSK_USAGE_FEE_LABEL_ES
-        : `${KIOSK_USAGE_FEE_LABEL_ES} (importe anual)`,
-      valor: formatQuoteEur(b.kioskLicenseRecurringCents),
+      label: `${KIOSK_USAGE_FEE_LABEL_ES} / mes (neto)`,
+      valor: formatQuoteEur(kioskMonthlyNetCents),
+    });
+    cuotas.push({
+      label: `${KIOSK_USAGE_FEE_LABEL_ES} / mes · con IVA`,
+      valor: formatQuoteEur(kioskMonthlyGross),
     });
   }
   cuotas.push({
-    label: `Total ${monthly ? 'mensual' : 'anual'} sin IVA`,
-    valor: formatQuoteEur(b.recurringNetCents),
+    label: monthly
+      ? 'Total mensual sin IVA'
+      : 'Coste recurrente anualizado sin IVA',
+    valor: formatQuoteEur(
+      monthly ? b.recurringNetCents : b.firstYearSubscriptionCents
+    ),
   });
 
   // Evolución 2027-2029+ (misma fuente que quote-pdf; no toca calculateQuote).
@@ -250,9 +274,12 @@ export function mapCommercialQuoteToTemplateData(
       valores: rows.map(pick),
       destacado,
     });
+    const softwareMonthLabel = monthly
+      ? 'Software / mes'
+      : 'Software / mes (equiv. prepago anual)';
     evolucion = [
       row('Descuento software', (r) => formatPercent(r.saasDiscountBps)),
-      row('Software / mes', (r) => formatQuoteEur(r.saasMonthlyCents)),
+      row(softwareMonthLabel, (r) => formatQuoteEur(r.saasMonthlyCents)),
       row(KIOSK_USAGE_FEE_LABEL_ES, (r) => formatQuoteEur(r.kioskMonthlyCents)),
       row('Recurrente / año', (r) => formatQuoteEur(r.recurringAnnualCents)),
       row('Pagos iniciales', (r) => formatQuoteEur(r.oneTimeNetCents)),
@@ -265,6 +292,28 @@ export function mapCommercialQuoteToTemplateData(
   }
 
   const launch = s.cohortPricing === 'launch_2027';
+  const modalidad = monthly
+    ? 'Pago mensual'
+    : s.kioskCount > 0
+      ? 'Software anual · kiosko mensual'
+      : 'Pago anual';
+
+  const cuotaNota = (() => {
+    if (monthly) {
+      return s.kioskCount > 0
+        ? `Software + uso de ${kioskPhrase(s.kioskCount)}`
+        : 'Software';
+    }
+    const parts: string[] = [
+      `Software anual ${formatQuoteEur(softwareRecurringGross)} con IVA`,
+    ];
+    if (s.kioskCount > 0) {
+      parts.push(
+        `Kiosko mensual ${formatQuoteEur(kioskMonthlyGross)} con IVA`
+      );
+    }
+    return parts.join(' · ');
+  })();
 
   return {
     referencia: input.referenceCode?.trim() || 'sin referencia',
@@ -274,15 +323,14 @@ export function mapCommercialQuoteToTemplateData(
     contacto: s.contactName || '—',
     email: s.contactEmail || '—',
     plan: s.planName,
-    modalidad: monthly ? 'Pago mensual' : 'Pago anual',
+    modalidad,
     oferta: offerLabel(s.cohortPricing),
     inicial_bruto: formatQuoteEur(b.oneTimeGrossCents),
-    cuota_destacada_label: `Cuota ${monthly ? 'mensual' : 'anual'} · con IVA`,
+    cuota_destacada_label: monthly
+      ? 'Cuota mensual · con IVA'
+      : 'Coste recurrente anualizado · con IVA',
     cuota_destacada: formatQuoteEur(b.recurringGrossCents),
-    cuota_destacada_nota:
-      s.kioskCount > 0
-        ? `Software + uso de ${kioskPhrase(s.kioskCount)}`
-        : 'Software',
+    cuota_destacada_nota: cuotaNota,
     iniciales,
     inicial_neto: formatQuoteEur(b.oneTimeNetCents),
     impuestos_label: vatLabel,
@@ -292,8 +340,9 @@ export function mapCommercialQuoteToTemplateData(
     total_neto: formatQuoteEur(b.firstYearNetCents),
     total_impuestos: formatQuoteEur(b.firstYearVatCents),
     total_bruto: formatQuoteEur(b.firstYearGrossCents),
-    nota_anualizacion:
-      'Importes anualizados para 12 meses; no constituyen un calendario real de cobros.',
+    nota_anualizacion: monthly
+      ? 'Importes mensualizados; el total del primer año acumula 12 meses.'
+      : 'El software se cobra anualmente; el kiosko se cobra cada mes. El coste recurrente anualizado suma ambos en base 12 meses.',
     nota_evolucion: launch
       ? 'Descuentos de lanzamiento por año natural. Tarifas posteriores sujetas a revisión contractual.'
       : 'Previsión por año natural. Tarifas posteriores sujetas a revisión contractual.',
@@ -452,12 +501,15 @@ function getParsedTemplate() {
 // Logo
 // -----------------------------------------------------------------------------
 
-export const QUOTE_LOGO_PUBLIC_PATH = '/images/logos/farmafacil-logo-512.png';
+/** Marca circular oficial (sin lienzo cuadrado negro). */
+export const QUOTE_LOGO_PUBLIC_PATH = '/images/logos/farmafacil-mark.svg';
+/** Nombre de fichero en public/images/logos (SVG circular). */
+export const QUOTE_LOGO_FILE_NAME = 'farmafacil-mark.svg';
 
 let logoCache: string | null | undefined;
 
 /**
- * Data URI del logo oficial. Solo en Node (lectura síncrona del fichero público);
+ * Data URI del logo circular oficial. Solo en Node (lectura síncrona);
  * en navegador/edge devuelve null.
  */
 export function loadCommercialQuoteLogoDataUri(): string | null {
@@ -479,9 +531,15 @@ export function loadCommercialQuoteLogoDataUri(): string | null {
       'public',
       'images',
       'logos',
-      'farmafacil-logo-512.png'
+      QUOTE_LOGO_FILE_NAME
     );
-    logoCache = `data:image/png;base64,${fs.readFileSync(file).toString('base64')}`;
+    const raw = fs.readFileSync(file);
+    // SVG: data URI utf-8 (Chromium PDF lo renderiza como círculo).
+    if (QUOTE_LOGO_FILE_NAME.endsWith('.svg')) {
+      logoCache = `data:image/svg+xml;base64,${raw.toString('base64')}`;
+    } else {
+      logoCache = `data:image/png;base64,${raw.toString('base64')}`;
+    }
   } catch {
     logoCache = null;
   }

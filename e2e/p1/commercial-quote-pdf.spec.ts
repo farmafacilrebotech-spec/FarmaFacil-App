@@ -3,8 +3,7 @@ import { readFileSync } from 'node:fs';
 import { loginAs } from '../helpers/auth';
 
 /**
- * PRE-05C · Descarga PDF y envío (dry-run) desde el navegador real.
- * Reproduce el fallo Failed to fetch / CORS por Location localhost.
+ * PRE-05C · Descarga PDF / envío simulado desde el navegador real.
  * No envía emails comerciales reales (FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN=1).
  */
 test.describe('PRE-05C presupuesto PDF UI', () => {
@@ -22,7 +21,6 @@ test.describe('PRE-05C presupuesto PDF UI', () => {
     expect([307, 302]).toContain(res.status());
     const location = res.headers()['location'] || '';
     expect(location).toMatch(/\/login\?/);
-    // Relativa (/login?…) o absoluta en 127.0.0.1 — nunca localhost (PRE-05C).
     expect(location).not.toMatch(/localhost/i);
     if (/^https?:\/\//i.test(location)) {
       expect(location).toMatch(/127\.0\.0\.1/);
@@ -35,7 +33,6 @@ test.describe('PRE-05C presupuesto PDF UI', () => {
     await page.goto('/tarifas');
     await page.getByRole('tab', { name: /simulador/i }).click();
 
-    // Crear presupuesto mínimo para garantizar fila seleccionable.
     await page.locator('#sim-client').fill('Farmacia PRE-05C E2E');
     await page.locator('#sim-contact').fill('E2E SuperAdmin');
     await page.locator('#sim-email').fill('e2e.pre05c@farmafacil.test');
@@ -53,35 +50,52 @@ test.describe('PRE-05C presupuesto PDF UI', () => {
     const downloadPromise = page.waitForEvent('download', { timeout: 120_000 });
     await downloadBtn.click();
     const download = await downloadPromise;
-    const name = download.suggestedFilename();
-    expect(name).toMatch(/presupuesto-.*\.pdf$/i);
-
+    expect(download.suggestedFilename()).toMatch(/presupuesto-.*\.pdf$/i);
     const path = await download.path();
     expect(path).toBeTruthy();
-    const head = readFileSync(path!).subarray(0, 5).toString('utf8');
-    expect(head).toBe('%PDF-');
-
-    // No debe haber toast de sesión/origen fallido.
+    expect(readFileSync(path!).subarray(0, 5).toString('utf8')).toBe('%PDF-');
     await expect(page.getByText(/sesión o origen/i)).toHaveCount(0);
   });
 
-  test('envío dry-run desde la UI genera PDF sin Resend real', async ({
+  test('envío simulado: no pasa a Enviado; reintento permitido', async ({
     page,
   }) => {
     await page.goto('/tarifas');
     await page.getByRole('tab', { name: /presupuestos/i }).click();
 
-    const sendBtn = page.getByRole('button', {
-      name: /enviar por email|enviar presupuesto/i,
+    const statusBadge = page.getByText(/^Borrador$|^Enviado$/).first();
+    await expect(statusBadge).toBeVisible({ timeout: 20_000 });
+
+    async function simulateOnce() {
+      const sendBtn = page.getByRole('button', {
+        name: /enviar por email/i,
+      });
+      await sendBtn.first().click();
+      await page
+        .getByRole('button', {
+          name: /^(confirmar simulación|confirmar y enviar)$/i,
+        })
+        .click();
+      await expect(
+        page.getByText(/simulaci[oó]n de env[ií]o/i).first()
+      ).toBeVisible({ timeout: 120_000 });
+      await expect(
+        page.getByText(/no se ha enviado ningún correo/i).first()
+      ).toBeVisible();
+    }
+
+    await simulateOnce();
+    // Estado comercial permanece Borrador
+    await expect(page.getByText(/Borrador/i).first()).toBeVisible({
+      timeout: 15_000,
     });
-    await expect(sendBtn.first()).toBeVisible({ timeout: 20_000 });
-    await sendBtn.first().click();
+    await expect(page.getByText(/Simulado \(sin correo\)/i).first()).toBeVisible({
+      timeout: 15_000,
+    });
 
-    await page.getByRole('button', { name: /^confirmar y enviar$/i }).click();
-
-    await expect(
-      page.getByText(/env[ií]o simulado \(dry-run\)|presupuesto enviado a/i).first()
-    ).toBeVisible({ timeout: 120_000 });
+    // Reintento controlado (segunda simulación)
+    await simulateOnce();
+    await expect(page.getByText(/Borrador/i).first()).toBeVisible();
     await expect(page.getByText(/sesión o origen/i)).toHaveCount(0);
   });
 });

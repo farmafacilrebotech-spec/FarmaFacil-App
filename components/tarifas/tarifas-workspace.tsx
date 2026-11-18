@@ -40,6 +40,7 @@ export type TarifasWorkspaceProps = {
   quotePharmacies: QuotePharmacyOption[];
   emailReady: boolean;
   emailMissing: string[];
+  emailDryRun?: boolean;
 };
 
 export function TarifasWorkspace({
@@ -53,6 +54,7 @@ export function TarifasWorkspace({
   quotePharmacies,
   emailReady,
   emailMissing,
+  emailDryRun = false,
 }: TarifasWorkspaceProps) {
   const [config, setConfig] = React.useState<CommercialTariffConfig>(() =>
     canViewInternalCosts ? initialConfig : withoutInternalCosts(initialConfig)
@@ -124,6 +126,7 @@ export function TarifasWorkspace({
           canManage={canManageQuotes}
           emailReady={emailReady}
           emailMissing={emailMissing}
+          emailDryRun={emailDryRun}
           onPrepareContract={(pharmacyId) => {
             setContractPharmacyId(pharmacyId);
             setTab('contratacion');

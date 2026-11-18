@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import type { CommercialQuoteListItem } from '@/lib/commercial/quote-types';
 import {
   COMMERCIAL_QUOTE_STATUS_LABELS,
+  QUOTE_EMAIL_SEND_STATUS_LABELS,
   type CommercialQuoteStatus,
 } from '@/lib/commercial/quote-types';
 import { formatCentsEur } from '@/lib/tarifas';
@@ -55,6 +56,7 @@ export function QuotesPanel({
   canManage,
   emailReady,
   emailMissing,
+  emailDryRun = false,
   onPrepareContract,
 }: {
   quotes: CommercialQuoteListItem[];
@@ -62,6 +64,8 @@ export function QuotesPanel({
   canManage: boolean;
   emailReady: boolean;
   emailMissing: string[];
+  /** Transporte staging: simula envío (PDF sí, Resend no). */
+  emailDryRun?: boolean;
   onPrepareContract?: (pharmacyId: string | null) => void;
 }) {
   const router = useRouter();
@@ -210,17 +214,22 @@ export function QuotesPanel({
         });
         return;
       }
+      if (result.emailStatus === 'simulated' || result.dryRun) {
+        toast.message(`Simulación de envío a ${result.to}`, {
+          description:
+            'PDF generado con plantilla corporativa. No se ha enviado ningún correo real. El estado del presupuesto no cambia.',
+        });
+        setSendOpen(false);
+        router.refresh();
+        return;
+      }
       if (result.emailStatus !== 'sent') {
         toast.error('El presupuesto no se ha enviado.', {
           description: 'Revisa la configuración de email del servidor.',
         });
         return;
       }
-      toast.success(
-        result.dryRun
-          ? `Envío simulado (dry-run) a ${result.to}`
-          : `Presupuesto enviado a ${result.to}`
-      );
+      toast.success(`Presupuesto enviado a ${result.to}`);
       setSendOpen(false);
       router.refresh();
     } catch (err) {
@@ -595,21 +604,41 @@ export function QuotesPanel({
                 {selected.emailSends
                   .slice()
                   .reverse()
-                  .map((e, i) => (
-                    <li
-                      key={`${e.at}-${i}`}
-                      className="rounded-md border border-border/70 px-3 py-2"
-                    >
-                      <span className="font-medium">{e.to}</span>
-                      <span className="text-muted-foreground">
-                        {' '}
-                        · {e.status} · {formatDateTime(e.at)}
-                      </span>
-                      {e.error ? (
-                        <div className="text-xs text-destructive">{e.error}</div>
-                      ) : null}
-                    </li>
-                  ))}
+                  .map((e, i) => {
+                    const label =
+                      QUOTE_EMAIL_SEND_STATUS_LABELS[
+                        e.status as keyof typeof QUOTE_EMAIL_SEND_STATUS_LABELS
+                      ] ?? e.status;
+                    const isSim =
+                      e.status === 'simulated' || e.dryRun === true;
+                    const isFail =
+                      e.status === 'failed' || e.status === 'not_configured';
+                    return (
+                      <li
+                        key={`${e.at}-${i}`}
+                        className="rounded-md border border-border/70 px-3 py-2"
+                      >
+                        <span className="font-medium">{e.to}</span>
+                        <span className="text-muted-foreground">
+                          {' '}
+                          · {label} · {formatDateTime(e.at)}
+                        </span>
+                        {e.error ? (
+                          <div
+                            className={
+                              isFail
+                                ? 'text-xs text-destructive'
+                                : isSim
+                                  ? 'text-xs text-amber-800 dark:text-amber-200'
+                                  : 'text-xs text-muted-foreground'
+                            }
+                          >
+                            {e.error}
+                          </div>
+                        ) : null}
+                      </li>
+                    );
+                  })}
               </ul>
             )}
           </div>
@@ -620,14 +649,18 @@ export function QuotesPanel({
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {emailReady
-                ? 'Confirmar envío por email'
-                : 'Envío por email no disponible'}
+              {!emailReady
+                ? 'Envío por email no disponible'
+                : emailDryRun
+                  ? 'Simular envío por email'
+                  : 'Confirmar envío por email'}
             </DialogTitle>
             <DialogDescription>
-              {emailReady
-                ? 'Se enviará el presupuesto a la dirección de contacto guardada. Solo se usará el remitente configurado en el servidor (EMAIL_FROM).'
-                : 'No se puede enviar todavía: faltan variables de entorno en el servidor. No se ha enviado ni se enviará ningún correo hasta configurarlas.'}
+              {!emailReady
+                ? 'No se puede enviar todavía: faltan variables de entorno en el servidor. No se ha enviado ni se enviará ningún correo hasta configurarlas.'
+                : emailDryRun
+                  ? 'Modo simulación activo: se generará el PDF corporativo y se registrará el intento, pero no se llamará a Resend ni cambiará el estado a Enviado.'
+                  : 'Se enviará el presupuesto a la dirección de contacto guardada. Solo se usará el remitente configurado en el servidor (EMAIL_FROM).'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 text-sm">
@@ -673,7 +706,7 @@ export function QuotesPanel({
                   Enviando…
                 </>
               ) : emailReady ? (
-                'Confirmar y enviar'
+                emailDryRun ? 'Confirmar simulación' : 'Confirmar y enviar'
               ) : (
                 'Envío no disponible'
               )}

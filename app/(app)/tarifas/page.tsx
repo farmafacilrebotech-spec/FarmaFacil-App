@@ -80,6 +80,7 @@ export default async function TarifasPage() {
         quotePharmacies={quotePharmacies}
         emailReady={emailReadiness.canSend}
         emailMissing={emailReadiness.missing}
+        emailDryRun={emailReadiness.dryRun}
       />
     </div>
   );

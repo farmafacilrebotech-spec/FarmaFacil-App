@@ -156,12 +156,22 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
     assert.ok(html.includes('Oferta Lanzamiento 2027'));
   });
 
-  it('BHP4 anual: 3.111,88 € con IVA primer año (311188 céntimos)', () => {
+  it('BHP4 anual: 3.111,88 € con IVA; periodicidad software anual + kiosko mensual', () => {
     const { snapshot, html } = renderBhp4({ interval: 'annual' });
     assert.equal(snapshot.breakdown.firstYearGrossCents, 311188);
-    assert.ok(html.includes('3.111,88 €'));
-    assert.ok(html.includes('Pago anual'));
-    assert.ok(html.includes('Cuota anual · con IVA'));
+    for (const text of [
+      '3.111,88 €',
+      '1.548,80 €',
+      '851,60 €',
+      '59,29 €',
+      '1.563,08 €',
+      'Coste recurrente anualizado · con IVA',
+      'Software anual · kiosko mensual',
+      'Software / mes (equiv. prepago anual)',
+    ]) {
+      assert.ok(html.includes(text), `falta ${text}`);
+    }
+    assert.equal(html.includes('Cuota anual · con IVA'), false);
   });
 
   it('no incluye planes legacy ni textos del compositor / marcadores sin resolver', () => {
@@ -227,10 +237,12 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
       data.iniciales.map((r) => r.valor),
       example.iniciales.map((r: { valor: string }) => r.valor)
     );
-    assert.deepEqual(
-      data.cuotas.map((r) => r.valor),
-      example.cuotas.map((r: { valor: string }) => r.valor)
-    );
+    // Cuotas: netos mensuales BHP4 + filas con IVA (PRE-05C claridad).
+    assert.ok(data.cuotas.some((r) => r.valor === '69,00 €'));
+    assert.ok(data.cuotas.some((r) => r.valor === '49,00 €'));
+    assert.ok(data.cuotas.some((r) => r.valor === '118,00 €'));
+    assert.ok(data.cuotas.some((r) => r.valor === '83,49 €')); // 69 + IVA
+    assert.ok(data.cuotas.some((r) => r.valor === '59,29 €')); // 49 + IVA
   });
 
   it('escapa HTML en datos de cliente y añade nota como condición', () => {
@@ -244,7 +256,7 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
     assert.ok(html.includes('Nota: &lt;script&gt;'));
   });
 
-  it('logo: opción explícita y data URI oficial por defecto en Node', () => {
+  it('logo: opción explícita y data URI circular oficial (SVG) por defecto en Node', () => {
     const { html } = renderBhp4();
     assert.ok(html.includes('src="data:image/png;base64,TEST"'));
 
@@ -254,7 +266,11 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
       snapshot: snapshotFor({}),
     });
     const def = renderCommercialQuoteHtml(data);
-    assert.match(def, /<img alt="FarmaFácil" src="data:image\/png;base64,[A-Za-z0-9+/=]{1000,}"/);
+    assert.match(
+      def,
+      /<img alt="FarmaFácil" src="data:image\/svg\+xml;base64,[A-Za-z0-9+/=]{80,}"/
+    );
+    assert.equal(/farmafacil-logo-512\.png/.test(def), false);
   });
 
   it('formatQuoteEur agrupa miles siempre', () => {

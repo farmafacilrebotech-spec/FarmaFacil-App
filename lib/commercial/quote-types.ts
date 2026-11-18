@@ -34,13 +34,32 @@ export type QuoteStatusHistoryEntry = {
   note?: string | null;
 };
 
+export type QuoteEmailSendStatus =
+  | 'sent'
+  | 'failed'
+  | 'not_configured'
+  /** Simulación controlada (PDF generado; sin Resend). No implica envío real. */
+  | 'simulated';
+
 export type QuoteEmailSendEntry = {
   at: string;
   to: string;
-  status: 'sent' | 'failed' | 'not_configured';
+  status: QuoteEmailSendStatus;
   error?: string | null;
   providerId?: string | null;
   by?: string | null;
+  /** true cuando el transporte fue dry-run / simulación. */
+  dryRun?: boolean;
+};
+
+export const QUOTE_EMAIL_SEND_STATUS_LABELS: Record<
+  QuoteEmailSendStatus,
+  string
+> = {
+  sent: 'Enviado',
+  failed: 'Fallido',
+  not_configured: 'No configurado',
+  simulated: 'Simulado (sin correo)',
 };
 
 /** Metadatos mutables en internal_notes (JSON). */

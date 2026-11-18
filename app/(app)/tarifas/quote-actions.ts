@@ -89,10 +89,20 @@ function makeReferenceCode(): string {
   return `FF-PRE-${y}${m}${day}-${rand}`;
 }
 
+function isCommercialQuoteEmailDryRunEnv(): boolean {
+  const sendMode = getCorporateEmailSendMode();
+  if (sendMode.enabled && sendMode.dryRun) return true;
+  return ['1', 'true', 'yes'].includes(
+    (process.env.FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN ?? '').trim().toLowerCase()
+  );
+}
+
 export async function getCommercialEmailSendReadiness(): Promise<{
   canSend: boolean;
   missing: string[];
   fromConfigured: string | null;
+  /** Si true, «Enviar» solo simula (PDF sí, Resend no). */
+  dryRun: boolean;
 }> {
   const missing: string[] = [];
   const apiKey = process.env.RESEND_API_KEY?.trim();
@@ -106,6 +116,7 @@ export async function getCommercialEmailSendReadiness(): Promise<{
     canSend: missing.length === 0,
     missing,
     fromConfigured: missing.length === 0 ? from : null,
+    dryRun: isCommercialQuoteEmailDryRunEnv(),
   };
 }
 
@@ -602,7 +613,7 @@ export async function sendCommercialQuoteEmailAction(input: {
   confirmed: boolean;
 }): Promise<
   QuoteActionResult<{
-    emailStatus: 'sent' | 'failed' | 'not_configured';
+    emailStatus: 'sent' | 'failed' | 'not_configured' | 'simulated';
     to: string;
     /** Transporte controlado: PDF generado, sin Resend. */
     dryRun?: boolean;
@@ -719,43 +730,29 @@ export async function sendCommercialQuoteEmailAction(input: {
   });
 
   // Transporte controlado: dry-run corporativo (PDF sí, Resend no).
-  const sendMode = getCorporateEmailSendMode();
-  const forceDry =
-    (sendMode.enabled && sendMode.dryRun) ||
-    ['1', 'true', 'yes'].includes(
-      (process.env.FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN ?? '')
-        .trim()
-        .toLowerCase()
-    );
+  const forceDry = isCommercialQuoteEmailDryRunEnv();
 
   if (forceDry) {
+    // PRE-05C: la simulación no cambia el estado comercial ni se registra como «sent».
     meta = appendEmailSend(meta, {
       at: new Date().toISOString(),
       to,
-      status: 'sent',
-      error: 'dry_run: PDF generado; no se llamó a Resend',
+      status: 'simulated',
+      error:
+        'Simulación: PDF generado con plantilla corporativa; no se llamó a Resend.',
       by,
       providerId: `dry-run-${sha256.slice(0, 12)}`,
+      dryRun: true,
     });
-    const currentStatus = row.status as CommercialQuoteStatus;
-    const updates: Record<string, unknown> = {
-      internal_notes: serializeQuoteInternalMeta(meta),
-      updated_by: by,
-    };
-    if (currentStatus === 'draft') {
-      meta = appendStatusHistory(meta, {
-        at: new Date().toISOString(),
-        from: 'draft',
-        to: 'sent',
-        by,
-        note: `Email dry-run a ${to}`,
-      });
-      updates.status = 'sent';
-      updates.internal_notes = serializeQuoteInternalMeta(meta);
-    }
-    await supabase.from('commercial_quotes').update(updates).eq('id', input.quoteId);
+    await supabase
+      .from('commercial_quotes')
+      .update({
+        internal_notes: serializeQuoteInternalMeta(meta),
+        updated_by: by,
+      })
+      .eq('id', input.quoteId);
     revalidateQuotes();
-    return { ok: true, emailStatus: 'sent', to, dryRun: true };
+    return { ok: true, emailStatus: 'simulated', to, dryRun: true };
   }
 
   const recipientGate = assertCorporateEmailRecipientsAllowed([to]);
