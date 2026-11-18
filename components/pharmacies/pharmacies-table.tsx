@@ -7,6 +7,7 @@ import { Eye, MoreHorizontal, Plus, Store } from 'lucide-react';
 
 import type { PharmacyListItem } from '@/lib/pharmacies/types';
 import { PHARMACY_STATUS_LABELS } from '@/lib/pharmacies/labels';
+import { commercialPlanLabel } from '@/lib/commercial/commercial-plan-labels';
 import { formatDate } from '@/lib/format';
 import { Button } from '@/components/ui/button';
 import { DataTable, type Column } from '@/components/shared/data-table';
@@ -100,7 +101,7 @@ const columns: Column<PharmacyListItem>[] = [
     sortAccessor: (r) => r.plan?.name ?? '',
     cell: (r) => (
       <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-foreground">
-        {r.plan?.name ?? '—'}
+        {r.plan ? commercialPlanLabel(r.plan.key) || r.plan.name : '—'}
       </span>
     ),
   },
@@ -152,7 +153,9 @@ export function PharmaciesTable({
   const planOptions = React.useMemo(() => {
     const map = new Map<string, string>();
     for (const p of pharmacies) {
-      if (p.plan) map.set(p.plan.key, p.plan.name);
+      if (p.plan) {
+        map.set(p.plan.key, commercialPlanLabel(p.plan.key) || p.plan.name);
+      }
     }
     return Array.from(map.entries());
   }, [pharmacies]);

@@ -102,6 +102,57 @@ test.describe('P1 comercial', () => {
     expect(body).toMatch(/no hay conversi[oó]n autom[aá]tica/i);
   });
 
+  test('preparar piloto: selector obligatorio General/Personalizado/IA', async ({
+    page,
+  }) => {
+    await page.goto('/tarifas');
+    await page.getByRole('tab', { name: /gesti[oó]n de pilotos/i }).click();
+    await page
+      .getByRole('button', { name: /preparar farmacia comercial/i })
+      .click();
+    await expect(
+      page.getByRole('heading', { name: /preparar farmacia comercial/i })
+    ).toBeVisible({ timeout: 15_000 });
+    const plan = page.locator('#prep-plan');
+    await expect(plan).toBeVisible();
+    const options = await plan.locator('option').allTextContents();
+    const joined = options.join(' | ');
+    expect(joined).toMatch(/general/i);
+    expect(joined).toMatch(/personalizado/i);
+    expect(joined).toMatch(/asistente|ia/i);
+    expect(joined).not.toMatch(/\bstarter\b/i);
+    await expect(
+      page.getByText(/no inicia el contador|sin activar|no reserva plaza/i).first()
+    ).toBeVisible();
+    await page.getByRole('button', { name: /^cancelar$/i }).click();
+  });
+
+  test('planes visibles no listan Starter como producto comercial', async ({
+    page,
+  }) => {
+    await page.goto('/tarifas');
+    await page.getByRole('tab', { name: /planes y tarifas/i }).click();
+    const cards = page.locator('.grid').filter({ hasText: /general|personalizado/i });
+    await expect(cards.first()).toBeVisible({ timeout: 20_000 });
+    const body = await page.locator('body').innerText();
+    // Puede mencionar legacy, pero no como tarjeta de oferta principal sin matiz
+    if (/\bstarter\b/i.test(body)) {
+      expect(body).toMatch(/legacy|interno|kernel|pendientes de asignaci/i);
+    }
+  });
+
+  test('emisor corporativo: formulario SuperAdmin sin NIF inventado', async ({
+    page,
+  }) => {
+    await page.goto('/configuracion/emisor');
+    await expect(
+      page.getByRole('heading', { name: /datos del emisor/i })
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/farmaf[aá]cil/i).first()).toBeVisible();
+    const body = await page.locator('body').innerText();
+    expect(body).toMatch(/solo si verificado|pendientes de verificaci/i);
+  });
+
   test('plazas: panel reserva/liberación en pestaña Contrato', async ({
     page,
   }) => {

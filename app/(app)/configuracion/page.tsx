@@ -10,6 +10,7 @@ const SECTIONS = [
     title: 'Configuración global FarmaFácil',
     body: 'Preferencias de plataforma (marca corporativa web, políticas). No hay tabla platform_settings; el branding operativo se gestiona por farmacia.',
     links: [
+      { href: '/configuracion/emisor', label: 'Datos del emisor' },
       { href: '/emails', label: 'Emails corporativos' },
       { href: '/usuarios', label: 'Usuarios plataforma' },
     ],

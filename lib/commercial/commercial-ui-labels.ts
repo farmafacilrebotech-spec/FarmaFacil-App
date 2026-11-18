@@ -2,7 +2,7 @@
  * Etiquetas en castellano para estados comerciales (IDs internos intactos).
  */
 
-import { commercialPlanLabel } from '@/lib/commercial/commercial-plan-labels';
+import { commercialPlanLabel } from './commercial-plan-labels.ts';
 
 export const TRIAL_STATUS_LABELS: Record<string, string> = {
   draft: 'Borrador',
