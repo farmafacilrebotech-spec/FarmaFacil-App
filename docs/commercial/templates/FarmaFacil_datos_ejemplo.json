@@ -1,0 +1,139 @@
+{
+  "referencia": "FF-PRE-20261118-BHP4",
+  "fecha": "18/11/2026",
+  "vigencia": "18/12/2026",
+  "farmacia": "Farmacia Nupre Personalizado",
+  "contacto": "Pablo",
+  "email": "pruebas@farmafacil.solutions",
+  "plan": "Personalizado",
+  "modalidad": "Pago mensual",
+  "oferta": "Oferta Lanzamiento 2027",
+  "inicial_bruto": "1.548,80 €",
+  "cuota_destacada_label": "Cuota mensual · con IVA",
+  "cuota_destacada": "142,78 €",
+  "cuota_destacada_nota": "Software + uso de un kiosko",
+  "iniciales": [
+    {
+      "label": "Alta de la aplicación",
+      "valor": "190,00 €"
+    },
+    {
+      "label": "Personalización del kiosko (1 unidad)",
+      "valor": "1.090,00 €"
+    },
+    {
+      "label": "Instalación presencial incluida",
+      "valor": "0,00 €"
+    }
+  ],
+  "inicial_neto": "1.280,00 €",
+  "impuestos_label": "IVA (21 %)",
+  "inicial_impuestos": "268,80 €",
+  "cuotas": [
+    {
+      "label": "Software Personalizado / mes",
+      "valor": "69,00 €"
+    },
+    {
+      "label": "Uso del kiosko / mes",
+      "valor": "49,00 €"
+    },
+    {
+      "label": "Total mensual sin IVA",
+      "valor": "118,00 €"
+    }
+  ],
+  "recurrente_anual": "1.416,00 €",
+  "total_neto": "2.696,00 €",
+  "total_impuestos": "566,16 €",
+  "total_bruto": "3.262,16 €",
+  "nota_anualizacion": "Importes anualizados para 12 meses; no constituyen un calendario real de cobros.",
+  "nota_evolucion": "Descuentos de lanzamiento por año natural. Tarifas posteriores sujetas a revisión contractual.",
+  "anios": [
+    "2027",
+    "2028",
+    "2029+"
+  ],
+  "evolucion": [
+    {
+      "label": "Descuento software",
+      "valores": [
+        "60 %",
+        "30 %",
+        "0 %"
+      ],
+      "destacado": false
+    },
+    {
+      "label": "Software / mes",
+      "valores": [
+        "69,00 €",
+        "120,75 €",
+        "172,50 €"
+      ],
+      "destacado": false
+    },
+    {
+      "label": "Uso kiosko / mes",
+      "valores": [
+        "49,00 €",
+        "49,00 €",
+        "49,00 €"
+      ],
+      "destacado": false
+    },
+    {
+      "label": "Recurrente / año",
+      "valores": [
+        "1.416,00 €",
+        "2.037,00 €",
+        "2.658,00 €"
+      ],
+      "destacado": false
+    },
+    {
+      "label": "Pagos iniciales",
+      "valores": [
+        "1.280,00 €",
+        "0,00 €",
+        "0,00 €"
+      ],
+      "destacado": false
+    },
+    {
+      "label": "Total sin IVA",
+      "valores": [
+        "2.696,00 €",
+        "2.037,00 €",
+        "2.658,00 €"
+      ],
+      "destacado": true
+    },
+    {
+      "label": "IVA",
+      "valores": [
+        "566,16 €",
+        "427,77 €",
+        "558,18 €"
+      ],
+      "destacado": false
+    },
+    {
+      "label": "Total con IVA",
+      "valores": [
+        "3.262,16 €",
+        "2.464,77 €",
+        "3.216,18 €"
+      ],
+      "destacado": true
+    }
+  ],
+  "condiciones": [
+    "Precios en euros. IVA del 21 % aplicado a los importes netos indicados.",
+    "El alta de la aplicación y la personalización del kiosko son pagos únicos.",
+    "La cuota mensual de uso del kiosko no se incluye en el descuento del software ni en su prepago anual.",
+    "La instalación presencial incluida no añade importe.",
+    "Aceptar el presupuesto no firma el contrato ni activa el servicio.",
+    "El piloto requiere activación expresa: 15 días, ampliables una vez por otros 15 días."
+  ]
+}
