@@ -64,3 +64,6 @@ android-kiosk/.idea/
 android-kiosk/captures/
 /.next-perf-prod/
 public/_review_clients_qr/
+
+# Evidencias locales de validación (no publicar)
+evidence/
