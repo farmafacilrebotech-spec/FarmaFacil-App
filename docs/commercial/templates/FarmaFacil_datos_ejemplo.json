@@ -9,7 +9,7 @@
   "modalidad": "Pago mensual",
   "oferta": "Oferta Lanzamiento 2027",
   "inicial_bruto": "1.548,80 €",
-  "cuota_destacada_label": "Cuota mensual · con IVA",
+  "cuota_destacada_label": "Cuota mensual con IVA",
   "cuota_destacada": "142,78 €",
   "cuota_destacada_nota": "Software + uso de un kiosko",
   "iniciales": [
@@ -43,7 +43,7 @@
       "valor": "118,00 €"
     }
   ],
-  "recurrente_anual": "1.416,00 €",
+  "recurrente_anual": "118,00 €",
   "total_neto": "2.696,00 €",
   "total_impuestos": "566,16 €",
   "total_bruto": "3.262,16 €",
@@ -135,5 +135,6 @@
     "La instalación presencial incluida no añade importe.",
     "Aceptar el presupuesto no firma el contrato ni activa el servicio.",
     "El piloto requiere activación expresa: 15 días, ampliables una vez por otros 15 días."
-  ]
+  ],
+  "recurrente_anual_label": "Total mensual sin IVA"
 }

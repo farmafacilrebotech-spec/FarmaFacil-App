@@ -58,6 +58,8 @@ export type QuoteTemplateData = {
   impuestos_label: string;
   inicial_impuestos: string;
   cuotas: QuoteTemplateRow[];
+  /** Etiqueta de la fila resumen (sin IVA) bajo la tabla de cuotas. */
+  recurrente_anual_label: string;
   recurrente_anual: string;
   total_neto: string;
   total_impuestos: string;
@@ -96,7 +98,8 @@ function formatPercent(bps: number): string {
   return `${text} %`;
 }
 
-function formatDateEs(iso: string | null | undefined): string {
+/** Fecha DD/MM/AAAA (presupuesto y correo comercial). */
+export function formatQuoteDateEs(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso.length === 10 ? `${iso}T12:00:00Z` : iso);
   if (Number.isNaN(d.getTime())) return iso;
@@ -104,6 +107,10 @@ function formatDateEs(iso: string | null | undefined): string {
   const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
   // Fechas solo-día: UTC mediodía; timestamps: UTC (estable entre servidor y test).
   return `${dd}/${mm}/${d.getUTCFullYear()}`;
+}
+
+function formatDateEs(iso: string | null | undefined): string {
+  return formatQuoteDateEs(iso);
 }
 
 // -----------------------------------------------------------------------------
@@ -234,14 +241,7 @@ export function mapCommercialQuoteToTemplateData(
       valor: formatQuoteEur(kioskMonthlyGross),
     });
   }
-  cuotas.push({
-    label: monthly
-      ? 'Total mensual sin IVA'
-      : 'Coste recurrente anualizado sin IVA',
-    valor: formatQuoteEur(
-      monthly ? b.recurringNetCents : b.firstYearSubscriptionCents
-    ),
-  });
+  // El resumen sin IVA va solo en la fila destacada (recurrente_anual_label).
 
   // Evolución 2027-2029+ (misma fuente que quote-pdf; no toca calculateQuote).
   const baseConfig = input.config ?? DEFAULT_COMMERCIAL_TARIFF_CONFIG;
@@ -327,8 +327,8 @@ export function mapCommercialQuoteToTemplateData(
     oferta: offerLabel(s.cohortPricing),
     inicial_bruto: formatQuoteEur(b.oneTimeGrossCents),
     cuota_destacada_label: monthly
-      ? 'Cuota mensual · con IVA'
-      : 'Coste recurrente anualizado · con IVA',
+      ? 'Cuota mensual con IVA'
+      : 'Coste recurrente anualizado con IVA',
     cuota_destacada: formatQuoteEur(b.recurringGrossCents),
     cuota_destacada_nota: cuotaNota,
     iniciales,
@@ -336,7 +336,12 @@ export function mapCommercialQuoteToTemplateData(
     impuestos_label: vatLabel,
     inicial_impuestos: formatQuoteEur(b.oneTimeVatCents),
     cuotas,
-    recurrente_anual: formatQuoteEur(b.firstYearSubscriptionCents),
+    recurrente_anual_label: monthly
+      ? 'Total mensual sin IVA'
+      : 'Coste recurrente anualizado sin IVA',
+    recurrente_anual: formatQuoteEur(
+      monthly ? b.recurringNetCents : b.firstYearSubscriptionCents
+    ),
     total_neto: formatQuoteEur(b.firstYearNetCents),
     total_impuestos: formatQuoteEur(b.firstYearVatCents),
     total_bruto: formatQuoteEur(b.firstYearGrossCents),
@@ -501,15 +506,19 @@ function getParsedTemplate() {
 // Logo
 // -----------------------------------------------------------------------------
 
-/** Marca circular oficial (sin lienzo cuadrado negro). */
-export const QUOTE_LOGO_PUBLIC_PATH = '/images/logos/farmafacil-mark.svg';
-/** Nombre de fichero en public/images/logos (SVG circular). */
-export const QUOTE_LOGO_FILE_NAME = 'farmafacil-mark.svg';
+/**
+ * Logotipo corporativo oficial (cruz plateada/turquesa).
+ * Mismo recurso que la firma EMAIL-10 (`farmafacil-mark.png` → www logo).
+ * No usar el SVG simplificado ni reinterpretar el isotipo.
+ */
+export const QUOTE_LOGO_PUBLIC_PATH = '/images/logos/farmafacil-mark.png';
+/** Nombre de fichero en public/images/logos. */
+export const QUOTE_LOGO_FILE_NAME = 'farmafacil-mark.png';
 
 let logoCache: string | null | undefined;
 
 /**
- * Data URI del logo circular oficial. Solo en Node (lectura síncrona);
+ * Data URI del logotipo oficial. Solo en Node (lectura síncrona);
  * en navegador/edge devuelve null.
  */
 export function loadCommercialQuoteLogoDataUri(): string | null {
@@ -534,7 +543,6 @@ export function loadCommercialQuoteLogoDataUri(): string | null {
       QUOTE_LOGO_FILE_NAME
     );
     const raw = fs.readFileSync(file);
-    // SVG: data URI utf-8 (Chromium PDF lo renderiza como círculo).
     if (QUOTE_LOGO_FILE_NAME.endsWith('.svg')) {
       logoCache = `data:image/svg+xml;base64,${raw.toString('base64')}`;
     } else {

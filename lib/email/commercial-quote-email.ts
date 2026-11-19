@@ -3,6 +3,23 @@
  * No reproduce el presupuesto completo; el PDF va adjunto.
  */
 
+/** Logo circular oficial en www (mismo recurso que EMAIL-10 / firma). */
+export const COMMERCIAL_QUOTE_EMAIL_LOGO_URL =
+  'https://www.farmafacil.solutions/images/logo/farmafacil-logo.png';
+
+/** Vigencia en correo: siempre DD/MM/AAAA. */
+export function formatCommercialQuoteEmailDate(
+  iso: string | null | undefined
+): string {
+  if (!iso) return '—';
+  const trimmed = iso.trim();
+  const d = new Date(trimmed.length === 10 ? `${trimmed}T12:00:00Z` : trimmed);
+  if (Number.isNaN(d.getTime())) return trimmed;
+  const dd = String(d.getUTCDate()).padStart(2, '0');
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${d.getUTCFullYear()}`;
+}
+
 export function buildCommercialQuoteEmailBodies(input: {
   referenceCode: string;
   contactName: string;
@@ -12,7 +29,8 @@ export function buildCommercialQuoteEmailBodies(input: {
   const ref = input.referenceCode.trim();
   const name = input.contactName?.trim() || 'hola';
   const client = input.clientName?.trim() || 'tu farmacia';
-  const vigencia = input.validUntil?.trim() || '—';
+  const vigencia = formatCommercialQuoteEmailDate(input.validUntil);
+  const logoSrc = COMMERCIAL_QUOTE_EMAIL_LOGO_URL;
 
   const subject = `Presupuesto FarmaFácil ${ref} · ${client}`;
 
@@ -38,10 +56,19 @@ export function buildCommercialQuoteEmailBodies(input: {
       <td align="center">
         <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border:1px solid #C5CCD3;border-radius:8px;padding:28px 28px 24px">
           <tr>
-            <td style="font-size:20px;font-weight:700;color:#0B0B0B">FarmaFácil</td>
-          </tr>
-          <tr>
-            <td style="padding-top:4px;font-size:13px;color:#1ABBB3">Presupuesto comercial</td>
+            <td style="padding-bottom:16px;border-bottom:3px solid #1ABBB3">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="vertical-align:middle;padding-right:12px">
+                    <img src="${escapeHtml(logoSrc)}" alt="FarmaFácil" width="48" height="48" style="display:block;width:48px;height:48px;border-radius:50%;object-fit:cover;border:0"/>
+                  </td>
+                  <td style="vertical-align:middle">
+                    <div style="font-size:20px;font-weight:700;color:#0B0B0B;line-height:1.2">FarmaFácil</div>
+                    <div style="font-size:13px;color:#1ABBB3;margin-top:2px">Presupuesto comercial</div>
+                  </td>
+                </tr>
+              </table>
+            </td>
           </tr>
           <tr>
             <td style="padding-top:20px;font-size:14px;line-height:1.55;color:#0B0B0B">

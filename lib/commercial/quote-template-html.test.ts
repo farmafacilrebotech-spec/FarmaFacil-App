@@ -165,13 +165,22 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
       '851,60 €',
       '59,29 €',
       '1.563,08 €',
-      'Coste recurrente anualizado · con IVA',
+      'Coste recurrente anualizado con IVA',
+      'Coste recurrente anualizado sin IVA',
+      '1.291,80 €',
       'Software anual · kiosko mensual',
       'Software / mes (equiv. prepago anual)',
+      '>Importe</th>',
     ]) {
       assert.ok(html.includes(text), `falta ${text}`);
     }
     assert.equal(html.includes('Cuota anual · con IVA'), false);
+    assert.equal(html.includes('Coste recurrente anualizado · con IVA'), false);
+    // Cabecera «Importe» solo en cuotas; implantación conserva «Importe neto».
+    assert.equal(
+      (html.match(/<th>Importe neto<\/th>/g) || []).length,
+      1
+    );
   });
 
   it('no incluye planes legacy ni textos del compositor / marcadores sin resolver', () => {
@@ -212,6 +221,7 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
       'cuota_destacada',
       'inicial_neto',
       'inicial_impuestos',
+      'recurrente_anual_label',
       'recurrente_anual',
       'total_neto',
       'total_impuestos',
@@ -237,10 +247,12 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
       data.iniciales.map((r) => r.valor),
       example.iniciales.map((r: { valor: string }) => r.valor)
     );
-    // Cuotas: netos mensuales BHP4 + filas con IVA (PRE-05C claridad).
+    // Cuotas: netos + IVA (PRE-05C); resumen sin IVA en fila destacada.
     assert.ok(data.cuotas.some((r) => r.valor === '69,00 €'));
     assert.ok(data.cuotas.some((r) => r.valor === '49,00 €'));
-    assert.ok(data.cuotas.some((r) => r.valor === '118,00 €'));
+    assert.equal(data.recurrente_anual, '118,00 €');
+    assert.equal(data.recurrente_anual_label, 'Total mensual sin IVA');
+    assert.equal(data.cuota_destacada_label, 'Cuota mensual con IVA');
     assert.ok(data.cuotas.some((r) => r.valor === '83,49 €')); // 69 + IVA
     assert.ok(data.cuotas.some((r) => r.valor === '59,29 €')); // 49 + IVA
   });
@@ -256,7 +268,7 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
     assert.ok(html.includes('Nota: &lt;script&gt;'));
   });
 
-  it('logo: opción explícita y data URI circular oficial (SVG) por defecto en Node', () => {
+  it('logo: opción explícita y data URI PNG oficial por defecto en Node', () => {
     const { html } = renderBhp4();
     assert.ok(html.includes('src="data:image/png;base64,TEST"'));
 
@@ -268,9 +280,10 @@ describe('quote-template-html · plantilla corporativa PRE-05', () => {
     const def = renderCommercialQuoteHtml(data);
     assert.match(
       def,
-      /<img alt="FarmaFácil" src="data:image\/svg\+xml;base64,[A-Za-z0-9+/=]{80,}"/
+      /<img alt="FarmaFácil" src="data:image\/png;base64,[A-Za-z0-9+/=]{80,}"/
     );
-    assert.equal(/farmafacil-logo-512\.png/.test(def), false);
+    assert.equal(/farmafacil-mark\.svg/.test(def), false);
+    assert.equal(/data:image\/svg\+xml/.test(def), false);
   });
 
   it('formatQuoteEur agrupa miles siempre', () => {

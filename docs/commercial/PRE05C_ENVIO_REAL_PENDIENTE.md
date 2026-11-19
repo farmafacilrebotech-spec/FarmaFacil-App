@@ -1,23 +1,28 @@
-# PRE-05C — Envío real pendiente de autorización
+# PRE-05C — Envío real autorizado (ejecutado)
 
-## Destinatario autorizado de prueba
+## Destinatario
 
-`pruebas@farmafacil.solutions`
+`pruebas@farmafacil.solutions` (único destinatario de la prueba)
 
-## Protecciones activas (staging :3070)
+## Resultado (2026-11-18)
 
-| Control | Estado |
+| Campo | Valor |
 |---|---|
-| `FF_CORPORATE_EMAIL_TEST_RECIPIENTS` | Incluye `pruebas@farmafacil.solutions` (+ allowlist previa) |
-| `assertCorporateEmailRecipientsAllowed` | Bloquea cualquier To fuera de la lista |
-| `FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN` | En el daemon de prueba suele ir a `1` (simulación). Para envío real hay que arrancar con `0` **solo** tras autorización |
-| EMAIL-10 | Sin cambios; no se toca el compositor corporativo |
-| Producción | Sin deploy |
+| Presupuesto | `FF-PRE-20261118-F0TQ` (Farmacia Nupre) |
+| Entorno | staging `127.0.0.1:3070` · `integration/farmafacil-release` |
+| Proveedor | Resend |
+| Provider message id | `01a1ee59-ce8c-7d05-8a86-570d83a372cf` |
+| Estado comercial tras aceptación Resend | **Enviado** (`sent`) |
+| Adjunto | PDF corporativo vía `buildCommercialQuotePdf` (mismo motor que descarga) |
+| Dry-run tras la prueba | **Restaurado** (`FF_COMMERCIAL_QUOTE_EMAIL_DRY_RUN=1`, `FF_CORPORATE_EMAIL_DRY_RUN=1`) |
 
-## Motor PDF
+## Protecciones
 
-Descarga UI y adjunto de email usan el mismo `buildCommercialQuotePdf` → plantilla HTML corporativa → Chromium.
+- Allowlist `FF_CORPORATE_EMAIL_TEST_RECIPIENTS` con `pruebas@farmafacil.solutions`
+- `assertCorporateEmailRecipientsAllowed` activo
+- EMAIL-10 sin cambios de compositor
+- Sin deploy a producción ni cambios en `main`
 
-## No ejecutar todavía
+## Pendiente de validación humana
 
-El envío real a Resend **no se ha lanzado**. Requiere autorización expresa de la usuaria en este hilo tras validar dry-run + estados + logo + periodicidad.
+Confirmar recepción en el buzón `pruebas@farmafacil.solutions` (asunto, PDF corporativo, importes). PRE-05 no se cierra hasta esa confirmación.
