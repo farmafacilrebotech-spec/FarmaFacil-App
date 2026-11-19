@@ -9,7 +9,9 @@ const nextConfig = {
   // PRE-05C: no reescribir Location 127.0.0.1→localhost en middleware
   // (rompe cookies host-only y Server Actions con Failed to fetch / CORS).
   skipMiddlewareUrlNormalize: true,
+  // instrumentation.ts: guard Supabase staging vs producción.
   experimental: {
+    instrumentationHook: true,
     // Necesario en Next 13.5 para 'use server' (logout / actions).
     serverActions: true,
     // pdf-parse v2 (pdfjs) no debe empaquetarse en el bundle de server actions.

@@ -87,6 +87,21 @@ export async function middleware(request: NextRequest) {
     supabaseResponse.headers.set('X-Robots-Tag', 'noindex, nofollow, noarchive');
   }
 
+  // Staging permanente: noindex en todas las rutas HTML.
+  const stagingEnv =
+    (process.env.FF_APP_ENV ?? '').trim().toLowerCase() === 'staging';
+  const host = (request.headers.get('host') ?? '').toLowerCase();
+  if (
+    stagingEnv ||
+    host === 'staging.farmafacil.solutions' ||
+    host.includes('farmafacil-staging')
+  ) {
+    supabaseResponse.headers.set(
+      'X-Robots-Tag',
+      'noindex, nofollow, noarchive'
+    );
+  }
+
   return supabaseResponse;
 }
 

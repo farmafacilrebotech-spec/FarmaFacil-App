@@ -2,6 +2,8 @@ import './globals.css';
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import { ThemeProvider } from '@/components/theme-provider';
+import { StagingBanner } from '@/components/staging/staging-banner';
+import { isStagingAppEnv } from '@/lib/env/staging-runtime-guard';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -24,9 +26,14 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'FarmaFácil · Panel de gestión',
+  title: isStagingAppEnv()
+    ? 'STAGING · FarmaFácil'
+    : 'FarmaFácil · Panel de gestión',
   description:
     'La plataforma de gestión definitiva para farmacias. Controla farmacias, clientes, catálogo, pedidos y contratos desde un único panel.',
+  robots: isStagingAppEnv()
+    ? { index: false, follow: false, nocache: true }
+    : undefined,
   // Explícito: evita diferencias de escala inicial Safari/Chrome.
   viewport: {
     width: 'device-width',
@@ -85,6 +92,7 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
+          <StagingBanner />
           {children}
         </ThemeProvider>
       </body>
