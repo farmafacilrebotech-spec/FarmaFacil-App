@@ -71,8 +71,9 @@ export async function middleware(request: NextRequest) {
       request,
       `/login?${params.toString()}`
     );
+    // Next 13.5 / Edge: set name+value+options (no pasar el objeto crudo).
     supabaseResponse.cookies.getAll().forEach((cookie) => {
-      response.cookies.set(cookie);
+      response.cookies.set(cookie.name, cookie.value);
     });
     return response;
   }
