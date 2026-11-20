@@ -14,7 +14,7 @@ import {
   type ImplantationPaymentRow,
 } from '@/lib/commercial/implantation-payments';
 
-type ActionResult<T = Record<string, never>> =
+type ActionResult<T = object> =
   | ({ ok: true } & T)
   | { ok: false; error: string };
 

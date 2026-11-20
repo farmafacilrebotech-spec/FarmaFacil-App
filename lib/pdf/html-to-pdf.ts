@@ -98,7 +98,7 @@ async function launchBrowser(): Promise<Browser> {
     executablePath: resolved.executablePath,
     args: resolved.args,
     headless: resolved.headless,
-    ignoreHTTPSErrors: true,
+    acceptInsecureCerts: true,
   };
   return puppeteer.default.launch(options);
 }
