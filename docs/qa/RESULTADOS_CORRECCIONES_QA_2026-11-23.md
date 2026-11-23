@@ -42,9 +42,11 @@
 
 | Entorno | Estado |
 |---------|--------|
-| Código en rama | `fix/qa-2026-11-23-block1` |
-| Staging Vercel | **Pendiente redeploy** tras merge/push (no producción) |
+| Código en rama | `fix/qa-2026-11-23-block1` @ `0f49208` |
+| PR | https://github.com/farmafacilrebotech-spec/FarmaFacil-App/pull/28 → `integration/farmafacil-release` |
+| Staging Vercel | **Desplegado** `dpl_9mhJchbCsZCjPTRYeRWjjXSgxS5W` → https://farmafacil-staging.vercel.app (Ready; smoke `/login` `/e/…` 200) |
 | Datos staging | Aplicados (catálogo Piloto, memberships, dual password kit) |
+| FarmaFácil producción | **No tocada** |
 
 ## Pruebas manuales nuevas (desde QA-49)
 
