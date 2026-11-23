@@ -8,7 +8,10 @@ import { Badge } from '@/components/ui/badge';
 export const maxDuration = 60;
 export const runtime = 'nodejs';
 import { hasPlatformPermission } from '@/lib/auth/platform';
-import { listCommercialPilots } from '@/lib/commercial/pilots-queries';
+import {
+  listCommercialPilots,
+  loadAvailableCommercialSkuKeys,
+} from '@/lib/commercial/pilots-queries';
 import { canWriteMasterCatalog } from '@/lib/commercial/master-catalog-queries';
 import { loadTariffConfigForSession } from '@/lib/commercial/tariff-queries';
 import {
@@ -28,6 +31,7 @@ export default async function TarifasPage() {
     quotesResult,
     quotePharmacies,
     emailReadiness,
+    availableSkuKeys,
   ] = await Promise.all([
     hasPlatformPermission('platform.commercial_trials.manage'),
     canWriteMasterCatalog(),
@@ -37,6 +41,7 @@ export default async function TarifasPage() {
     listCommercialQuotes(),
     listQuotePharmacyOptions(),
     getCommercialEmailSendReadiness(),
+    loadAvailableCommercialSkuKeys(),
   ]);
 
   const pilots = pilotsResult.ok
@@ -85,6 +90,7 @@ export default async function TarifasPage() {
         emailReady={emailReadiness.canSend}
         emailMissing={emailReadiness.missing}
         emailDryRun={emailReadiness.dryRun}
+        availableSkuKeys={availableSkuKeys}
       />
     </div>
   );

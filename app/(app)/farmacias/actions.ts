@@ -609,15 +609,8 @@ function mapAssignCommercialError(message: string, code?: string): string {
   if (m.includes('pilot_must_end_first')) {
     return 'Hay un piloto en curso. Finalízalo antes de asignar un plan de pago.';
   }
-  if (m.includes('technical_plan_missing')) {
-    return 'Falta la fila técnica del plan comercial. No se ha modificado la farmacia.';
-  }
-  if (m.includes('commercial_plan_requires_assign_rpc')) {
-    return 'Este plan solo puede asignarse con el flujo comercial.';
-  }
-  if (m.includes('unknown_commercial_sku')) {
-    return 'SKU comercial desconocido o inactivo.';
-  }
+  // technical_plan_missing / unknown_commercial_sku / commercial_plan_requires_assign_rpc
+  // → mapCommercialRpcError (mensajes en español, sin códigos técnicos).
   return mapCommercialRpcError(message, code) || mapChangePlanError(message, code);
 }
 

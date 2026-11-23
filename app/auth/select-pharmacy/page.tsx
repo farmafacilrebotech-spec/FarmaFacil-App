@@ -12,7 +12,7 @@ import { listAuthorizedPharmaciesForProfile } from '@/lib/pharmacies/tenant';
 import { pharmacyRoleLabel } from '@/lib/pharmacies/role-labels';
 import { isHighlightedLastPharmacy } from '@/lib/pharmacies/pharmacy-access-routing';
 import type { PendingPharmacyInvitation } from '@/lib/pharmacies/invitations';
-import { BrandLogo } from '@/components/brand';
+import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 import { PendingInvitationsList } from '@/components/auth/pending-invitations-list';
 import { signOutAction } from '@/app/auth/actions';
@@ -105,7 +105,19 @@ export default async function SelectPharmacyPage() {
                     highlighted && 'border-primary/40 bg-primary/5'
                   )}
                 >
-                  <Link href={`/f/${m.pharmacyId}/dashboard`}>
+                  <Link
+                    href={`/f/${m.pharmacyId}/dashboard`}
+                    className="gap-3"
+                  >
+                    {/* Logo real con fallback a iniciales (PharmacyLogo). */}
+                    <PharmacyLogo
+                      name={label}
+                      logoUrl={pharmacy?.logoUrl ?? null}
+                      logoColor={pharmacy?.logoColor || '#0d9488'}
+                      size={40}
+                      rounded="xl"
+                      className="bg-white ring-1 ring-border"
+                    />
                     <span className="flex min-w-0 flex-1 items-start justify-between gap-2 text-left">
                       <span className="flex min-w-0 flex-col items-start">
                         <span className="truncate font-medium">{label}</span>

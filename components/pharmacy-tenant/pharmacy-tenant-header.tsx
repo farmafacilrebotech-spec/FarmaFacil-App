@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Menu, LogOut, Moon, Sun, Store } from 'lucide-react';
+import { Menu, LogOut, Moon, Sun, Store, LifeBuoy } from 'lucide-react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 
@@ -142,6 +142,14 @@ export function PharmacyTenantHeader({
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
+            <DropdownMenuItem asChild>
+              <Link
+                href={`/f/${pharmacy.id}/ayuda`}
+                className="cursor-default"
+              >
+                <LifeBuoy className="mr-2 h-4 w-4" /> Ayuda
+              </Link>
+            </DropdownMenuItem>
             {multi ? (
               <>
                 <DropdownMenuItem asChild>

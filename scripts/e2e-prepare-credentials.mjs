@@ -43,9 +43,34 @@ if (!service) {
   process.exit(2);
 }
 
+/**
+ * Modos:
+ *  - (default)            resetea TODO el kit con una password compartida (E2E_PASSWORD o aleatoria).
+ *  - --only=E2E_DUAL_EMAIL[,K2]  resetea solo esas claves del kit REUSANDO la password ya existente
+ *                         en `.env.e2e.local` / env (no rota al resto). Aborta si no hay password previa.
+ */
+const onlyArg = process.argv.find((a) => a.startsWith('--only='));
+const onlyKeys = onlyArg
+  ? onlyArg
+      .slice('--only='.length)
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+  : null;
+
+const existingE2e = loadEnv(resolve(root, '.env.e2e.local'));
+// Solo en modo --only se reusa la password del archivo; el modo default conserva el comportamiento previo.
+const existingPassword =
+  process.env.E2E_PASSWORD || (onlyKeys ? existingE2e.E2E_PASSWORD : undefined);
+if (onlyKeys && !existingPassword) {
+  console.error(
+    'Abort: --only requiere E2E_PASSWORD previa (env o .env.e2e.local). Ejecuta sin --only una vez.'
+  );
+  process.exit(2);
+}
+
 const password =
-  process.env.E2E_PASSWORD ||
-  `FfE2E_${randomBytes(9).toString('base64url')}!aA1`;
+  existingPassword || `FfE2E_${randomBytes(9).toString('base64url')}!aA1`;
 
 const users = {
   E2E_SA_EMAIL: 'emails.sa.075-emails-stage@farmafacil.test',
@@ -56,7 +81,20 @@ const users = {
   E2E_CUSTOMER_EMAIL: 'cliente.test3070@farmafacil.test',
   E2E_CUSTOMER_B_EMAIL: 'lab.cliente.b.clientsqr@farmafacil.test',
   E2E_OUTSIDER_EMAIL: 'catalog.outsider.074@farmafacil.test',
+  /** Usuario dual (owner/staff multi-rol en staging). Ver docs/qa/STAGING_MODULOS_PRUEBA_2026-11-23.md */
+  E2E_DUAL_EMAIL: 'catalog.dual.074@farmafacil.test',
 };
+
+if (onlyKeys) {
+  const unknown = onlyKeys.filter((k) => !(k in users));
+  if (unknown.length) {
+    console.error('Abort: claves desconocidas en --only:', unknown.join(', '));
+    process.exit(2);
+  }
+}
+const targetUsers = onlyKeys
+  ? Object.fromEntries(onlyKeys.map((k) => [k, users[k]]))
+  : users;
 
 const admin = createClient(url, service, {
   auth: { persistSession: false, autoRefreshToken: false },
@@ -81,7 +119,7 @@ async function setPassword(email) {
 }
 
 let ok = 0;
-for (const email of Object.values(users)) {
+for (const email of Object.values(targetUsers)) {
   if (await setPassword(email)) ok += 1;
 }
 
@@ -104,8 +142,10 @@ async function ensureCustomerKind(email) {
   }
 }
 
-await ensureCustomerKind(users.E2E_CUSTOMER_EMAIL);
-await ensureCustomerKind(users.E2E_CUSTOMER_B_EMAIL);
+if (!onlyKeys) {
+  await ensureCustomerKind(users.E2E_CUSTOMER_EMAIL);
+  await ensureCustomerKind(users.E2E_CUSTOMER_B_EMAIL);
+}
 
 const lines = [
   '# Generado por scripts/e2e-prepare-credentials.mjs — NO COMMIT',

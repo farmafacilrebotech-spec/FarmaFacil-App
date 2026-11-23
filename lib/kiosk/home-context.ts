@@ -6,6 +6,8 @@ import {
 } from '@/lib/kiosk/session-cookie';
 import { pharmacyEntrypointPublicUrl } from '@/lib/kiosk/entrypoint-url';
 import type { ValidKioskDeviceSession } from '@/lib/kiosk/device-session';
+import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
+import { firstNonEmptyPharmacyName } from '@/lib/pharmacies/display-name';
 
 export type KioskPharmacyEntrypoint = {
   publicId: string;
@@ -99,9 +101,21 @@ export async function loadKioskHomeContext(
     }
   }
 
+  // La RPC 041 devuelve pharmacies.name; el nombre público es visible_name → name
+  // (ff_resolve_public_entrypoint_v1, 098). Mismo public_id que el QR/kiosko.
+  let visibleFromEntrypoint = '';
+  if (entrypoint?.publicId) {
+    const resolved = await resolvePublicEntrypoint(entrypoint.publicId);
+    if (resolved.ok) visibleFromEntrypoint = resolved.pharmacyName;
+  }
+
   return {
     pharmacyId,
-    pharmacyName: String(payload!.pharmacy_name ?? 'Tu farmacia'),
+    pharmacyName: firstNonEmptyPharmacyName(
+      visibleFromEntrypoint,
+      String(payload!.pharmacy_name ?? ''),
+      'Tu farmacia'
+    ),
     welcomeMessage:
       typeof payload!.welcome_message === 'string'
         ? payload!.welcome_message

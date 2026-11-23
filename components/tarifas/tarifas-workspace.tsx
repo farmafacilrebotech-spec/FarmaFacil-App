@@ -41,6 +41,8 @@ export type TarifasWorkspaceProps = {
   emailReady: boolean;
   emailMissing: string[];
   emailDryRun?: boolean;
+  /** SKUs activos con plan técnico (null = sin filtrar). */
+  availableSkuKeys?: string[] | null;
 };
 
 export function TarifasWorkspace({
@@ -55,6 +57,7 @@ export function TarifasWorkspace({
   emailReady,
   emailMissing,
   emailDryRun = false,
+  availableSkuKeys = null,
 }: TarifasWorkspaceProps) {
   const [config, setConfig] = React.useState<CommercialTariffConfig>(() =>
     canViewInternalCosts ? initialConfig : withoutInternalCosts(initialConfig)
@@ -103,6 +106,7 @@ export function TarifasWorkspace({
           canManage={canManageTrials || canWriteMaster}
           pharmacies={quotePharmacies}
           initialPharmacyId={contractPharmacyId}
+          availableSkuKeys={availableSkuKeys}
         />
       </TabsContent>
       <TabsContent
@@ -139,6 +143,7 @@ export function TarifasWorkspace({
           initialKpis={pilots.kpis}
           loadError={pilots.error}
           canManage={canManageTrials}
+          availableSkuKeys={availableSkuKeys}
         />
       </TabsContent>
     </Tabs>

@@ -1,6 +1,8 @@
 import { listPharmacyKioskDevices } from '@/lib/kiosk/devices';
 import { getPharmacyKioskEntitlement } from '@/lib/kiosk/entitlement';
+import { requireKioskDevicesView } from '@/lib/kiosk/authz';
 import { KioskDevicesPanel } from '@/components/kiosk/kiosk-devices-panel';
+import { PharmacySectionAccessDenied } from '@/components/pharmacy-tenant/pharmacy-section-access-denied';
 import {
   getCurrentProfile,
   hasPlatformPermission,
@@ -14,6 +16,11 @@ export default async function PharmacyKioskDevicesPage({
   params: { pharmacyId: string };
 }) {
   const pharmacyId = params.pharmacyId;
+  const viewGate = await requireKioskDevicesView(pharmacyId);
+  if (!viewGate.ok) {
+    return <PharmacySectionAccessDenied pharmacyId={pharmacyId} />;
+  }
+
   const [result, entitlement, profileResult, entitlementsManage] =
     await Promise.all([
       listPharmacyKioskDevices(pharmacyId),

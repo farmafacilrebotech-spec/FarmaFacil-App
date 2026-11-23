@@ -1,15 +1,16 @@
 import Link from 'next/link';
 
-import { BrandLogo } from '@/components/brand';
+import { BrandLogo, PharmacyLogo } from '@/components/brand';
+import { CustomerStickyHeader } from '@/components/customer/customer-sticky-header';
 import { CustomerPwaRegister } from '@/components/customer/customer-pwa-register';
 import { SavePharmacyButton } from '@/components/customer/save-pharmacy-button';
-import { PharmacyPublicIdentity } from '@/components/kiosk/pharmacy-public-identity';
 import { PublicCatalogRequestClient } from '@/components/kiosk/public-catalog-request-client';
 import { getCustomerProfile } from '@/lib/customer/queries';
 import { isPharmacySaved } from '@/lib/customer/saved-pharmacies';
 import { listPublicCatalog } from '@/lib/kiosk/public-catalog';
 import { buildPublicQrCheckoutPrefill } from '@/lib/kiosk/public-qr-customer-link';
 import { resolvePublicEntrypoint } from '@/lib/kiosk/resolve-public-entrypoint';
+import { firstNonEmptyPharmacyName } from '@/lib/pharmacies/display-name';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,6 +39,11 @@ export default async function PublicPharmacyCatalogPage({
     ? await isPharmacySaved(params.publicId)
     : false;
   const pharmacyLogoUrl = entry.ok ? entry.logoUrl : null;
+  // La RPC de catálogo (055) usa pharmacies.name; el entrypoint (098) usa visible_name.
+  const pharmacyDisplayName = firstNonEmptyPharmacyName(
+    entry.ok ? entry.pharmacyName : null,
+    catalog.ok ? catalog.pharmacyName : null
+  );
   const checkoutPrefill = customer.ok
     ? buildPublicQrCheckoutPrefill({
         firstName: customer.profile.firstName,
@@ -70,48 +76,59 @@ export default async function PublicPharmacyCatalogPage({
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#F7FAFA] px-4 py-8">
+    <div className="min-h-screen overflow-x-clip bg-[#F7FAFA]">
       <CustomerPwaRegister />
-      <div className="mx-auto w-full min-w-0 max-w-6xl">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <BrandLogo size={56} />
-          <div className="flex items-center gap-3">
+      {/* Cabecera sticky móvil: marca, accesos y nombre de farmacia siempre visibles. */}
+      <CustomerStickyHeader innerClassName="max-w-6xl">
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <BrandLogo size={36} />
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-0.5">
             <Link
               href="/cuenta/mis-farmacias"
-              className="text-sm font-medium text-[#2EC4C7] hover:underline"
+              className="text-xs font-medium text-[#2EC4C7] hover:underline sm:text-sm"
             >
               Mis farmacias
             </Link>
             <Link
               href={`/e/${params.publicId}/cuenta`}
-              className="text-sm font-semibold text-[#0F2A2E] hover:underline"
+              className="text-xs font-semibold text-[#0F2A2E] hover:underline sm:text-sm"
             >
               Mi cuenta
             </Link>
             <Link
               href={`/e/${params.publicId}`}
-              className="text-sm font-medium text-slate-600 hover:underline"
+              className="text-xs font-medium text-slate-600 hover:underline sm:text-sm"
             >
               Inicio farmacia
             </Link>
           </div>
         </div>
-
-        <header className="mb-6">
-          <PharmacyPublicIdentity
-            pharmacyName={catalog.pharmacyName}
+        <div className="mt-1 flex min-w-0 items-center gap-2">
+          <PharmacyLogo
+            name={pharmacyDisplayName}
             logoUrl={pharmacyLogoUrl}
-            size="md"
-            align="start"
-            showFarmaFacilMark={false}
+            logoColor="#2EC4C7"
+            size={28}
+            rounded="lg"
+            className="bg-white ring-1 ring-slate-100"
           />
-          <p className="mt-2 text-xs text-slate-500">
+          <h1 className="min-w-0 truncate text-base font-semibold text-[#0F2A2E] sm:text-lg">
+            {pharmacyDisplayName}
+          </h1>
+          <span className="shrink-0 text-xs font-medium text-slate-400">
+            · Catálogo
+          </span>
+        </div>
+      </CustomerStickyHeader>
+      <div className="mx-auto w-full min-w-0 max-w-6xl px-4 pb-8 pt-4">
+        <header className="mb-6">
+          <p className="text-xs text-slate-500">
             Precio y disponibilidad a confirmar por tu farmacia.
           </p>
           <div className="mt-3 max-w-sm">
             <SavePharmacyButton
               publicId={params.publicId}
-              pharmacyName={catalog.pharmacyName}
+              pharmacyName={pharmacyDisplayName}
               initiallySaved={saved}
               isAuthenticated={customer.ok}
               variant="compact"
@@ -121,7 +138,7 @@ export default async function PublicPharmacyCatalogPage({
 
         <PublicCatalogRequestClient
           publicId={catalog.publicId}
-          pharmacyName={catalog.pharmacyName}
+          pharmacyName={pharmacyDisplayName}
           pharmacyLogoUrl={pharmacyLogoUrl}
           catalogMode={catalog.catalogMode}
           note={catalog.note}

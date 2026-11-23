@@ -1,0 +1,28 @@
+Producto,EAN,SKU,PVP,Stock,Stock mínimo,Categoría,Marca,Descripción larga
+Jabón de glicerina pastilla 100 g (QA),2920000000115,PI-IMP-001,1.9,50,10,Higiene corporal,QA Labs,Producto ficticio de QA. Sin validez comercial.
+Esponja de baño suave (QA),2920000000221,PI-IMP-002,2.2,40,8,Higiene corporal,QA Labs,Producto ficticio de QA. Sin validez comercial.
+Acondicionador cabello seco 250 ml (QA),2920000000337,PI-IMP-003,5.9,25,6,Cuidado capilar,QA Labs,Producto ficticio de QA. Sin validez comercial.
+Mascarilla facial arcilla 75 ml (QA),2920000000443,PI-IMP-004,8.4,18,4,Cuidado facial,Dermo Test,Producto ficticio de QA. Sin validez comercial.
+Contorno labial reparador (QA),2920000000559,PI-IMP-005,4.75,30,6,Cuidado facial,Dermo Test,Producto ficticio de QA. Sin validez comercial.
+Crema pies muy secos 100 ml (QA),2920000000665,PI-IMP-006,6.3,22,5,Cuidado corporal,QA Labs,Producto ficticio de QA. Sin validez comercial.
+Aftersun calmante 200 ml (QA),2920000000771,PI-IMP-007,9.8,15,4,Fotoprotección,Solaria Test,Producto ficticio de QA. Sin validez comercial.
+Protector solar corporal SPF30 200 ml (QA),2920000000887,PI-IMP-008,12.9,20,5,Fotoprotección,Solaria Test,Producto ficticio de QA. Sin validez comercial.
+Colutorio sin alcohol 500 ml (QA),2920000000993,PI-IMP-009,4.2,35,8,Higiene bucal,Sonrisa QA,Producto ficticio de QA. Sin validez comercial.
+Seda dental menta (QA),2920000001105,PI-IMP-010,1.7,60,12,Higiene bucal,Sonrisa QA,Producto ficticio de QA. Sin validez comercial.
+Tiritas resistentes al agua 20 uds (QA),2920000001211,PI-IMP-011,3.1,45,10,Primeros auxilios,CuraFácil Test,Producto ficticio de QA. Sin validez comercial.
+Venda elástica 5 m (QA),2920000001327,PI-IMP-012,2.9,28,6,Primeros auxilios,CuraFácil Test,Producto ficticio de QA. Sin validez comercial.
+Esparadrapo hipoalergénico (QA),2920000001433,PI-IMP-013,1.95,33,8,Primeros auxilios,CuraFácil Test,Producto ficticio de QA. Sin validez comercial.
+Compresa frío/calor reutilizable (QA),2920000001549,PI-IMP-014,5.5,12,3,Material sanitario,CuraFácil Test,Producto ficticio de QA. Sin validez comercial.
+Pulsioxímetro de dedo (QA),2920000001655,PI-IMP-015,24.9,6,2,Material sanitario,CuraFácil Test,Producto ficticio de QA. Sin validez comercial.
+Toallitas desmaquillantes 25 uds (QA),2920000001761,PI-IMP-016,3.6,48,10,Cuidado facial,Dermo Test,Producto ficticio de QA. Sin validez comercial.
+Gominolas multivitamínicas (QA),2920000001877,PI-IMP-017,8.95,21,5,Complementos,Vita Test,Producto ficticio de QA. Sin validez comercial.
+Infusión relajante 20 sobres (QA),2920000001983,PI-IMP-018,3.4,37,8,Nutrición,Vita Test,Producto ficticio de QA. Sin validez comercial.
+Biberón anticólico 250 ml (QA),2920000002096,PI-IMP-019,7.2,14,4,Bebé,BabyCare Test,Producto ficticio de QA. Sin validez comercial.
+Chupete silicona 0-6 m (QA),2920000002201,PI-IMP-020,4.1,26,6,Bebé,BabyCare Test,Producto ficticio de QA. Sin validez comercial.
+Gel de ducha hidratante 500 ml (QA),,PI-QA-001,5.25,60,10,Higiene corporal,QA Labs,Fila de ACTUALIZACIÓN (match por SKU).
+Crema pañal 100 ml (QA),,PI-QA-020,5.4,18,4,Bebé,BabyCare Test,Fila de ACTUALIZACIÓN (match por SKU).
+Gel hidroalcohólico 250 ml (QA),,PI-QA-013,2.7,0,25,Higiene,QA Labs,Fila de ACTUALIZACIÓN (match por SKU).
+Protector solar facial SPF50 50 ml (QA),,PI-QA-004,19.9,24,6,Fotoprotección,Solaria Test,Fila de ACTUALIZACIÓN (match por SKU).
+,,PI-ERR-001,3.5,5,1,Higiene,QA Labs,ERROR esperado: nombre vacío.
+Producto precio negativo (QA),,PI-ERR-002,-4.0,5,1,Higiene,QA Labs,ERROR esperado: precio negativo.
+Producto stock decimal (QA),,PI-ERR-003,2.0,abc,1,Higiene,QA Labs,AVISO/ERROR esperado: stock no numérico.

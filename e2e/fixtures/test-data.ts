@@ -16,6 +16,11 @@ export const PHARMACIES = {
     name: 'Farmacia Staging 1',
     publicId: '91dntkqzz29hscvt',
   },
+  pilotoIntegral: {
+    id: 'f55f94af-2d0f-424b-81d3-a4f687abd495',
+    name: 'Piloto Integral',
+    publicId: '8132f4yiijl5igfr',
+  },
 } as const;
 
 /** Pedidos históricos a conservar (solo lectura en E2E). */
@@ -29,7 +34,8 @@ export type E2ERole =
   | 'staff'
   | 'customer'
   | 'customerB'
-  | 'outsider';
+  | 'outsider'
+  | 'dual';
 
 export function roleEmail(role: E2ERole): string {
   const map: Record<E2ERole, string> = {
@@ -47,6 +53,7 @@ export function roleEmail(role: E2ERole): string {
       process.env.E2E_CUSTOMER_B_EMAIL || 'lab.cliente.b.clientsqr@farmafacil.test',
     outsider:
       process.env.E2E_OUTSIDER_EMAIL || 'catalog.outsider.074@farmafacil.test',
+    dual: process.env.E2E_DUAL_EMAIL || 'catalog.dual.074@farmafacil.test',
   };
   return map[role];
 }

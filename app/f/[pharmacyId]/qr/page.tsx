@@ -23,7 +23,7 @@ export default async function PharmacyQrPage({
       <div className="mx-auto max-w-7xl space-y-6">
         <PageHeader
           title="QR de mi farmacia"
-          description="Código público y cartel para imprimir"
+          description="Código público para descargar"
         />
         <EmptyState
           icon={QrCode}
@@ -59,10 +59,10 @@ export default async function PharmacyQrPage({
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
         title="QR de mi farmacia"
-        description="Código público de producción y materiales para imprimir"
+        description="Código público de producción (PNG y SVG)"
       />
       <p className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-        Las descargas (PNG, SVG y cartel PDF) usan siempre el enlace de
+        Las descargas del QR (PNG y SVG) usan siempre el enlace de
         producción <span className="font-mono">app.farmafacil.solutions</span>,
         nunca localhost ni entornos de prueba.
       </p>
@@ -73,7 +73,7 @@ export default async function PharmacyQrPage({
         entrypoint={entrypoint}
         loadError={loadError}
         publicUrlOverride={printUrl}
-        showPdfPoster
+        showTenantMaterialsContact
       />
     </div>
   );

@@ -115,3 +115,57 @@ export function filterHelpDocsForAudiences(
     return doc.audiences.some((a) => set.has(a));
   });
 }
+
+/**
+ * Audiencias de ayuda para un rol de farmacia (panel tenant /f/[id]/ayuda).
+ * Owner/Admin → manuales de gestión; resto → solo estructura (FAQ/soporte/primeros pasos).
+ * Puro (sin I/O) para poder testearlo.
+ */
+export function helpAudiencesForPharmacyRole(roleKey: string): HelpAudience[] {
+  const key = String(roleKey);
+  if (key === 'PHARMACY_OWNER' || key === 'PHARMACY_ADMIN') {
+    return ['pharmacy_admin', 'pharmacy_staff'];
+  }
+  return ['pharmacy_staff'];
+}
+
+/**
+ * Estructura del hub (stubs). No inventa documentos: cada bloque indica su estado real.
+ * `docId` enlaza a un doc existente de HELP_DOCS cuando lo hay.
+ */
+export type HelpHubStubSection = {
+  id: 'primeros-pasos' | 'manuales' | 'faq' | 'soporte';
+  title: string;
+  description: string;
+  status: 'available' | 'planned';
+  /** Doc existente en HELP_DOCS que cubre (parcialmente) el bloque. */
+  docId?: string;
+};
+
+export const HELP_HUB_STUB_SECTIONS: readonly HelpHubStubSection[] = [
+  {
+    id: 'primeros-pasos',
+    title: 'Primeros pasos',
+    description:
+      'Guía de inicio: configurar la farmacia, publicar el QR y recibir el primer pedido.',
+    status: 'planned',
+  },
+  {
+    id: 'manuales',
+    title: 'Manuales',
+    description: 'Manuales por perfil, versionados con la aplicación.',
+    status: 'available',
+  },
+  {
+    id: 'faq',
+    title: 'Preguntas frecuentes',
+    description: 'Respuestas rápidas sobre pedidos, catálogo, usuarios y QR.',
+    status: 'planned',
+  },
+  {
+    id: 'soporte',
+    title: 'Soporte',
+    description: 'Contacto con el equipo de FarmaFácil para incidencias.',
+    status: 'available',
+  },
+] as const;

@@ -25,6 +25,7 @@ import { getPharmacyKioskEntitlement } from '@/lib/kiosk/entitlement';
 import { getPharmacyAssistantEntitlement } from '@/lib/kiosk/assistant/entitlement';
 import { getPharmacyAssistantUsageCurrentMonth } from '@/lib/kiosk/assistant/settings';
 import { loadOrEnsurePharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
+import { canGeneratePharmacyMaterials } from '@/lib/pharmacies/pharmacy-materials-access';
 import { PharmacyDetailClient } from '@/components/pharmacies/pharmacy-detail-client';
 import { buildPharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
 import { requireOrdersView } from '@/lib/orders/authz';
@@ -145,6 +146,7 @@ export default async function PharmacyDetailPage({
       launchSeatDetail={launchSeatDetail}
       launchSeatEvents={launchSeatEvents}
       canManageLaunchSeats={saTotal.ok}
+      canGenerateMaterials={canGeneratePharmacyMaterials(saTotal.ok)}
       members={members}
       roles={roles}
       usersCapabilities={usersCapabilities}

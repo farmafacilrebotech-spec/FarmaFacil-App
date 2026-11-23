@@ -1,5 +1,6 @@
-import { BrandLogo } from '@/components/brand';
+import { BrandLogo, PharmacyLogo } from '@/components/brand';
 import { CustomerAuthLink } from '@/components/customer/customer-auth-link';
+import { CustomerStickyHeader } from '@/components/customer/customer-sticky-header';
 import { CustomerPwaRegister } from '@/components/customer/customer-pwa-register';
 import { InstallPwaHint } from '@/components/customer/install-pwa-hint';
 import { cn } from '@/lib/utils';
@@ -96,50 +97,56 @@ export function CustomerShell({
   }
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#F7FAFA] px-4 py-6">
+    // overflow-x-clip (no hidden): hidden convierte el contenedor en scroll
+    // container y rompe `position: sticky` de la cabecera.
+    <div className="min-h-screen overflow-x-clip bg-[#F7FAFA]">
       <CustomerPwaRegister />
-      <div className="mx-auto w-full min-w-0 max-w-lg">
-        <div className="mb-5 flex min-w-0 items-center justify-between gap-3">
-          <BrandLogo size={56} />
-          <div className="flex min-w-0 flex-col items-end gap-1 text-right">
+      <CustomerStickyHeader>
+        <div className="flex min-w-0 items-center justify-between gap-3">
+          <BrandLogo size={36} />
+          <div className="flex min-w-0 flex-col items-end text-right">
             {publicId ? (
               <CustomerAuthLink
                 href={catalogHref}
-                className="min-h-0 text-sm font-medium text-slate-600 hover:underline"
+                className="min-h-0 text-xs font-medium text-slate-600 hover:underline sm:text-sm"
               >
                 Volver al catálogo
               </CustomerAuthLink>
             ) : null}
             <CustomerAuthLink
               href="/cuenta/mis-farmacias"
-              className="min-h-0 text-sm font-medium text-[#2EC4C7] hover:underline"
+              className="min-h-0 text-xs font-medium text-[#2EC4C7] hover:underline sm:text-sm"
             >
               Mis farmacias
             </CustomerAuthLink>
           </div>
         </div>
-        <header className="mb-5">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
-            FarmaFácil · Mi cuenta
-          </p>
-          <h1 className="mt-1 text-2xl font-semibold text-[#0F2A2E]">{title}</h1>
+        <div className="mt-1 flex min-w-0 items-center justify-between gap-2">
+          <h1 className="min-w-0 truncate text-lg font-semibold text-[#0F2A2E] sm:text-2xl">
+            {title}
+          </h1>
           {pharmacyLabel ? (
-            <div className="mt-2 flex min-w-0 items-center gap-2">
-              {pharmacyLogoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={pharmacyLogoUrl}
-                  alt=""
-                  width={32}
-                  height={32}
-                  className="h-8 w-8 shrink-0 rounded-lg bg-white object-contain ring-1 ring-slate-100"
-                />
-              ) : null}
-              <p className="min-w-0 truncate text-sm font-medium text-slate-700">
+            <div className="flex min-w-0 max-w-[55%] shrink-0 items-center gap-1.5">
+              <PharmacyLogo
+                name={pharmacyLabel}
+                logoUrl={pharmacyLogoUrl}
+                logoColor="#2EC4C7"
+                size={24}
+                rounded="lg"
+                className="bg-white ring-1 ring-slate-100"
+              />
+              <p className="min-w-0 truncate text-xs font-medium text-slate-700 sm:text-sm">
                 {pharmacyLabel}
               </p>
             </div>
           ) : null}
+        </div>
+      </CustomerStickyHeader>
+      <div className="mx-auto w-full min-w-0 max-w-lg px-4 pb-6 pt-4">
+        <header className="mb-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+            FarmaFácil · Mi cuenta
+          </p>
           {subtitle ? (
             <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
           ) : null}

@@ -1,7 +1,6 @@
-import { redirect } from 'next/navigation';
-
 import { PageHeader } from '@/components/shared/page-header';
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
+import { PharmacySectionAccessDenied } from '@/components/pharmacy-tenant/pharmacy-section-access-denied';
 import {
   listPharmacyMembers,
   listPharmacyRoles,
@@ -24,7 +23,7 @@ export default async function PharmacyUsuariosPage({
   const pharmacyId = params.pharmacyId;
   const auth = await requirePharmacyMembershipManage(pharmacyId);
   if (!auth.ok) {
-    redirect(`/f/${pharmacyId}/dashboard`);
+    return <PharmacySectionAccessDenied pharmacyId={pharmacyId} />;
   }
 
   const [members, roles] = await Promise.all([

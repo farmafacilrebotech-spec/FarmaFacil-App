@@ -7,6 +7,7 @@ import { Loader2 } from 'lucide-react';
 
 import { unsavePharmacyAction } from '@/app/cuenta/actions';
 import type { SavedPharmacy } from '@/lib/customer/saved-pharmacies';
+import { PharmacyLogo } from '@/components/brand';
 import { Button } from '@/components/ui/button';
 
 export function SavedPharmaciesList({ items }: { items: SavedPharmacy[] }) {
@@ -62,16 +63,14 @@ export function SavedPharmaciesList({ items }: { items: SavedPharmacy[] }) {
             className="rounded-2xl border border-border bg-card p-4 shadow-soft"
           >
             <div className="flex items-center gap-3">
-              {item.logoUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={item.logoUrl}
-                  alt=""
-                  width={40}
-                  height={40}
-                  className="h-10 w-10 rounded-xl bg-white object-contain ring-1 ring-slate-100"
-                />
-              ) : null}
+              <PharmacyLogo
+                name={item.pharmacyName}
+                logoUrl={item.logoUrl}
+                logoColor="#2EC4C7"
+                size={40}
+                rounded="xl"
+                className="bg-white ring-1 ring-slate-100"
+              />
               <p className="font-medium text-[#0F2A2E]">{item.pharmacyName}</p>
             </div>
             <p className="mt-0.5 text-[11px] text-muted-foreground">

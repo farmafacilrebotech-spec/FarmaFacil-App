@@ -9,6 +9,7 @@ import {
   UserCog,
   MonitorSmartphone,
   QrCode,
+  LifeBuoy,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -51,7 +52,7 @@ export const tenantNavItems: TenantNavItem[] = [
     label: 'QR de mi farmacia',
     segment: 'qr',
     icon: QrCode,
-    description: 'Código público y cartel para imprimir',
+    description: 'Código público (descarga PNG y SVG)',
   },
   {
     label: 'Promociones',
@@ -82,6 +83,12 @@ export const tenantNavItems: TenantNavItem[] = [
     segment: 'configuracion',
     icon: Settings,
     description: 'Ajustes de la farmacia',
+  },
+  {
+    label: 'Ayuda',
+    segment: 'ayuda',
+    icon: LifeBuoy,
+    description: 'Manuales, primeros pasos y soporte',
   },
 ];
 

@@ -2,6 +2,7 @@
 
 import { cookies } from 'next/headers';
 import { createClient } from '@/lib/supabase/server';
+import { clearKioskSessionCookie } from '@/lib/kiosk/session-cookie';
 
 /** Borra cookies de Auth SSR (sesión + PKCE) para que el middleware no reautentique. */
 export async function clearSupabaseAuthCookies() {
@@ -30,6 +31,14 @@ export async function clearSupabaseAuthCookies() {
  * Cierra sesión Auth de forma fiable (revoke + cookies SSR).
  * Debe invocarse SOLO desde server action / form action — no mezclar
  * con signOut del browser client antes, o las cookies quedan en carrera.
+ *
+ * También borra la cookie HttpOnly de sesión de dispositivo kiosko
+ * (`ff_kiosk_device_session`, path `/k`) en este navegador.
+ *
+ * NO toca:
+ * - Vinculación persistente del dispositivo en BD (pairing / device row).
+ * - Entitlement comercial del módulo kiosko.
+ * - Revocación remota de dispositivos.
  */
 export async function signOutAndClearCookies(): Promise<{ ok: boolean }> {
   const supabase = createClient();
@@ -39,5 +48,6 @@ export async function signOutAndClearCookies(): Promise<{ ok: boolean }> {
     await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
   }
   await clearSupabaseAuthCookies();
+  clearKioskSessionCookie();
   return { ok: !error };
 }

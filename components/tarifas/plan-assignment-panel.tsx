@@ -9,6 +9,10 @@ import {
   PLAN_CATALOG_EXPECTATIONS,
   type CommercialPlanCode,
 } from '@/lib/commercial/plan-catalog-mode';
+import {
+  isPaidSkuAvailable,
+  type PaidCommercialSkuKey,
+} from '@/lib/commercial/available-skus';
 import type { QuotePharmacyOption } from '@/lib/commercial/quote-types';
 import { changePharmacyPlanAction } from '@/app/(app)/farmacias/actions';
 import { Card } from '@/components/ui/card';
@@ -41,20 +45,39 @@ export function PlanAssignmentPanel({
   canManage,
   pharmacies = [],
   initialPharmacyId = null,
+  availableSkuKeys = null,
 }: {
   canManage: boolean;
   pharmacies?: QuotePharmacyOption[];
   initialPharmacyId?: string | null;
+  /** SKUs comerciales activos con plan técnico (null = sin filtrar; el servidor valida igualmente). */
+  availableSkuKeys?: string[] | null;
 }) {
   const router = useRouter();
   const mutationLock = React.useRef(false);
   const [pharmacyId, setPharmacyId] = React.useState(
     initialPharmacyId?.trim() || 'none'
   );
+  const paidPlans = React.useMemo(
+    () =>
+      PLAN_CATALOG_EXPECTATIONS.filter(
+        (p) =>
+          p.planCode !== 'piloto' &&
+          isPaidSkuAvailable(
+            availableSkuKeys,
+            PLAN_TO_KEY[
+              p.planCode as Exclude<CommercialPlanCode, 'piloto'>
+            ] as PaidCommercialSkuKey
+          )
+      ),
+    [availableSkuKeys]
+  );
   const [plan, setPlan] = React.useState<Exclude<CommercialPlanCode, 'piloto'>>(
     'general'
   );
   const [endOpenPilot, setEndOpenPilot] = React.useState(false);
+  /** Contratación explícita (obligatoria para asignar; evita cambio silencioso de plan en prueba). */
+  const [confirmContract, setConfirmContract] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
   React.useEffect(() => {
@@ -63,13 +86,33 @@ export function PlanAssignmentPanel({
     }
   }, [initialPharmacyId]);
 
+  // Si el plan seleccionado deja de estar disponible, usar el primero activo.
+  React.useEffect(() => {
+    if (paidPlans.length === 0) return;
+    if (!paidPlans.some((p) => p.planCode === plan)) {
+      setPlan(paidPlans[0].planCode as Exclude<CommercialPlanCode, 'piloto'>);
+    }
+  }, [paidPlans, plan]);
+
   const expectation = PLAN_CATALOG_EXPECTATIONS.find((p) => p.planCode === plan);
-  const paidPlans = PLAN_CATALOG_EXPECTATIONS.filter((p) => p.planCode !== 'piloto');
+  const planAvailable = paidPlans.some((p) => p.planCode === plan);
 
   async function assignPlan() {
     if (!canManage || mutationLock.current) return;
     if (pharmacyId === 'none') {
       toast.error('Selecciona una farmacia por nombre.');
+      return;
+    }
+    if (!planAvailable) {
+      toast.error(
+        'Ese plan comercial no está disponible. Elige uno de la lista.'
+      );
+      return;
+    }
+    if (!confirmContract) {
+      toast.error(
+        'Confirma expresamente la contratación antes de asignar el plan.'
+      );
       return;
     }
     mutationLock.current = true;
@@ -80,6 +123,7 @@ export function PlanAssignmentPanel({
         PLAN_TO_KEY[plan],
         {
           endOpenPilot,
+          confirmContract: true,
           useLaunchPromo: false,
           reason: 'tarifas_contratacion_panel',
         }
@@ -92,6 +136,7 @@ export function PlanAssignmentPanel({
         description:
           'Sin reserva automática de plaza. Firma jurídica definitiva sigue bloqueada.',
       });
+      setConfirmContract(false);
       router.refresh();
     } finally {
       setBusy(false);
@@ -202,12 +247,17 @@ export function PlanAssignmentPanel({
           </div>
           <div className="space-y-1.5">
             <Label>Plan</Label>
+            {paidPlans.length === 0 ? (
+              <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                No hay planes comerciales activos disponibles para asignar.
+              </p>
+            ) : null}
             <Select
               value={plan}
               onValueChange={(v) =>
                 setPlan(v as Exclude<CommercialPlanCode, 'piloto'>)
               }
-              disabled={!canManage || busy}
+              disabled={!canManage || busy || paidPlans.length === 0}
             >
               <SelectTrigger>
                 <SelectValue />
@@ -235,9 +285,29 @@ export function PlanAssignmentPanel({
             el plan de pago (no se hace de forma implícita).
           </span>
         </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={confirmContract}
+            onChange={(e) => setConfirmContract(e.target.checked)}
+            disabled={!canManage || busy}
+          />
+          <span>
+            Confirmo la contratación explícita de este plan (convierte un piloto
+            abierto y crea la suscripción). Sin esta confirmación no se asigna
+            el plan de pago.
+          </span>
+        </label>
         <Button
           type="button"
-          disabled={!canManage || busy || pharmacyId === 'none'}
+          disabled={
+            !canManage ||
+            busy ||
+            pharmacyId === 'none' ||
+            !confirmContract ||
+            !planAvailable
+          }
           onClick={() => void assignPlan()}
         >
           Asignar plan

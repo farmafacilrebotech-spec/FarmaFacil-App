@@ -20,6 +20,12 @@ const KNOWN: Record<string, string> = {
     'Selecciona el plan del piloto: General, Personalizado o Asistente IA personalizado.',
   extension_reason_required: 'Indica un motivo de ampliación (mín. 3 caracteres).',
   pharmacy_has_current_subscription: 'La farmacia ya tiene una suscripción corriente.',
+  technical_plan_missing:
+    'El plan comercial seleccionado aún no está disponible en el catálogo técnico (falta su configuración). No se ha modificado la farmacia. Elige otro plan o contacta con soporte técnico.',
+  unknown_commercial_sku:
+    'El plan comercial seleccionado no existe o está inactivo. Elige un plan disponible.',
+  commercial_plan_requires_assign_rpc:
+    'Este plan solo puede asignarse desde el flujo de contratación comercial.',
   starter_plan_missing: 'Falta el plan técnico starter en la base de datos.',
   generic_catalog_readonly: 'El catálogo maestro no es editable por la farmacia.',
   invalid_catalog_mode: 'Modalidad de catálogo no válida.',

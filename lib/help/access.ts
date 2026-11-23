@@ -3,9 +3,11 @@ import {
   hasPlatformSuperAdminRole,
   hasPlatformSupportRole,
 } from '@/lib/auth/platform';
+import { requireActivePharmacyMembership } from '@/lib/auth/access';
 import {
   filterHelpDocsForAudiences,
   getHelpDoc,
+  helpAudiencesForPharmacyRole,
   type HelpAudience,
   type HelpDoc,
 } from '@/lib/help/catalog';
@@ -62,6 +64,41 @@ export async function canAccessHelpDoc(
     return { ok: false, reason: 'forbidden' };
   }
   if (!doc.audiences.some((a) => audiences.includes(a))) {
+    return { ok: false, reason: 'forbidden' };
+  }
+  return { ok: true, doc };
+}
+
+/**
+ * Ayuda dentro del panel tenant /f/[pharmacyId]/ayuda.
+ * Exige membership active en la farmacia (validado en servidor) y deriva
+ * audiencias del rol. No concede audiencias de plataforma.
+ */
+export async function resolveHelpAudiencesForPharmacy(
+  pharmacyId: string
+): Promise<
+  | { ok: true; audiences: HelpAudience[]; roleKey: string }
+  | { ok: false; reason: 'unauthenticated' | 'forbidden' | 'error' }
+> {
+  const m = await requireActivePharmacyMembership(pharmacyId);
+  if (!m.ok) return { ok: false, reason: m.reason };
+  const audiences = helpAudiencesForPharmacyRole(m.membership.roleKey);
+  return { ok: true, audiences, roleKey: m.membership.roleKey };
+}
+
+export async function canAccessHelpDocForPharmacy(
+  pharmacyId: string,
+  docId: string
+): Promise<
+  | { ok: true; doc: HelpDoc }
+  | { ok: false; reason: 'not_found' | 'unauthenticated' | 'forbidden' | 'error' }
+> {
+  const doc = getHelpDoc(docId);
+  if (!doc) return { ok: false, reason: 'not_found' };
+  const resolved = await resolveHelpAudiencesForPharmacy(pharmacyId);
+  if (!resolved.ok) return { ok: false, reason: resolved.reason };
+  if (doc.internalTests) return { ok: false, reason: 'forbidden' };
+  if (!doc.audiences.some((a) => resolved.audiences.includes(a))) {
     return { ok: false, reason: 'forbidden' };
   }
   return { ok: true, doc };

@@ -3,11 +3,13 @@
  * No intercepta navegación de documentos: /cuenta y /e/… van siempre a red.
  * No cachea HTML ni respuestas autenticadas (perfil, direcciones, pedidos).
  */
-const CACHE = 'ff-customer-static-v2';
+const CACHE = 'ff-customer-static-v3';
 const PRECACHE = [
   '/manifest.webmanifest',
   '/icons/pwa-192.png',
   '/icons/pwa-512.png',
+  '/icons/pwa-maskable-192.png',
+  '/icons/pwa-maskable-512.png',
   '/icons/apple-touch-180.png',
   '/images/logos/farmafacil-mark.png',
   '/images/logos/farmafacil-favicon-32.png',

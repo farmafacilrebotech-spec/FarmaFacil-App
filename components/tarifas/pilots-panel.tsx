@@ -22,6 +22,7 @@ import type {
   PilotTrialPlanSku,
   ReadinessCheck,
 } from '@/lib/commercial/pilots-queries';
+import { isPaidSkuAvailable } from '@/lib/commercial/available-skus';
 import { commercialPlanLabel } from '@/lib/commercial/commercial-plan-labels';
 import {
   activateCommercialTrialAction,
@@ -119,11 +120,14 @@ export function PilotsPanel({
   initialKpis,
   loadError,
   canManage,
+  availableSkuKeys = null,
 }: {
   initialRows: CommercialPilotRow[];
   initialKpis: PilotKpis;
   loadError?: string | null;
   canManage: boolean;
+  /** SKUs activos con plan técnico (null = sin filtrar; el servidor valida igualmente). */
+  availableSkuKeys?: string[] | null;
 }) {
   const router = useRouter();
   /** Evita doble envío / clics repetidos en mutaciones comerciales. */
@@ -134,15 +138,24 @@ export function PilotsPanel({
   const [email, setEmail] = React.useState('');
   const [phone, setPhone] = React.useState('');
   const [city, setCity] = React.useState('');
+  const trialPlanOptions = React.useMemo(
+    () =>
+      TRIAL_PLAN_OPTIONS.filter((o) =>
+        isPaidSkuAvailable(availableSkuKeys, o.value)
+      ),
+    [availableSkuKeys]
+  );
+  const defaultTrialPlan: PilotTrialPlanSku =
+    trialPlanOptions[0]?.value ?? 'general';
   const [prepTrialPlan, setPrepTrialPlan] =
-    React.useState<PilotTrialPlanSku>('general');
+    React.useState<PilotTrialPlanSku>(defaultTrialPlan);
   const [lastQrUrl, setLastQrUrl] = React.useState<string | null>(null);
 
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [activateTarget, setActivateTarget] =
     React.useState<CommercialPilotRow | null>(null);
   const [activatePlan, setActivatePlan] =
-    React.useState<PilotTrialPlanSku>('general');
+    React.useState<PilotTrialPlanSku>(defaultTrialPlan);
   const [endTarget, setEndTarget] = React.useState<CommercialPilotRow | null>(
     null
   );
@@ -199,7 +212,7 @@ export function PilotsPanel({
       setEmail('');
       setPhone('');
       setCity('');
-      setPrepTrialPlan('general');
+      setPrepTrialPlan(defaultTrialPlan);
       setCreateOpen(false);
       router.refresh();
     } finally {
@@ -494,7 +507,12 @@ export function PilotsPanel({
                               disabled={!canManage || !canActivate || busy}
                               onClick={() => {
                                 setActivatePlan(
-                                  row.trialPlanSku ?? 'general'
+                                  row.trialPlanSku &&
+                                    trialPlanOptions.some(
+                                      (o) => o.value === row.trialPlanSku
+                                    )
+                                    ? row.trialPlanSku
+                                    : defaultTrialPlan
                                 );
                                 setActivateTarget(row);
                               }}
@@ -579,12 +597,17 @@ export function PilotsPanel({
                 }
                 required
               >
-                {TRIAL_PLAN_OPTIONS.map((o) => (
+                {trialPlanOptions.map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
                 ))}
               </select>
+              {trialPlanOptions.length === 0 ? (
+                <p className="text-xs text-destructive">
+                  No hay planes comerciales activos disponibles para el piloto.
+                </p>
+              ) : null}
               <p className="text-xs text-muted-foreground">
                 General: catálogo genérico. Personalizado / IA: catálogo propio
                 (sin tratar genéricos como propios).
@@ -629,7 +652,12 @@ export function PilotsPanel({
               >
                 Cancelar
               </Button>
-              <Button type="submit" disabled={creating || !name.trim()}>
+              <Button
+                type="submit"
+                disabled={
+                  creating || !name.trim() || trialPlanOptions.length === 0
+                }
+              >
                 {creating ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -717,7 +745,7 @@ export function PilotsPanel({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {TRIAL_PLAN_OPTIONS.map((o) => (
+                {trialPlanOptions.map((o) => (
                   <SelectItem key={o.value} value={o.value}>
                     {o.label}
                   </SelectItem>
@@ -728,6 +756,7 @@ export function PilotsPanel({
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
+              disabled={trialPlanOptions.length === 0}
               onClick={(e) => {
                 e.preventDefault();
                 void confirmActivate();

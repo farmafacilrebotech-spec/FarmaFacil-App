@@ -68,6 +68,7 @@ import type {
 import { PharmacyUsersPanel } from '@/components/pharmacies/pharmacy-users-panel';
 import { CatalogoTab } from '@/components/pharmacies/tabs/catalogo-tab';
 import { QrTab } from '@/components/pharmacies/tabs/qr-tab';
+import { resolvePharmacyDisplayName } from '@/lib/pharmacies/display-name';
 import { KioskDevicesPanel } from '@/components/kiosk/kiosk-devices-panel';
 import { AssistantEntitlementAdminPanel } from '@/components/kiosk/assistant-entitlement-admin-panel';
 import { PharmacyOrdersPanel } from '@/components/pharmacy-tenant/pharmacy-orders-panel';
@@ -211,6 +212,7 @@ export function PharmacyDetailClient({
   launchSeatDetail = null,
   launchSeatEvents = [],
   canManageLaunchSeats = false,
+  canGenerateMaterials = false,
   members,
   roles,
   usersCapabilities,
@@ -243,6 +245,8 @@ export function PharmacyDetailClient({
   launchSeatDetail?: LaunchSeatDetail | null;
   launchSeatEvents?: LaunchSeatEvent[];
   canManageLaunchSeats?: boolean;
+  /** SuperAdmin total (servidor): carteles y pack de bienvenida en la pestaña QR. */
+  canGenerateMaterials?: boolean;
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
   usersCapabilities: PharmacyUsersCapabilities;
@@ -1251,7 +1255,10 @@ export function PharmacyDetailClient({
 
         {activeTab === 'qr' && (
           <QrTab
-            pharmacyName={pharmacy.name}
+            pharmacyName={resolvePharmacyDisplayName({
+              visibleName: pharmacy.settings?.visible_name,
+              name: pharmacy.name,
+            })}
             pharmacyLogoUrl={pharmacy.branding?.logo_url ?? null}
             pharmacyPrimaryColor={pharmacy.branding?.primary_color ?? null}
             entrypoint={homeEntrypoint}
@@ -1261,7 +1268,7 @@ export function PharmacyDetailClient({
                 ? pharmacyPrintPublicUrl(homeEntrypoint.publicId)
                 : null
             }
-            showPdfPoster
+            canGenerateMaterials={canGenerateMaterials}
           />
         )}
 

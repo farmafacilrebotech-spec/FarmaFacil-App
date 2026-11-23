@@ -70,27 +70,23 @@ test.describe('P0 auth roles', () => {
   test('empleado denegado a gestión de usuarios', async ({ page }) => {
     await loginAs(page, 'staff');
     await page.goto(`/f/${PHARMACIES.fase7.id}/usuarios`);
-    const denied = page.getByText(/no tienes|sin permiso|acceso denegado|no autorizado|forbidden/i);
-    const usersUi = page.getByText(/invitar|miembros|equipo/i);
-    // Debe denegar o no mostrar gestión
-    const deniedVisible = await denied.first().isVisible().catch(() => false);
-    if (!deniedVisible) {
-      // Si la ruta redirige
-      await expect(page).not.toHaveURL(new RegExp(`/f/${PHARMACIES.fase7.id}/usuarios$`));
-    } else {
-      await expect(denied.first()).toBeVisible();
-    }
-    void usersUi;
+    await expect(
+      page.getByText(
+        /Tu usuario no tiene permiso para acceder a este apartado/i
+      )
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('link', { name: /volver al dashboard/i })).toBeVisible();
+    await expect(page.getByText(/invitar|miembros|equipo/i)).toHaveCount(0);
   });
 
   test('empleado denegado a dispositivos/kioskos', async ({ page }) => {
     await loginAs(page, 'staff');
     await page.goto(`/f/${PHARMACIES.fase7.id}/dispositivos`);
-    const denied = page.getByText(/no tienes|sin permiso|acceso denegado|no autorizado/i);
-    if (await denied.first().isVisible().catch(() => false)) {
-      await expect(denied.first()).toBeVisible();
-    } else {
-      await expect(page).not.toHaveURL(/dispositivos$/);
-    }
+    await expect(
+      page.getByText(
+        /Tu usuario no tiene permiso para acceder a este apartado/i
+      )
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByRole('link', { name: /volver al dashboard/i })).toBeVisible();
   });
 });

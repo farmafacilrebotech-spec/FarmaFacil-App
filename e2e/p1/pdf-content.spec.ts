@@ -65,9 +65,11 @@ test.describe('P1 PDF contenido real', () => {
     await assertPdfContent(buf, [/FarmaF|BORRADOR|Contrato|contrato/i], 'contrato');
   });
 
-  test('cartel QR: PDF A4 con texto de farmacia', async ({ page }) => {
-    await loginAs(page, 'owner');
-    await page.goto(`/f/${PHARMACIES.fase7.id}/qr`);
+  test('cartel QR: PDF A4 con texto de farmacia (solo SuperAdmin)', async ({
+    page,
+  }) => {
+    await loginAs(page, 'superadmin');
+    await page.goto(`/farmacias/${PHARMACIES.fase7.id}?tab=qr`);
     await expect(
       page.getByText(/qr|cartel|descargar|pdf/i).first()
     ).toBeVisible({ timeout: 30_000 });

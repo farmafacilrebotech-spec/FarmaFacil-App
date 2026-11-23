@@ -9,13 +9,20 @@ import {
   type PendingPharmacyInvitation,
 } from '@/lib/pharmacies/invitations';
 import type { ShellPharmacyOption } from '@/lib/pharmacies/shell-pharmacies';
+import {
+  resolvePharmacyDisplayName,
+  visibleNameFromSettingsEmbed,
+} from '@/lib/pharmacies/display-name';
 
 export type PharmacyTenantContext = {
   profile: CurrentProfile;
   membership: PharmacyMembershipSummary;
   pharmacy: {
     id: string;
+    /** Nombre visible (visible_name → name). Solo UX; no usar en documentos legales. */
     name: string;
+    /** pharmacies.name (fiscal/legal). */
+    legalName: string;
     logoUrl: string | null;
     logoColor: string | null;
     primaryColor: string | null;
@@ -42,6 +49,10 @@ type AuthorizedMembershipRow = {
           | { logo_url: string | null }
           | { logo_url: string | null }[]
           | null;
+        pharmacy_settings:
+          | { visible_name: string | null }
+          | { visible_name: string | null }[]
+          | null;
       }
     | {
         id: string;
@@ -52,6 +63,10 @@ type AuthorizedMembershipRow = {
         pharmacy_branding:
           | { logo_url: string | null }
           | { logo_url: string | null }[]
+          | null;
+        pharmacy_settings:
+          | { visible_name: string | null }
+          | { visible_name: string | null }[]
           | null;
       }[]
     | null;
@@ -85,7 +100,8 @@ export async function listAuthorizedPharmaciesForProfile(
         city,
         province,
         logo_color,
-        pharmacy_branding ( logo_url )
+        pharmacy_branding ( logo_url ),
+        pharmacy_settings ( visible_name )
       )
     `
     )
@@ -109,7 +125,10 @@ export async function listAuthorizedPharmaciesForProfile(
     const branding = unwrapOne(ph.pharmacy_branding);
     options.push({
       id: ph.id,
-      name: ph.name,
+      name: resolvePharmacyDisplayName({
+        visibleName: visibleNameFromSettingsEmbed(ph.pharmacy_settings),
+        name: ph.name,
+      }),
       city: ph.city ?? null,
       province: ph.province ?? null,
       logoColor: ph.logo_color ?? null,
@@ -174,7 +193,8 @@ export async function loadPharmacyTenantContext(
       pharmacy_branding (
         logo_url,
         primary_color
-      )
+      ),
+      pharmacy_settings ( visible_name )
     `
     )
     .eq('id', pharmacyId)
@@ -212,7 +232,16 @@ export async function loadPharmacyTenantContext(
       membership: access.membership,
       pharmacy: {
         id: pharmacy.id as string,
-        name: pharmacy.name as string,
+        name: resolvePharmacyDisplayName({
+          visibleName: visibleNameFromSettingsEmbed(
+            pharmacy.pharmacy_settings as
+              | { visible_name: string | null }
+              | { visible_name: string | null }[]
+              | null
+          ),
+          name: pharmacy.name as string,
+        }),
+        legalName: pharmacy.name as string,
         logoUrl: branding?.logo_url ?? null,
         logoColor: (pharmacy.logo_color as string | null) ?? null,
         primaryColor: branding?.primary_color ?? null,

@@ -19,6 +19,21 @@ describe('mapCommercialRpcError', () => {
     );
   });
 
+  it('mapea technical_plan_missing y SKU desconocido en español', () => {
+    assert.match(
+      mapCommercialRpcError('technical_plan_missing: personalizado', 'P0002'),
+      /cat[aá]logo t[eé]cnico/i
+    );
+    assert.doesNotMatch(
+      mapCommercialRpcError('technical_plan_missing: personalizado'),
+      /technical_plan_missing/
+    );
+    assert.match(
+      mapCommercialRpcError('unknown_commercial_sku'),
+      /no existe o est[aá] inactivo/i
+    );
+  });
+
   it('no devolución genérica con detalles de conexión', () => {
     const msg = mapCommercialRpcError(
       'connection to host db.example.com port 5432 failed'

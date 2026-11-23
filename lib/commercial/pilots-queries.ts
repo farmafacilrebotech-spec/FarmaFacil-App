@@ -5,6 +5,11 @@ import {
   loadPharmacyProductCounts,
 } from '@/lib/commercial/pharmacy-product-counts';
 import { pharmacyEntrypointPublicUrl } from '@/lib/kiosk/entrypoint-url';
+import {
+  computeAvailableSkuKeys,
+  type CommercialSkuRow,
+} from '@/lib/commercial/available-skus';
+import type { CommercialSkuKey } from '@/lib/commercial/commercial-plan-assign';
 
 export type CommercialTrialStatus =
   | 'draft'
@@ -53,6 +58,28 @@ function daysRemaining(endsAt: string | null): number | null {
   if (Number.isNaN(end)) return null;
   const diff = end - Date.now();
   return Math.ceil(diff / (1000 * 60 * 60 * 24));
+}
+
+/**
+ * SKUs comerciales seleccionables para NUEVA asignación/piloto (activos + plan técnico activo).
+ * Devuelve null si no se pudo determinar (la UI no filtra; el servidor sigue validando).
+ */
+export async function loadAvailableCommercialSkuKeys(): Promise<
+  CommercialSkuKey[] | null
+> {
+  const supabase = createClient();
+  const [plansRes, skusRes] = await Promise.all([
+    supabase.from('plans').select('key').eq('is_active', true),
+    supabase.from('commercial_plan_skus').select('key, is_active'),
+  ]);
+  if (plansRes.error || !plansRes.data) {
+    console.error('[commercial] available skus: plans', plansRes.error?.code);
+    return null;
+  }
+  return computeAvailableSkuKeys({
+    skuRows: skusRes.error ? null : (skusRes.data as CommercialSkuRow[] | null),
+    activeTechnicalPlanKeys: plansRes.data.map((p) => String(p.key)),
+  });
 }
 
 export async function canManageCommercialTrials(): Promise<boolean> {

@@ -42,6 +42,10 @@ import {
   openPdfBlob,
   printPdfBlob,
 } from '@/lib/pharmacies/pharmacy-welcome-pack';
+import {
+  PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE,
+  PHARMACY_TENANT_MATERIALS_CONTACT_MESSAGE,
+} from '@/lib/pharmacies/pharmacy-materials-access';
 import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import { ScannableQr } from '@/components/kiosk/scannable-qr';
 import { Button } from '@/components/ui/button';
@@ -70,7 +74,8 @@ type BusyKind =
 /**
  * QR oficial de la farmacia (mismo public_entrypoints / URL que el kiosko).
  * No regenera el public_id desde la UI (permanente).
- * Incluye sección «Material publicitario» (acceso QR + campaña + pack).
+ * Material publicitario (carteles, vista previa, PDF, impresión, pack): solo con
+ * `canGenerateMaterials` (SuperAdmin; calculado en servidor). Owner/Admin: solo PNG/SVG.
  */
 export function QrTab({
   pharmacyName,
@@ -82,8 +87,10 @@ export function QrTab({
   loadError,
   /** Sustituye entrypoint.publicUrl (p. ej. URL canónica de producción para impresión). */
   publicUrlOverride,
-  /** Muestra cartel PDF y material publicitario. */
-  showPdfPoster = false,
+  /** Solo SuperAdmin (servidor): carteles PDF, vista previa, impresión y pack. */
+  canGenerateMaterials = false,
+  /** Panel tenant: mensaje para solicitar material personalizado a FarmaFácil. */
+  showTenantMaterialsContact = false,
 }: {
   pharmacyName: string;
   pharmacyLogoUrl?: string | null;
@@ -91,7 +98,8 @@ export function QrTab({
   entrypoint: PharmacyHomeEntrypoint | null;
   loadError?: string | null;
   publicUrlOverride?: string | null;
-  showPdfPoster?: boolean;
+  canGenerateMaterials?: boolean;
+  showTenantMaterialsContact?: boolean;
 }) {
   const [copied, setCopied] = React.useState(false);
   const [busy, setBusy] = React.useState<BusyKind>(null);
@@ -100,6 +108,14 @@ export function QrTab({
   const [adFormat, setAdFormat] = React.useState<PosterPageFormat>('a4');
 
   const publicUrl = publicUrlOverride?.trim() || entrypoint?.publicUrl || '';
+
+  function assertMaterialsAllowed(): boolean {
+    if (!canGenerateMaterials) {
+      toast.error(PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE);
+      return false;
+    }
+    return true;
+  }
 
   function assertPrintSafe(): boolean {
     if (!isPrintSafePharmacyPublicUrl(publicUrl)) {
@@ -162,6 +178,9 @@ export function QrTab({
   }
 
   async function buildAccessPdf(format: PosterPageFormat) {
+    if (!canGenerateMaterials) {
+      throw new Error(PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE);
+    }
     if (!entrypoint || !publicUrl) {
       throw new Error('Falta el acceso público de la farmacia');
     }
@@ -185,6 +204,9 @@ export function QrTab({
   }
 
   async function buildAdPdf(format: PosterPageFormat) {
+    if (!canGenerateMaterials) {
+      throw new Error(PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE);
+    }
     if (!entrypoint || !publicUrl) {
       throw new Error('Falta el acceso público de la farmacia');
     }
@@ -290,6 +312,7 @@ export function QrTab({
   }
 
   async function onWelcomePack() {
+    if (!assertMaterialsAllowed()) return;
     if (!entrypoint || !publicUrl) return;
     if (!assertPrintSafe()) return;
     if (!isPharmacyQrPosterDownloadEnabled()) {
@@ -339,7 +362,8 @@ export function QrTab({
     );
   }
 
-  const materialsReady = showPdfPoster && isPharmacyQrPosterDownloadEnabled();
+  const materialsReady =
+    canGenerateMaterials && isPharmacyQrPosterDownloadEnabled();
 
   return (
     <div className="space-y-10">
@@ -370,7 +394,7 @@ export function QrTab({
               URL pública oficial
             </h4>
             <p className="mt-1 text-xs text-muted-foreground">
-              {showPdfPoster
+              {canGenerateMaterials || showTenantMaterialsContact
                 ? 'Enlace de producción para escaparate, pegatinas y material impreso.'
                 : 'Misma URL en kiosko, escaparate, tarjetas y SuperAdmin.'}
             </p>
@@ -440,7 +464,16 @@ export function QrTab({
         </div>
       </div>
 
-      {showPdfPoster ? (
+      {showTenantMaterialsContact && !canGenerateMaterials ? (
+        <p
+          className="rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground"
+          data-testid="pharmacy-qr-materials-contact"
+        >
+          {PHARMACY_TENANT_MATERIALS_CONTACT_MESSAGE}
+        </p>
+      ) : null}
+
+      {canGenerateMaterials ? (
         <section className="space-y-5 rounded-xl border border-border bg-card p-5 shadow-soft sm:p-6">
           <div>
             <h3 className="text-base font-semibold text-foreground">
