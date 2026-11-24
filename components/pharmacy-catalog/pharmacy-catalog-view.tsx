@@ -92,6 +92,8 @@ export function PharmacyCatalogView({
   const [busyId, setBusyId] = React.useState<string | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [page, setPage] = React.useState(1);
+  /** Stock es opcional: oculto por defecto (no inventariamos FarmaFácil). */
+  const [showStockColumn, setShowStockColumn] = React.useState(false);
   const pageSize = 50;
   const taxonomyCats = React.useMemo(() => listCommercialCategories(), []);
 
@@ -386,6 +388,17 @@ export function PharmacyCatalogView({
                 <SelectItem value="pending">Pend. clasificar</SelectItem>
               </SelectContent>
             </Select>
+            {!isGeneric ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10"
+                onClick={() => setShowStockColumn((v) => !v)}
+              >
+                {showStockColumn ? 'Ocultar stock' : 'Mostrar stock'}
+              </Button>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
@@ -476,7 +489,9 @@ export function PharmacyCatalogView({
                     {!isGeneric ? (
                       <>
                         <TableHead className="text-right">PVP</TableHead>
-                        <TableHead className="text-right">Stock</TableHead>
+                        {showStockColumn ? (
+                          <TableHead className="text-right">Stock</TableHead>
+                        ) : null}
                       </>
                     ) : (
                       <TableHead className="hidden sm:table-cell">
@@ -543,17 +558,13 @@ export function PharmacyCatalogView({
                             <TableCell className="text-right font-medium">
                               {formatCurrency(p.price)}
                             </TableCell>
-                            <TableCell className="text-right">
-                              <span
-                                className={
-                                  p.stock <= p.minStock
-                                    ? 'font-medium text-amber-600'
-                                    : undefined
-                                }
-                              >
-                                {formatNumber(p.stock)}
-                              </span>
-                            </TableCell>
+                            {showStockColumn ? (
+                              <TableCell className="text-right">
+                                <span className="text-muted-foreground">
+                                  {formatNumber(p.stock)}
+                                </span>
+                              </TableCell>
+                            ) : null}
                           </>
                         ) : (
                           <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">

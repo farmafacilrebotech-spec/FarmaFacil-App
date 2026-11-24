@@ -386,15 +386,18 @@ export function PublicCatalogRequestClient({
                     </p>
                   ) : null}
                   <p className="text-xs font-medium text-[#0F766E]">
-                    {item.availabilityStatus === 'confirm_with_pharmacy'
-                      ? 'Disponibilidad a confirmar'
-                      : item.availabilityStatus === 'unavailable'
-                        ? 'No disponible'
-                        : 'Precio a confirmar'}
+                    {item.availabilityStatus === 'unavailable'
+                      ? 'No disponible'
+                      : 'Disponible para solicitar.'}
                   </p>
+                  {item.availabilityStatus !== 'unavailable' ? (
+                    <p className="text-[11px] text-slate-500">
+                      Tu farmacia te confirmará cuándo puedes recogerlo.
+                    </p>
+                  ) : null}
                   {catalogMode === 'generic' ? (
                     <p className="text-[11px] text-slate-400">
-                      Sin precio ni stock inventados.
+                      Sin precio inventado. Sin cantidades de stock al cliente.
                     </p>
                   ) : null}
                   <div className="mt-auto pt-1">

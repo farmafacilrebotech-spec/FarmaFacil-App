@@ -25,6 +25,7 @@
     "validate:060-draft": "node supabase/drafts/060_static_validate.mjs",
     "validate:062-draft": "node supabase/drafts/062_static_validate.mjs",
     "test:kiosk-catalog-display": "node --experimental-strip-types --test lib/kiosk/catalog-display.test.ts",
+    "test:stock-policy": "node --experimental-strip-types --test lib/catalog/stock-policy.test.ts lib/kiosk/catalog-display.test.ts lib/kiosk/cart-state.test.ts lib/kiosk/catalog-visibility.test.ts",
     "test:line-valuation": "node --experimental-strip-types --test lib/orders/line-valuation.test.ts lib/orders/confirm-line-valuation.test.ts lib/orders/parse-rpc-payload.test.ts",
     "test:quote-r4": "node --experimental-strip-types --test lib/orders/quote-status.test.ts lib/orders/public-quote-map.test.ts lib/orders/quote-events.test.ts lib/orders/quote-rate-limit.test.ts lib/orders/quote-token-cookie.test.ts lib/orders/quote-token-session.test.ts",
     "validate:063-draft": "node supabase/drafts/063_static_validate.mjs",

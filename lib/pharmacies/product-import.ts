@@ -81,7 +81,7 @@ export const PRODUCT_COLUMN_HINTS: ColumnMappingHint[] = [
   },
   {
     field: 'stock',
-    label: 'Stock',
+    label: 'Stock (opcional)',
     aliases: [
       'stock',
       'existencias',
@@ -93,7 +93,7 @@ export const PRODUCT_COLUMN_HINTS: ColumnMappingHint[] = [
   },
   {
     field: 'minStock',
-    label: 'Stock mínimo',
+    label: 'Stock mínimo (opcional)',
     aliases: [
       'stock minimo',
       'stock mínimo',

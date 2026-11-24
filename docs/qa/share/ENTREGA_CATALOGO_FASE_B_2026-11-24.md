@@ -87,6 +87,15 @@ E2E Playwright sobre preview: ejecutar manualmente con credenciales staging (pre
 7. Reimport mismo archivo: updates/unchanged, sin duplicar EAN.
 8. Roles sin `catalog.manage`: no escriben.
 
+## Stock no bloqueante (criterio funcional)
+
+- Stock opcional; 0/NULL no ocultan ni bloquean carrito/pedido.
+- Copy cliente: «Disponible para solicitar.» + «Tu farmacia te confirmará cuándo puedes recogerlo.»
+- Sin cantidades de stock ni «agotado» en kiosko/cliente.
+- Panel farmacia: columna stock oculta por defecto (toggle «Mostrar stock»).
+- Campo BD conservado (NOT NULL DEFAULT 0); 0 = no informado en FF, no agotado.
+- Tests: `npm run test:stock-policy`
+
 ## Constraints respetados
 
 - No prod · No 089/090 en staging · No 105 · No re-tocar QA data · No merge · No APK

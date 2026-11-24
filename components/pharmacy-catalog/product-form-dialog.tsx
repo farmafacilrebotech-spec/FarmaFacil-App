@@ -250,23 +250,31 @@ export function ProductFormDialog({
               </div>
             ) : null}
             <div className="space-y-1.5">
-              <Label htmlFor="stock">Stock</Label>
+              <Label htmlFor="stock">
+                Stock{' '}
+                <span className="font-normal text-muted-foreground">
+                  (opcional · no bloquea ventas)
+                </span>
+              </Label>
               <Input
                 id="stock"
                 inputMode="numeric"
                 value={form.stock}
                 onChange={(e) => setField('stock', e.target.value)}
-                required
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="minStock">Stock mín.</Label>
+              <Label htmlFor="minStock">
+                Stock mín.{' '}
+                <span className="font-normal text-muted-foreground">
+                  (opcional)
+                </span>
+              </Label>
               <Input
                 id="minStock"
                 inputMode="numeric"
                 value={form.minStock}
                 onChange={(e) => setField('minStock', e.target.value)}
-                required
               />
             </div>
           </div>

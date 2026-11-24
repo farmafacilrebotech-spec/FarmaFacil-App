@@ -2,13 +2,15 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  KIOSK_CLIENT_AVAILABILITY,
   canAddKioskProductToCart,
   formatKioskProductAvailability,
+  formatKioskProductAvailabilityHint,
   formatKioskProductPrice,
   isGenericCatalogProduct,
 } from './catalog-display.ts';
 
-describe('kiosk catalog display (generic vs own)', () => {
+describe('kiosk catalog display (stock no bloqueante)', () => {
   it('no muestra 0 € ni trata genéricos como carrito', () => {
     const generic = {
       source: 'generic' as const,
@@ -33,10 +35,57 @@ describe('kiosk catalog display (generic vs own)', () => {
       available: false,
       availabilityStatus: 'confirm_with_pharmacy' as const,
     };
-    // source=generic → genérico aunque price/stock sean 0 en fila legacy
     assert.equal(isGenericCatalogProduct(weird), true);
     assert.equal(canAddKioskProductToCart(weird), false);
     assert.match(formatKioskProductPrice(weird), /Confirmar PVP/i);
+  });
+
+  it('propio activo con stock 0 es solicitabile y sin cantidad al cliente', () => {
+    const own = {
+      source: 'manual' as const,
+      price: 12.5,
+      stock: 0,
+      available: true,
+      availabilityStatus: 'available' as const,
+    };
+    assert.equal(isGenericCatalogProduct(own), false);
+    assert.equal(canAddKioskProductToCart(own), true);
+    assert.equal(
+      formatKioskProductAvailability(own),
+      KIOSK_CLIENT_AVAILABILITY.requestable
+    );
+    assert.doesNotMatch(formatKioskProductAvailability(own), /\d/);
+    assert.doesNotMatch(formatKioskProductAvailability(own), /Sin stock|Agotado/i);
+    assert.equal(
+      formatKioskProductAvailabilityHint(own),
+      KIOSK_CLIENT_AVAILABILITY.pharmacyWillConfirm
+    );
+  });
+
+  it('propio activo con stock NULL es solicitabile', () => {
+    const own = {
+      source: 'import' as const,
+      price: 8,
+      stock: null,
+      available: true,
+      availabilityStatus: 'available' as const,
+    };
+    assert.equal(canAddKioskProductToCart(own), true);
+    assert.equal(
+      formatKioskProductAvailability(own),
+      KIOSK_CLIENT_AVAILABILITY.requestable
+    );
+  });
+
+  it('unavailable sigue bloqueando el carrito', () => {
+    const own = {
+      source: 'manual' as const,
+      price: 5,
+      stock: 10,
+      available: false,
+      availabilityStatus: 'unavailable' as const,
+    };
+    assert.equal(canAddKioskProductToCart(own), false);
   });
 
   it('propios con precio real sí van al carrito', () => {
@@ -50,6 +99,6 @@ describe('kiosk catalog display (generic vs own)', () => {
     assert.equal(isGenericCatalogProduct(own), false);
     assert.equal(canAddKioskProductToCart(own), true);
     assert.match(formatKioskProductPrice(own), /12/);
-    assert.match(formatKioskProductAvailability(own), /Disponible/);
+    assert.match(formatKioskProductAvailability(own), /Disponible para solicitar/);
   });
 });

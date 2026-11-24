@@ -79,6 +79,20 @@ describe('product-import-validate', () => {
     assert.equal(isBlankProductDraft(draft({ name: '0', brand: '0' })), true);
   });
 
+  it('importación sin columna stock: borrador válido (stock no informado)', () => {
+    const row = draft({
+      name: 'Crema solar SPF50',
+      ean: '8412345678901',
+      category: 'Protección solar',
+      stock: null,
+      stockProvided: false,
+    });
+    assert.equal(isBlankProductDraft(row), false);
+    assert.equal(isInvalidProductName(row.name), false);
+    assert.equal(isJunkStructuralRow(row), false);
+    assert.equal(row.stockProvided, false);
+  });
+
   it('detecta CN vs EAN y preserva ceros en identificadores', () => {
     assert.equal(looksLikeNationalCode('1503268'), true);
     assert.equal(looksLikeEan13('8470001234567'), true);

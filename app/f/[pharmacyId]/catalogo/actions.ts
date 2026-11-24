@@ -316,6 +316,8 @@ function buildImportInsertRow(
     brand,
     category,
     price: draft.priceProvided && draft.price != null ? draft.price : 0,
+    // Stock opcional en Excel. BD exige NOT NULL DEFAULT 0 (020): 0 aquí
+    // significa «no informado en FarmaFácil», no «agotado» comercial.
     stock: draft.stockProvided && draft.stock != null ? draft.stock : 0,
     min_stock:
       draft.minStockProvided && draft.minStock != null ? draft.minStock : 0,
