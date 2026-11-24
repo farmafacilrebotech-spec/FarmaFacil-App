@@ -27,7 +27,8 @@ concurrency:
 jobs:
   playwright:
     name: Playwright ${{ github.event.inputs.suite || 'full' }}
-    runs-on: ubuntu-latest
+    # Pin 24.04: ubuntu-latest→26.04 breaks Playwright 1.49.1 --with-deps (libicu74 etc.).
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
       CI: '1'
