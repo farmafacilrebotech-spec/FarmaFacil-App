@@ -35,7 +35,11 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { setPharmacyProductActiveAction } from '@/app/f/[pharmacyId]/catalogo/actions';
+import {
+  bulkSetPharmacyProductsActiveAction,
+  bulkSetPharmacyProductsCategoryAction,
+  setPharmacyProductActiveAction,
+} from '@/app/f/[pharmacyId]/catalogo/actions';
 import { ProductFormDialog } from '@/components/pharmacy-catalog/product-form-dialog';
 import { ProductImportDialog } from '@/components/pharmacy-catalog/product-import-dialog';
 import { buildProductTemplateCsv } from '@/lib/pharmacies/product-import';
@@ -43,6 +47,8 @@ import {
   catalogUiPermissions,
   type CatalogWriteCapability,
 } from '@/lib/pharmacies/catalog-permissions';
+import { listCommercialCategories } from '@/lib/catalog/taxonomy';
+import { Checkbox } from '@/components/ui/checkbox';
 
 export function PharmacyCatalogView({
   pharmacyId,
@@ -80,6 +86,10 @@ export function PharmacyCatalogView({
   const [editing, setEditing] = React.useState<PharmacyProduct | null>(null);
   const [importOpen, setImportOpen] = React.useState(false);
   const [busyId, setBusyId] = React.useState<string | null>(null);
+  const [selected, setSelected] = React.useState<Set<string>>(new Set());
+  const [page, setPage] = React.useState(1);
+  const pageSize = 50;
+  const taxonomyCats = React.useMemo(() => listCommercialCategories(), []);
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -92,10 +102,79 @@ export function PharmacyCatalogView({
         p.name.toLowerCase().includes(q) ||
         (p.sku?.toLowerCase().includes(q) ?? false) ||
         (p.ean?.toLowerCase().includes(q) ?? false) ||
-        (p.brand?.toLowerCase().includes(q) ?? false)
+        (p.brand?.toLowerCase().includes(q) ?? false) ||
+        (p.category?.toLowerCase().includes(q) ?? false)
       );
     });
   }, [products, query, category, status]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const paged = React.useMemo(() => {
+    const safe = Math.min(page, pageCount);
+    const start = (safe - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page, pageCount]);
+
+  React.useEffect(() => {
+    setPage(1);
+    setSelected(new Set());
+  }, [query, category, status]);
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectPage() {
+    const ids = paged.map((p) => p.id);
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const allOnPage = ids.every((id) => next.has(id));
+      if (allOnPage) ids.forEach((id) => next.delete(id));
+      else ids.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  async function bulkArchive(active: boolean) {
+    const ids = Array.from(selected);
+    if (!ids.length) return;
+    const res = await bulkSetPharmacyProductsActiveAction(
+      pharmacyId,
+      ids,
+      active
+    );
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    setSelected(new Set());
+    toast.success(
+      active
+        ? `${ids.length} productos reactivados.`
+        : `${ids.length} productos archivados.`
+    );
+  }
+
+  async function bulkCategorize(catName: string) {
+    const ids = Array.from(selected);
+    if (!ids.length || !catName) return;
+    const res = await bulkSetPharmacyProductsCategoryAction(
+      pharmacyId,
+      ids,
+      catName
+    );
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+    setSelected(new Set());
+    toast.success(`Categoría «${catName}» aplicada a ${ids.length} productos.`);
+  }
 
   function downloadTemplate() {
     const csv = buildProductTemplateCsv();
@@ -290,11 +369,86 @@ export function PharmacyCatalogView({
             </Select>
           </div>
 
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+            <p>
+              {filtered.length} producto{filtered.length === 1 ? '' : 's'} ·
+              página {Math.min(page, pageCount)} / {pageCount}
+              {selected.size > 0 ? ` · ${selected.size} seleccionados` : ''}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Anterior
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={page >= pageCount}
+                onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+              >
+                Siguiente
+              </Button>
+            </div>
+          </div>
+
+          {selected.size > 0 && showWriteActions && !isGeneric ? (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => void bulkArchive(false)}
+              >
+                <Archive className="h-4 w-4" /> Archivar
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => void bulkArchive(true)}
+              >
+                <ArchiveRestore className="h-4 w-4" /> Reactivar
+              </Button>
+              <Select onValueChange={(v) => void bulkCategorize(v)}>
+                <SelectTrigger className="h-8 w-[220px]">
+                  <SelectValue placeholder="Categorizar masivo…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {taxonomyCats.map((c) => (
+                    <SelectItem key={c.slug} value={c.name}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
           <div className="overflow-hidden rounded-xl border border-border bg-card shadow-soft">
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {showWriteActions && !isGeneric ? (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={
+                            paged.length > 0 &&
+                            paged.every((p) => selected.has(p.id))
+                          }
+                          onCheckedChange={() => toggleSelectPage()}
+                          aria-label="Seleccionar página"
+                        />
+                      </TableHead>
+                    ) : null}
                     <TableHead>Producto</TableHead>
                     <TableHead className="hidden md:table-cell">Código</TableHead>
                     <TableHead className="hidden lg:table-cell">
@@ -317,18 +471,27 @@ export function PharmacyCatalogView({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.length === 0 ? (
+                  {paged.length === 0 ? (
                     <TableRow>
                       <TableCell
-                        colSpan={isGeneric ? 5 : 7}
+                        colSpan={isGeneric ? 5 : 8}
                         className="py-10 text-center text-sm text-muted-foreground"
                       >
                         No hay productos con estos filtros.
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filtered.map((p) => (
+                    paged.map((p) => (
                       <TableRow key={p.id} className={!p.isActive ? 'opacity-60' : undefined}>
+                        {showWriteActions && !isGeneric ? (
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.has(p.id)}
+                              onCheckedChange={() => toggleSelect(p.id)}
+                              aria-label={`Seleccionar ${p.name}`}
+                            />
+                          </TableCell>
+                        ) : null}
                         <TableCell>
                           <div className="min-w-0">
                             <p className="truncate font-medium text-foreground">

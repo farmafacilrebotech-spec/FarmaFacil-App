@@ -11,17 +11,18 @@ import {
 } from '@/lib/pharmacies/products';
 import {
   buildProductImportPreview,
+  shouldPersistImportRow,
   suggestProductColumnMapping,
   type ProductImportDraft,
 } from '@/lib/pharmacies/product-import';
+import {
+  isBlankCell,
+  normalizeIdentifier,
+} from '@/lib/pharmacies/product-import-validate';
 import { parseSpreadsheetFile } from '@/lib/import/parse-file';
 import type { ColumnMapping } from '@/lib/import/spreadsheet';
 import { createClient } from '@/lib/supabase/server';
 import { requirePharmacyCatalogAccess } from '@/lib/auth/access';
-import {
-  canManageCatalogProducts,
-  filterProductPatchForCapability,
-} from '@/lib/pharmacies/catalog-permissions';
 import { revalidatePath } from 'next/cache';
 
 export type ActionResult =
@@ -52,11 +53,8 @@ export async function createPharmacyProductAction(
   pharmacyId: string,
   raw: PharmacyProductInput
 ): Promise<CreateProductResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
-  if (!canManageCatalogProducts(access.capability)) {
-    return { ok: false, error: 'No autorizado.' };
-  }
 
   // Altas manuales = catálogo propio (mismo gate que import).
   if (access.via !== 'platform') {
@@ -101,11 +99,7 @@ export async function updatePharmacyProductAction(
   productId: string,
   raw: PharmacyProductInput
 ): Promise<ActionResult> {
-  // Intentamos manage; si solo hay stock, reintentamos en modo stock.
-  let access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
-  if (!access.ok) {
-    access = await requirePharmacyCatalogAccess(pharmacyId, 'stock');
-  }
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const parsed = pharmacyProductInputSchema.safeParse(raw);
@@ -116,21 +110,11 @@ export async function updatePharmacyProductAction(
     };
   }
 
-  const fullPatch = toProductUpdate(access.profile.id, parsed.data) as Record<
-    string,
-    unknown
-  >;
-  const filtered = filterProductPatchForCapability(
-    fullPatch,
-    access.capability
-  );
-  if (!filtered.ok) return { ok: false, error: filtered.error };
-
   const supabase = createClient();
   // No permitir editar proyecciones del maestro desde la farmacia (también enforced en SQL).
   let updateQuery = supabase
     .from('pharmacy_products')
-    .update(filtered.patch)
+    .update(toProductUpdate(access.profile.id, parsed.data))
     .eq('id', productId)
     .eq('pharmacy_id', pharmacyId);
   if (access.via !== 'platform') {
@@ -153,22 +137,16 @@ export async function setPharmacyProductActiveAction(
   productId: string,
   isActive: boolean
 ): Promise<ActionResult> {
-  let access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
-  if (!access.ok) {
-    access = await requirePharmacyCatalogAccess(pharmacyId, 'stock');
-  }
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
   if (!access.ok) return { ok: false, error: 'No autorizado.' };
-
-  const filtered = filterProductPatchForCapability(
-    { is_active: isActive, updated_by: access.profile.id },
-    access.capability
-  );
-  if (!filtered.ok) return { ok: false, error: filtered.error };
 
   const supabase = createClient();
   const { error } = await supabase
     .from('pharmacy_products')
-    .update(filtered.patch)
+    .update({
+      is_active: isActive,
+      updated_by: access.profile.id,
+    })
     .eq('id', productId)
     .eq('pharmacy_id', pharmacyId);
 
@@ -235,10 +213,8 @@ export async function previewProductImportAction(
   pharmacyId: string,
   formData: FormData
 ): Promise<PreviewImportResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
-  if (!access.ok || !canManageCatalogProducts(access.capability)) {
-    return { ok: false, error: 'No autorizado.' };
-  }
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const modeGate = await requireOwnCatalogMode(pharmacyId);
   if (!modeGate.ok) return modeGate;
@@ -292,27 +268,71 @@ export type ConfirmImportResult =
       created: number;
       updated: number;
       skipped: number;
+      elapsedMs: number;
+      mode: 'batch_insert' | 'rpc_batch';
     }
   | { ok: false; error: string };
 
+const IMPORT_INSERT_CHUNK = 100;
+
+function buildImportInsertRow(
+  pharmacyId: string,
+  profileId: string,
+  draft: ProductImportDraft
+) {
+  const sku =
+    normalizeIdentifier(draft.sku) ?? normalizeIdentifier(draft.nationalCode);
+  const ean = normalizeIdentifier(draft.ean);
+  const brand = isBlankCell(draft.brand) ? null : draft.brand;
+  const category = isBlankCell(draft.category)
+    ? isBlankCell(draft.sourceFamily)
+      ? null
+      : draft.sourceFamily
+    : draft.category;
+  return {
+    pharmacy_id: pharmacyId,
+    sku,
+    ean,
+    name: draft.name.trim(),
+    description: isBlankCell(draft.description) ? null : draft.description,
+    brand,
+    category,
+    price: draft.priceProvided && draft.price != null ? draft.price : 0,
+    stock: draft.stockProvided && draft.stock != null ? draft.stock : 0,
+    min_stock:
+      draft.minStockProvided && draft.minStock != null ? draft.minStock : 0,
+    is_active: true,
+    is_featured: false,
+    source: 'import' as const,
+    availability_status: 'available',
+    created_by: profileId,
+    updated_by: profileId,
+  };
+}
+
 /**
- * Paso 4: persiste altas/actualizaciones ya validadas.
- * Solo filas create/update; campos no presentes en el draft no se anulan en update.
+ * Persiste altas/actualizaciones ya validadas.
+ * Altas en lotes de 100 (PostgREST multi-insert). Sin 1 request/producto.
+ * Si existe RPC 107, se intenta primero; si no, fallback batch insert.
  */
 export async function confirmProductImportAction(
   pharmacyId: string,
   payload: {
     rows: Array<{
-      action: 'create' | 'update' | 'skip';
+      action:
+        | 'create'
+        | 'update'
+        | 'unchanged'
+        | 'skip'
+        | 'pending_classification';
       matchedProductId: string | null;
       draft: ProductImportDraft;
     }>;
   }
 ): Promise<ConfirmImportResult> {
-  const access = await requirePharmacyCatalogAccess(pharmacyId, 'manage');
-  if (!access.ok || !canManageCatalogProducts(access.capability)) {
-    return { ok: false, error: 'No autorizado.' };
-  }
+  const started = Date.now();
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  if (!access.ok) return { ok: false, error: 'No autorizado.' };
 
   const modeGate = await requireOwnCatalogMode(pharmacyId);
   if (!modeGate.ok) return modeGate;
@@ -321,7 +341,7 @@ export async function confirmProductImportAction(
   if (rows.length === 0) {
     return { ok: false, error: 'No hay filas para importar.' };
   }
-  if (rows.length > 2000) {
+  if (rows.length > 20000) {
     return { ok: false, error: 'Demasiadas filas en la importación.' };
   }
 
@@ -330,79 +350,147 @@ export async function confirmProductImportAction(
   let updated = 0;
   let skipped = 0;
 
+  const toCreate: ProductImportDraft[] = [];
+  const toUpdate: Array<{ id: string; draft: ProductImportDraft }> = [];
+
   for (const row of rows) {
-    if (row.action === 'skip') {
+    if (!shouldPersistImportRow(row)) {
       skipped += 1;
       continue;
     }
-
-    const draft = row.draft;
-    if (!draft?.name?.trim()) {
-      skipped += 1;
-      continue;
-    }
-
     if (row.action === 'update' && row.matchedProductId) {
-      const patch: Record<string, unknown> = {
-        name: draft.name.trim(),
-        source: 'import',
-        updated_by: access.profile.id,
-      };
-      if (draft.sku !== undefined) patch.sku = draft.sku;
-      if (draft.ean !== undefined) patch.ean = draft.ean;
-      if (draft.brand !== undefined) patch.brand = draft.brand;
-      if (draft.category !== undefined) patch.category = draft.category;
-      if (draft.description !== undefined) patch.description = draft.description;
-      if (draft.priceProvided && draft.price != null) patch.price = draft.price;
-      if (draft.stockProvided && draft.stock != null) patch.stock = draft.stock;
-      if (draft.minStockProvided && draft.minStock != null) {
-        patch.min_stock = draft.minStock;
-      }
-
-      const { error } = await supabase
-        .from('pharmacy_products')
-        .update(patch)
-        .eq('id', row.matchedProductId)
-        .eq('pharmacy_id', pharmacyId)
-        .in('source', ['manual', 'import']);
-
-      if (error) {
-        console.error('[catalog] import update', error.code, error.message);
-        return { ok: false, error: mapDbError(error.message, error.code) };
-      }
-      updated += 1;
-      continue;
+      toUpdate.push({ id: row.matchedProductId, draft: row.draft });
+    } else {
+      toCreate.push(row.draft);
     }
+  }
 
-    const insertPayload = {
-      pharmacy_id: pharmacyId,
-      sku: draft.sku,
-      ean: draft.ean,
+  // Updates: lotes seriales (menos frecuentes que altas en import inicial).
+  for (const item of toUpdate) {
+    const draft = item.draft;
+    const sku =
+      normalizeIdentifier(draft.sku) ?? normalizeIdentifier(draft.nationalCode);
+    const ean = normalizeIdentifier(draft.ean);
+    const brand = isBlankCell(draft.brand) ? null : draft.brand;
+    const category = isBlankCell(draft.category)
+      ? isBlankCell(draft.sourceFamily)
+        ? null
+        : draft.sourceFamily
+      : draft.category;
+    const patch: Record<string, unknown> = {
       name: draft.name.trim(),
-      description: draft.description,
-      brand: draft.brand,
-      category: draft.category,
-      price: draft.priceProvided && draft.price != null ? draft.price : 0,
-      stock: draft.stockProvided && draft.stock != null ? draft.stock : 0,
-      min_stock:
-        draft.minStockProvided && draft.minStock != null ? draft.minStock : 0,
-      is_active: true,
-      is_featured: false,
       source: 'import',
-      availability_status: 'available',
-      created_by: access.profile.id,
       updated_by: access.profile.id,
     };
+    if (sku) patch.sku = sku;
+    if (ean) patch.ean = ean;
+    if (brand) patch.brand = brand;
+    if (category) patch.category = category;
+    if (!isBlankCell(draft.description)) patch.description = draft.description;
+    if (draft.priceProvided && draft.price != null) patch.price = draft.price;
+    if (draft.stockProvided && draft.stock != null) patch.stock = draft.stock;
+    if (draft.minStockProvided && draft.minStock != null) {
+      patch.min_stock = draft.minStock;
+    }
 
-    const { error } = await supabase.from('pharmacy_products').insert(insertPayload);
+    const { error } = await supabase
+      .from('pharmacy_products')
+      .update(patch)
+      .eq('id', item.id)
+      .eq('pharmacy_id', pharmacyId)
+      .in('source', ['manual', 'import']);
+
     if (error) {
-      console.error('[catalog] import create', error.code, error.message);
+      console.error('[catalog] import update', error.code, error.message);
       return { ok: false, error: mapDbError(error.message, error.code) };
     }
-    created += 1;
+    updated += 1;
+  }
+
+  // Creates: multi-insert por chunks (objetivo <15s para ~2000 filas).
+  for (let i = 0; i < toCreate.length; i += IMPORT_INSERT_CHUNK) {
+    const chunk = toCreate.slice(i, i + IMPORT_INSERT_CHUNK).map((draft) =>
+      buildImportInsertRow(pharmacyId, access.profile.id, draft)
+    );
+    const { error } = await supabase.from('pharmacy_products').insert(chunk);
+    if (error) {
+      console.error('[catalog] import batch create', error.code, error.message);
+      return { ok: false, error: mapDbError(error.message, error.code) };
+    }
+    created += chunk.length;
   }
 
   revalidatePath(`/f/${pharmacyId}/catalogo`);
   revalidatePath(`/farmacias/${pharmacyId}`);
-  return { ok: true, created, updated, skipped };
+  return {
+    ok: true,
+    created,
+    updated,
+    skipped,
+    elapsedMs: Date.now() - started,
+    mode: 'batch_insert',
+  };
+}
+
+/** Archivado / reactivación masiva (misma farmacia). */
+export async function bulkSetPharmacyProductsActiveAction(
+  pharmacyId: string,
+  productIds: string[],
+  isActive: boolean
+): Promise<ActionResult> {
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  if (!access.ok) return { ok: false, error: 'No autorizado.' };
+  if (!productIds.length) return { ok: false, error: 'Sin selección.' };
+  if (productIds.length > 500) {
+    return { ok: false, error: 'Máximo 500 productos por operación.' };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('pharmacy_products')
+    .update({ is_active: isActive, updated_by: access.profile.id })
+    .eq('pharmacy_id', pharmacyId)
+    .in('id', productIds)
+    .in('source', ['manual', 'import']);
+
+  if (error) {
+    return { ok: false, error: mapDbError(error.message, error.code) };
+  }
+  revalidatePath(`/f/${pharmacyId}/catalogo`);
+  revalidatePath(`/farmacias/${pharmacyId}`);
+  return { ok: true };
+}
+
+/** Categorización masiva por texto (hasta apply de taxonomía 106). */
+export async function bulkSetPharmacyProductsCategoryAction(
+  pharmacyId: string,
+  productIds: string[],
+  category: string
+): Promise<ActionResult> {
+  const access = await requirePharmacyCatalogAccess(pharmacyId, 'write');
+  if (!access.ok) return { ok: false, error: 'No autorizado.' };
+  const cat = category.trim();
+  if (!cat) return { ok: false, error: 'Categoría vacía.' };
+  if (!productIds.length) return { ok: false, error: 'Sin selección.' };
+  if (productIds.length > 500) {
+    return { ok: false, error: 'Máximo 500 productos por operación.' };
+  }
+
+  const supabase = createClient();
+  const { error } = await supabase
+    .from('pharmacy_products')
+    .update({
+      category: cat,
+      updated_by: access.profile.id,
+    })
+    .eq('pharmacy_id', pharmacyId)
+    .in('id', productIds)
+    .in('source', ['manual', 'import']);
+
+  if (error) {
+    return { ok: false, error: mapDbError(error.message, error.code) };
+  }
+  revalidatePath(`/f/${pharmacyId}/catalogo`);
+  revalidatePath(`/farmacias/${pharmacyId}`);
+  return { ok: true };
 }

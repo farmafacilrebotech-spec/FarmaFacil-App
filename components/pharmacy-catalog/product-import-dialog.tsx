@@ -13,9 +13,15 @@ import {
   confirmProductImportAction,
   previewProductImportAction,
 } from '@/app/f/[pharmacyId]/catalogo/actions';
-import { PRODUCT_COLUMN_HINTS } from '@/lib/pharmacies/product-import';
+import {
+  PRODUCT_COLUMN_HINTS,
+  buildProductImportReport,
+} from '@/lib/pharmacies/product-import';
 import type { ColumnMapping } from '@/lib/import/spreadsheet';
-import type { ProductImportPreview } from '@/lib/pharmacies/product-import';
+import type {
+  ProductImportAction,
+  ProductImportPreview,
+} from '@/lib/pharmacies/product-import';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -53,10 +59,16 @@ export function ProductImportDialog({
     null
   );
   const [busy, setBusy] = React.useState(false);
+  const [previewFilter, setPreviewFilter] = React.useState<'all' | ProductImportAction>(
+    'all'
+  );
+  const [progressLabel, setProgressLabel] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<{
     created: number;
     updated: number;
     skipped: number;
+    elapsedMs?: number;
+    mode?: string;
   } | null>(null);
 
   React.useEffect(() => {
@@ -66,10 +78,23 @@ export function ProductImportDialog({
       setHeaders([]);
       setMapping({});
       setPreview(null);
+      setPreviewFilter('all');
       setResult(null);
       setBusy(false);
     }
   }, [open]);
+
+  function downloadPreviewReport() {
+    if (!preview) return;
+    const text = buildProductImportReport(preview);
+    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `farmafacil-import-preview-${pharmacyId.slice(0, 8)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function runPreview(nextMapping?: ColumnMapping) {
     if (!file) return;
@@ -115,6 +140,7 @@ export function ProductImportDialog({
   async function onConfirm() {
     if (!preview) return;
     setBusy(true);
+    setProgressLabel('Importando por lotes…');
     const res = await confirmProductImportAction(pharmacyId, {
       rows: preview.rows.map((r) => ({
         action: r.action,
@@ -123,6 +149,7 @@ export function ProductImportDialog({
       })),
     });
     setBusy(false);
+    setProgressLabel(null);
     if (!res.ok) {
       toast.error(res.error);
       return;
@@ -131,9 +158,13 @@ export function ProductImportDialog({
       created: res.created,
       updated: res.updated,
       skipped: res.skipped,
+      elapsedMs: res.elapsedMs,
+      mode: res.mode,
     });
     setStep('done');
-    toast.success('Importación completada.');
+    toast.success(
+      `Importación completada en ${((res.elapsedMs ?? 0) / 1000).toFixed(1)} s (${res.mode}).`
+    );
   }
 
   return (
@@ -155,7 +186,7 @@ export function ProductImportDialog({
                 Seleccionar archivo
               </span>
               <span className="text-xs text-muted-foreground">
-                Máx. 2 MB · hasta 2.000 filas
+                Máx. 2 MB · hasta 20.000 filas · escritura por lotes
               </span>
               <input
                 type="file"
@@ -249,7 +280,25 @@ export function ProductImportDialog({
         {step === 'preview' && preview && (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              <Stat label="Filas" value={preview.summary.total} />
+              <Stat
+                label="Leídas"
+                value={preview.summary.rowsRead ?? preview.summary.total}
+              />
+              <Stat
+                label="Vacías"
+                value={preview.summary.emptyDiscarded ?? 0}
+                tone="muted"
+              />
+              <Stat
+                label="Inválidas"
+                value={preview.summary.invalidRows ?? 0}
+                tone="muted"
+              />
+              <Stat
+                label="Duplicados"
+                value={preview.summary.duplicatesInFile ?? 0}
+                tone="warning"
+              />
               <Stat
                 label="Nuevos"
                 value={preview.summary.creates}
@@ -261,18 +310,58 @@ export function ProductImportDialog({
                 tone="warning"
               />
               <Stat
-                label="Omitidas"
-                value={preview.summary.skips}
+                label="Sin cambios"
+                value={preview.summary.unchanged ?? 0}
                 tone="muted"
+              />
+              <Stat
+                label="Pend. clasificar"
+                value={preview.summary.pendingClassification ?? 0}
+                tone="warning"
               />
             </div>
             <p className="text-sm text-muted-foreground">
               Se crearán{' '}
               <strong>{preview.summary.creates}</strong> productos, se
-              actualizarán <strong>{preview.summary.updates}</strong> y se
-              omitirán <strong>{preview.summary.skips}</strong> filas. Todavía
-              no se ha escrito nada en la base de datos.
+              actualizarán <strong>{preview.summary.updates}</strong>,{' '}
+              <strong>{preview.summary.unchanged ?? 0}</strong> sin cambios,{' '}
+              <strong>{preview.summary.emptyDiscarded ?? 0}</strong> vacías,{' '}
+              <strong>{preview.summary.invalidRows ?? 0}</strong> inválidas y{' '}
+              <strong>{preview.summary.pendingClassification ?? 0}</strong>{' '}
+              pendientes de clasificación. Todavía no se ha escrito nada en la
+              base de datos.
             </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Filtrar</Label>
+              <Select
+                value={previewFilter}
+                onValueChange={(v) =>
+                  setPreviewFilter(v as 'all' | ProductImportAction)
+                }
+              >
+                <SelectTrigger className="h-8 w-[200px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  <SelectItem value="create">Nuevos</SelectItem>
+                  <SelectItem value="update">Actualizar</SelectItem>
+                  <SelectItem value="unchanged">Sin cambios</SelectItem>
+                  <SelectItem value="pending_classification">
+                    Pend. clasificar
+                  </SelectItem>
+                  <SelectItem value="skip">Omitidas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={downloadPreviewReport}
+              >
+                Descargar informe
+              </Button>
+            </div>
             <div className="max-h-56 overflow-auto rounded-lg border border-border">
               <table className="w-full text-left text-xs">
                 <thead className="sticky top-0 bg-muted/80">
@@ -284,7 +373,13 @@ export function ProductImportDialog({
                   </tr>
                 </thead>
                 <tbody>
-                  {preview.rows.slice(0, 50).map((r) => (
+                  {preview.rows
+                    .filter(
+                      (r) =>
+                        previewFilter === 'all' || r.action === previewFilter
+                    )
+                    .slice(0, 50)
+                    .map((r) => (
                     <tr key={r.draft.rowIndex} className="border-t border-border">
                       <td className="px-2 py-1.5">{r.draft.rowIndex}</td>
                       <td className="max-w-[180px] truncate px-2 py-1.5">
@@ -295,16 +390,18 @@ export function ProductImportDialog({
                           variant={
                             r.action === 'create'
                               ? 'secondary'
-                              : r.action === 'update'
-                                ? 'outline'
-                                : 'outline'
+                              : 'outline'
                           }
                         >
                           {r.action === 'create'
                             ? 'Nuevo'
                             : r.action === 'update'
                               ? 'Actualizar'
-                              : 'Omitir'}
+                              : r.action === 'unchanged'
+                                ? 'Sin cambios'
+                              : r.action === 'pending_classification'
+                                ? 'Pend. clasificar'
+                                : 'Omitir'}
                         </Badge>
                       </td>
                       <td className="max-w-[220px] truncate px-2 py-1.5 text-muted-foreground">
@@ -314,9 +411,11 @@ export function ProductImportDialog({
                   ))}
                 </tbody>
               </table>
-              {preview.rows.length > 50 ? (
+              {preview.rows.filter(
+                (r) => previewFilter === 'all' || r.action === previewFilter
+              ).length > 50 ? (
                 <p className="border-t border-border px-2 py-1.5 text-xs text-muted-foreground">
-                  Mostrando 50 de {preview.rows.length} filas.
+                  Mostrando 50 filas del filtro actual.
                 </p>
               ) : null}
             </div>
@@ -353,6 +452,10 @@ export function ProductImportDialog({
               <p className="mt-1 text-sm text-muted-foreground">
                 {result.created} nuevos · {result.updated} actualizados ·{' '}
                 {result.skipped} omitidos
+                {result.elapsedMs != null
+                  ? ` · ${(result.elapsedMs / 1000).toFixed(1)} s (${result.mode ?? 'batch'})`
+                  : ''}
+                {progressLabel ? ` · ${progressLabel}` : ''}
               </p>
             </div>
             <Button type="button" onClick={() => onOpenChange(false)}>

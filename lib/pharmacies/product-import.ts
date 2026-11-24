@@ -7,6 +7,15 @@ import {
   type ParsedSpreadsheet,
 } from '@/lib/import/spreadsheet';
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
+import {
+  isBlankCell,
+  isBlankProductDraft,
+  isInvalidProductName,
+  isJunkStructuralRow,
+  looksLikeEan13,
+  looksLikeNationalCode,
+  normalizeIdentifier,
+} from '@/lib/pharmacies/product-import-validate';
 
 export const PRODUCT_COLUMN_HINTS: ColumnMappingHint[] = [
   {
@@ -17,12 +26,21 @@ export const PRODUCT_COLUMN_HINTS: ColumnMappingHint[] = [
       'producto',
       'articulo',
       'artículo',
-      'descripcion',
-      'descripción',
       'nombre',
       'name',
       'product',
       'item',
+    ],
+  },
+  {
+    field: 'nationalCode',
+    label: 'Código Nacional',
+    aliases: [
+      'codigo nacional',
+      'código nacional',
+      'cn',
+      'national code',
+      'cod nacional',
     ],
   },
   {
@@ -39,16 +57,14 @@ export const PRODUCT_COLUMN_HINTS: ColumnMappingHint[] = [
   },
   {
     field: 'sku',
-    label: 'SKU',
+    label: 'Código interno',
     aliases: [
       'sku',
-      'codigo',
-      'código',
-      'referencia',
-      'ref',
-      'cod',
       'codigo interno',
       'código interno',
+      'referencia',
+      'ref',
+      'ref interna',
     ],
   },
   {
@@ -87,19 +103,42 @@ export const PRODUCT_COLUMN_HINTS: ColumnMappingHint[] = [
     ],
   },
   {
+    field: 'sourceFamily',
+    label: 'Familia original',
+    aliases: ['familia', 'familia original', 'family', 'grupo'],
+  },
+  {
+    field: 'sourceSubfamily',
+    label: 'Subfamilia original',
+    aliases: ['subfamilia', 'subfamilia original', 'subfamily'],
+  },
+  {
     field: 'category',
-    label: 'Categoría',
-    aliases: ['categoria', 'categoría', 'familia', 'category', 'grupo'],
+    label: 'Categoría FarmaFácil',
+    aliases: ['categoria farmafacil', 'categoría farmafacil', 'categoria ff'],
   },
   {
     field: 'brand',
     label: 'Marca',
-    aliases: ['marca', 'laboratorio', 'brand', 'lab', 'fabricante'],
+    // No mapear «laboratorio» aquí: es un campo distinto.
+    aliases: ['marca', 'brand'],
+  },
+  {
+    field: 'laboratory',
+    label: 'Laboratorio',
+    aliases: ['laboratorio', 'lab', 'fabricante', 'laboratory'],
   },
   {
     field: 'description',
     label: 'Descripción',
-    aliases: ['descripcion larga', 'detalle', 'notas', 'description'],
+    aliases: [
+      'descripcion',
+      'descripción',
+      'descripcion larga',
+      'detalle',
+      'notas',
+      'description',
+    ],
   },
 ];
 
@@ -107,9 +146,14 @@ export type ProductImportDraft = {
   rowIndex: number;
   sku: string | null;
   ean: string | null;
+  /** Código Nacional (CN); aún sin columna dedicada en BD — ver migración propuesta. */
+  nationalCode: string | null;
   name: string;
   brand: string | null;
+  laboratory: string | null;
   category: string | null;
+  sourceFamily: string | null;
+  sourceSubfamily: string | null;
   description: string | null;
   price: number | null;
   stock: number | null;
@@ -125,7 +169,12 @@ export type ProductImportIssue = {
   message: string;
 };
 
-export type ProductImportAction = 'create' | 'update' | 'skip';
+export type ProductImportAction =
+  | 'create'
+  | 'update'
+  | 'unchanged'
+  | 'skip'
+  | 'pending_classification';
 
 export type ProductImportPreviewRow = {
   draft: ProductImportDraft;
@@ -134,19 +183,31 @@ export type ProductImportPreviewRow = {
   issues: ProductImportIssue[];
 };
 
+export type ProductImportSummary = {
+  /** Filas leídas del archivo (tras parseo). */
+  rowsRead: number;
+  /** Filas vacías / placeholder descartadas. */
+  emptyDiscarded: number;
+  /** Filas inválidas (error) o estructurales (subtotal/cabecera). */
+  invalidRows: number;
+  total: number;
+  valid: number;
+  warnings: number;
+  errors: number;
+  creates: number;
+  updates: number;
+  unchanged: number;
+  skips: number;
+  pendingClassification: number;
+  duplicatesInFile: number;
+  unmatchedExisting: number;
+};
+
 export type ProductImportPreview = {
   headers: string[];
   mapping: ColumnMapping;
   rows: ProductImportPreviewRow[];
-  summary: {
-    total: number;
-    valid: number;
-    warnings: number;
-    errors: number;
-    creates: number;
-    updates: number;
-    skips: number;
-  };
+  summary: ProductImportSummary;
 };
 
 export function suggestProductColumnMapping(headers: string[]): ColumnMapping {
@@ -155,7 +216,8 @@ export function suggestProductColumnMapping(headers: string[]): ColumnMapping {
 
 function emptyToNull(value: string): string | null {
   const t = value.trim();
-  return t.length > 0 ? t : null;
+  if (!t || isBlankCell(t)) return null;
+  return t;
 }
 
 export function buildProductDrafts(
@@ -164,26 +226,41 @@ export function buildProductDrafts(
 ): ProductImportDraft[] {
   return sheet.rows.map((row, idx) => {
     const rowIndex = idx + 2;
-    const name = cellAt(row, mapping.name);
-    const sku = emptyToNull(cellAt(row, mapping.sku));
-    const ean = emptyToNull(cellAt(row, mapping.ean));
+    const nameRaw = cellAt(row, mapping.name);
+    const sku = normalizeIdentifier(cellAt(row, mapping.sku));
+    let ean = normalizeIdentifier(cellAt(row, mapping.ean));
+    let nationalCode = normalizeIdentifier(cellAt(row, mapping.nationalCode));
     const brand = emptyToNull(cellAt(row, mapping.brand));
+    const laboratory = emptyToNull(cellAt(row, mapping.laboratory));
     const category = emptyToNull(cellAt(row, mapping.category));
+    const sourceFamily = emptyToNull(cellAt(row, mapping.sourceFamily));
+    const sourceSubfamily = emptyToNull(cellAt(row, mapping.sourceSubfamily));
     const description = emptyToNull(cellAt(row, mapping.description));
     const priceRaw = cellAt(row, mapping.price);
     const stockRaw = cellAt(row, mapping.stock);
     const minStockRaw = cellAt(row, mapping.minStock);
-    const priceProvided = priceRaw.length > 0;
-    const stockProvided = stockRaw.length > 0;
-    const minStockProvided = minStockRaw.length > 0;
+    // Precio/stock: celda con "0" cuenta como valor cero real (provided).
+    const priceProvided = priceRaw.trim().length > 0;
+    const stockProvided = stockRaw.trim().length > 0;
+    const minStockProvided = minStockRaw.trim().length > 0;
+
+    // Si «EAN» trae un CN (6–7 dígitos) y no hay CN explícito, reclasificar.
+    if (ean && !nationalCode && looksLikeNationalCode(ean) && !looksLikeEan13(ean)) {
+      nationalCode = ean;
+      ean = null;
+    }
 
     return {
       rowIndex,
       sku,
       ean,
-      name: name.trim(),
+      nationalCode,
+      name: nameRaw.trim(),
       brand,
+      laboratory,
       category,
+      sourceFamily,
+      sourceSubfamily,
       description,
       price: priceProvided ? parseNumberLoose(priceRaw) : null,
       stock: stockProvided ? parseNumberLoose(stockRaw) : null,
@@ -196,11 +273,11 @@ export function buildProductDrafts(
 }
 
 /**
- * Matching:
- * 1) EAN (si viene) dentro de la farmacia
- * 2) si no, SKU dentro de la farmacia
- * 3) si no, alta nueva
- * Duplicados en archivo por EAN/SKU → error.
+ * Matching (nunca solo por nombre):
+ * 1) EAN
+ * 2) Código Nacional (mientras no haya columna BD: match vía sku/ean existentes)
+ * 3) SKU / código interno
+ * Duplicados en archivo por EAN/SKU/CN → error.
  */
 export function buildProductImportPreview(
   sheet: ParsedSpreadsheet,
@@ -217,12 +294,23 @@ export function buildProductImportPreview(
 
   const seenEan = new Map<string, number>();
   const seenSku = new Map<string, number>();
+  const seenCn = new Map<string, number>();
+
+  let emptyDiscarded = 0;
+  let invalidRows = 0;
+  let duplicatesInFile = 0;
 
   const rows: ProductImportPreviewRow[] = drafts.map((draft) => {
     const issues: ProductImportIssue[] = [];
-    const isEmpty = !draft.name && !draft.sku && !draft.ean;
 
-    if (isEmpty) {
+    if (
+      isBlankProductDraft(draft) ||
+      (isInvalidProductName(draft.name) &&
+        isBlankCell(draft.sku) &&
+        isBlankCell(draft.ean) &&
+        isBlankCell(draft.nationalCode))
+    ) {
+      emptyDiscarded += 1;
       return {
         draft,
         action: 'skip' as const,
@@ -231,17 +319,35 @@ export function buildProductImportPreview(
           {
             rowIndex: draft.rowIndex,
             level: 'warning' as const,
-            message: 'Fila vacía: se omitirá.',
+            message:
+              'Fila vacía o sin nombre válido (p. ej. celdas en 0): se omitirá.',
           },
         ],
       };
     }
 
-    if (!draft.name) {
+    if (isJunkStructuralRow(draft)) {
+      invalidRows += 1;
+      return {
+        draft,
+        action: 'skip' as const,
+        matchedProductId: null,
+        issues: [
+          {
+            rowIndex: draft.rowIndex,
+            level: 'warning' as const,
+            message:
+              'Fila estructural (cabecera repetida, subtotal u observación): se omitirá.',
+          },
+        ],
+      };
+    }
+
+    if (isInvalidProductName(draft.name)) {
       issues.push({
         rowIndex: draft.rowIndex,
         level: 'error',
-        message: 'Falta el nombre del producto.',
+        message: 'Nombre de producto no válido.',
       });
     }
     if (draft.priceProvided && (draft.price == null || draft.price < 0)) {
@@ -279,6 +385,7 @@ export function buildProductImportPreview(
     if (draft.ean) {
       const key = draft.ean.toLowerCase();
       if (seenEan.has(key)) {
+        duplicatesInFile += 1;
         issues.push({
           rowIndex: draft.rowIndex,
           level: 'error',
@@ -291,32 +398,80 @@ export function buildProductImportPreview(
     if (draft.sku) {
       const key = draft.sku.toLowerCase();
       if (seenSku.has(key)) {
+        duplicatesInFile += 1;
         issues.push({
           rowIndex: draft.rowIndex,
           level: 'error',
-          message: `SKU duplicado en el archivo (fila ${seenSku.get(key)}).`,
+          message: `Código interno duplicado en el archivo (fila ${seenSku.get(key)}).`,
         });
       } else {
         seenSku.set(key, draft.rowIndex);
       }
     }
+    if (draft.nationalCode) {
+      const key = draft.nationalCode.toLowerCase();
+      if (seenCn.has(key)) {
+        duplicatesInFile += 1;
+        issues.push({
+          rowIndex: draft.rowIndex,
+          level: 'error',
+          message: `Código Nacional duplicado en el archivo (fila ${seenCn.get(key)}).`,
+        });
+      } else {
+        seenCn.set(key, draft.rowIndex);
+      }
+      if (!looksLikeNationalCode(draft.nationalCode)) {
+        issues.push({
+          rowIndex: draft.rowIndex,
+          level: 'warning',
+          message: 'Código Nacional con formato poco habitual.',
+        });
+      }
+    }
 
     let matched: PharmacyProduct | null = null;
     if (draft.ean) matched = byEan.get(draft.ean.toLowerCase()) ?? null;
+    if (!matched && draft.nationalCode) {
+      matched =
+        bySku.get(draft.nationalCode.toLowerCase()) ??
+        byEan.get(draft.nationalCode.toLowerCase()) ??
+        null;
+    }
     if (!matched && draft.sku) {
       matched = bySku.get(draft.sku.toLowerCase()) ?? null;
     }
 
+    const hasFfCategory = !isBlankCell(draft.category);
+    const hasSourceFamily = !isBlankCell(draft.sourceFamily);
+
     const hasError = issues.some((i) => i.level === 'error');
     let action: ProductImportAction = 'create';
-    if (hasError || !draft.name) {
+    if (hasError || isInvalidProductName(draft.name)) {
       action = 'skip';
+      invalidRows += 1;
     } else if (matched) {
-      action = 'update';
+      if (importDraftUnchanged(draft, matched)) {
+        action = 'unchanged';
+        issues.push({
+          rowIndex: draft.rowIndex,
+          level: 'warning',
+          message: `Sin cambios respecto a «${matched.name}».`,
+        });
+      } else {
+        action = 'update';
+        issues.push({
+          rowIndex: draft.rowIndex,
+          level: 'warning',
+          message: `Se actualizará «${matched.name}».`,
+        });
+      }
+    } else if (!hasFfCategory && hasSourceFamily) {
+      action = 'pending_classification';
       issues.push({
         rowIndex: draft.rowIndex,
         level: 'warning',
-        message: `Se actualizará «${matched.name}».`,
+        message:
+          'Pendiente de clasificar: tiene familia de origen sin categoría FarmaFácil.',
       });
     }
 
@@ -333,8 +488,13 @@ export function buildProductImportPreview(
     mapping,
     rows,
     summary: {
+      rowsRead: drafts.length,
+      emptyDiscarded,
+      invalidRows,
       total: rows.length,
-      valid: rows.filter((r) => r.action !== 'skip').length,
+      valid: rows.filter(
+        (r) => r.action === 'create' || r.action === 'update'
+      ).length,
       warnings: rows.filter((r) =>
         r.issues.some((i) => i.level === 'warning')
       ).length,
@@ -342,9 +502,99 @@ export function buildProductImportPreview(
         .length,
       creates: rows.filter((r) => r.action === 'create').length,
       updates: rows.filter((r) => r.action === 'update').length,
+      unchanged: rows.filter((r) => r.action === 'unchanged').length,
       skips: rows.filter((r) => r.action === 'skip').length,
+      pendingClassification: rows.filter(
+        (r) => r.action === 'pending_classification'
+      ).length,
+      duplicatesInFile,
+      unmatchedExisting: 0,
     },
   };
+}
+
+function normCmp(a: string | null | undefined, b: string | null | undefined): boolean {
+  return (a ?? '').trim().toLowerCase() === (b ?? '').trim().toLowerCase();
+}
+
+function importDraftUnchanged(
+  draft: ProductImportDraft,
+  existing: PharmacyProduct
+): boolean {
+  if (!normCmp(draft.name, existing.name)) return false;
+  if (draft.sku && !normCmp(draft.sku, existing.sku)) return false;
+  if (draft.ean && !normCmp(draft.ean, existing.ean)) return false;
+  if (draft.brand && !normCmp(draft.brand, existing.brand)) return false;
+  if (draft.category && !normCmp(draft.category, existing.category)) return false;
+  if (draft.description && !normCmp(draft.description, existing.description)) {
+    return false;
+  }
+  if (draft.priceProvided && draft.price != null && draft.price !== existing.price) {
+    return false;
+  }
+  if (draft.stockProvided && draft.stock != null && draft.stock !== existing.stock) {
+    return false;
+  }
+  return true;
+}
+
+/** Reutilizable en confirm: no confiar solo en `action` del cliente. */
+export function shouldPersistImportRow(row: {
+  action: ProductImportAction;
+  draft: ProductImportDraft;
+}): boolean {
+  if (
+    row.action === 'skip' ||
+    row.action === 'pending_classification' ||
+    row.action === 'unchanged'
+  ) {
+    return false;
+  }
+  if (
+    isBlankProductDraft(row.draft) ||
+    isInvalidProductName(row.draft.name) ||
+    isJunkStructuralRow(row.draft)
+  ) {
+    return false;
+  }
+  return row.action === 'create' || row.action === 'update';
+}
+
+/** Informe de previsualización descargable (sin PII de clientes). */
+export function buildProductImportReport(preview: ProductImportPreview): string {
+  const lines: string[] = [
+    'FarmaFacil — informe previsualización importación catálogo',
+    `generatedAtUtc=${new Date().toISOString()}`,
+    '--- summary ---',
+    `rowsRead=${preview.summary.rowsRead}`,
+    `emptyDiscarded=${preview.summary.emptyDiscarded}`,
+    `invalidRows=${preview.summary.invalidRows}`,
+    `duplicatesInFile=${preview.summary.duplicatesInFile}`,
+    `creates=${preview.summary.creates}`,
+    `updates=${preview.summary.updates}`,
+    `unchanged=${preview.summary.unchanged}`,
+    `pendingClassification=${preview.summary.pendingClassification}`,
+    `skips=${preview.summary.skips}`,
+    '--- rows ---',
+    'rowIndex\taction\tname\tsku\tean\tnationalCode\tbrand\tsourceFamily\tissue',
+  ];
+  for (const r of preview.rows) {
+    const issue = r.issues.map((i) => i.message).join(' | ').replace(/\t/g, ' ');
+    lines.push(
+      [
+        r.draft.rowIndex,
+        r.action,
+        (r.draft.name || '').replace(/\t/g, ' '),
+        r.draft.sku ?? '',
+        r.draft.ean ?? '',
+        r.draft.nationalCode ?? '',
+        (r.draft.brand || '').replace(/\t/g, ' '),
+        (r.draft.sourceFamily || '').replace(/\t/g, ' '),
+        issue,
+      ].join('\t')
+    );
+  }
+  return lines.join('\n') + '\n';
 }
 
 export const FARMAFACIL_PRODUCT_TEMPLATE_HEADERS = [

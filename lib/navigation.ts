@@ -3,6 +3,7 @@ import {
   Store,
   Users,
   Pill,
+  Tags,
   ShoppingCart,
   Tag,
   FileText,
@@ -65,6 +66,7 @@ export const navItems: NavItem[] = [
     label: 'Catálogo',
     href: '/catalogo',
     icon: Pill,
+  Tags,
     description: 'Catálogo maestro FarmaFácil',
   },
   {
