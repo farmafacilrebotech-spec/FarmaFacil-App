@@ -49,7 +49,7 @@ describe('kiosk cart — add / qty / remove / total', () => {
     assert.equal(cartDisplayTotal(cart), 14);
   });
 
-  it('respeta stock y elimina al llegar a 0', () => {
+  it('stock 0 no bloquea el pedido; tope 99; qty 0 elimina', () => {
     let cart = emptyKioskCart(PHARMACY_A);
     cart = addOrUpdateCartLine(cart, {
       productId: PRODUCT_1,
@@ -59,7 +59,7 @@ describe('kiosk cart — add / qty / remove / total', () => {
       stock: 2,
       quantityDelta: 5,
     });
-    assert.equal(cart.lines[0]?.quantity, 2);
+    assert.equal(cart.lines[0]?.quantity, 5);
     cart = setCartLineQuantity(cart, PRODUCT_1, 0);
     assert.equal(cart.lines.length, 0);
     cart = addOrUpdateCartLine(cart, {
@@ -69,7 +69,8 @@ describe('kiosk cart — add / qty / remove / total', () => {
       unitPrice: 1,
       stock: 0,
     });
-    assert.equal(cart.lines.length, 0);
+    assert.equal(cart.lines.length, 1);
+    assert.equal(cart.lines[0]?.quantity, 1);
   });
 
   it('removeCartLine y clearCart', () => {
@@ -159,7 +160,7 @@ describe('kiosk cart — selección visual catálogo (sync)', () => {
     return cart.lines.find((l) => l.productId === productId)?.quantity ?? 0;
   }
 
-  it('añade, incrementa, reduce, elimina y respeta stock', () => {
+  it('añade, incrementa, reduce, elimina (stock no limita)', () => {
     let cart = emptyKioskCart(PHARMACY_A);
     const base = {
       productId: PRODUCT_1,
@@ -179,14 +180,14 @@ describe('kiosk cart — selección visual catálogo (sync)', () => {
     assert.equal(qtyOf(cart, PRODUCT_1), 2);
     assert.equal(cartLineCount(cart), 2);
 
-    // Límite de stock
+    // Stock bajo no topa la solicitud
     cart = addOrUpdateCartLine(cart, { ...base, quantityDelta: 5 });
-    assert.equal(qtyOf(cart, PRODUCT_1), 3);
-    assert.equal(cartLineCount(cart), 3);
+    assert.equal(qtyOf(cart, PRODUCT_1), 7);
+    assert.equal(cartLineCount(cart), 7);
 
     // Reducir (−)
     cart = setCartLineQuantity(cart, PRODUCT_1, qtyOf(cart, PRODUCT_1) - 1);
-    assert.equal(qtyOf(cart, PRODUCT_1), 2);
+    assert.equal(qtyOf(cart, PRODUCT_1), 6);
 
     // Eliminar (qty → 0 recupera estado inicial en UI)
     cart = setCartLineQuantity(cart, PRODUCT_1, 0);

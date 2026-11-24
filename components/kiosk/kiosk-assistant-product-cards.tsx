@@ -42,14 +42,13 @@ export function KioskAssistantProductCards({
       return;
     }
     const unitPrice = product.price;
-    const stock = product.stock;
-    if (unitPrice == null || stock == null) return;
+    if (unitPrice == null) return;
     addProduct({
       productId: product.id,
       name: product.name,
       brand: product.brand,
       unitPrice,
-      stock,
+      stock: product.stock ?? 0,
     });
     setFlashId(product.id);
     window.setTimeout(

@@ -4,6 +4,8 @@
  *
  * Hay 8 iconos de categoría (no 12). Los 12 de formats/ son envases
  * ilustrativos y NO se usan como categorías.
+ *
+ * Taxonomía 26: ver resolveCatalogCategoryIcon en taxonomy.ts.
  */
 
 export const MASTER_CATALOG_CATEGORY_COUNT = 8;

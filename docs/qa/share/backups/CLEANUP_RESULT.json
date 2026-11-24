@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "env": "staging dazfdcjscnpfvhcyjddt",
+  "pharmacy_id": "98ea2742-5b57-4271-8448-b132cae70598",
+  "pharmacy_name": "TEST Fase7 QR Requests 20261021",
+  "matched_junk": 667,
+  "already_inactive": 2,
+  "newly_deactivated": 665,
+  "active_before": 2099,
+  "active_after": 1434,
+  "total_before": 2101,
+  "total_after": 2101,
+  "import_active_before": 1998,
+  "import_active_after": 1333,
+  "valid_import_preserved": 1333,
+  "order_item_refs": 0,
+  "method": "psql SET LOCAL session_replication_role=replica; UPDATE is_active=false",
+  "backup_glob": "docs/qa/share/backups/staging_soft_deactivate_junk_*.json"
+}

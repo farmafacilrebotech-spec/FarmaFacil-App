@@ -9,6 +9,7 @@ import {
   listCategoriesFromItems,
   resolveMasterCategoryIcon,
 } from './category-icons.ts';
+import { resolveCatalogCategoryIcon } from './taxonomy.ts';
 import { getValidatedMasterRows } from './master-catalog.ts';
 
 describe('master category icons', () => {
@@ -44,4 +45,15 @@ describe('master category icons', () => {
     assert.deepEqual(cats, ['Cuidado facial', 'Protección solar']);
   });
 
+  it('resolveCatalogCategoryIcon resuelve taxonomía 26 y legacy', () => {
+    assert.equal(
+      resolveCatalogCategoryIcon('Protección solar')?.slug,
+      'proteccion_solar'
+    );
+    assert.equal(
+      resolveCatalogCategoryIcon('Dermocosmética')?.slug,
+      'dermocosmetica'
+    );
+    assert.equal(resolveCatalogCategoryIcon('Inventada'), null);
+  });
 });

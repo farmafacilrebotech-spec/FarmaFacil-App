@@ -21,6 +21,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  PENDING_CLASSIFICATION_NAME,
+  listCommercialCategories,
+} from '@/lib/catalog/taxonomy';
 
 type FormState = {
   name: string;
@@ -83,6 +94,7 @@ export function ProductFormDialog({
   const stockOnly = writeCapability === 'stock';
   const [form, setForm] = React.useState<FormState>(() => fromProduct(product));
   const [saving, setSaving] = React.useState(false);
+  const taxonomyCats = React.useMemo(() => listCommercialCategories(), []);
 
   React.useEffect(() => {
     if (open) setForm(fromProduct(product));
@@ -177,12 +189,35 @@ export function ProductFormDialog({
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="category">Categoría</Label>
-                  <Input
-                    id="category"
-                    value={form.category}
-                    onChange={(e) => setField('category', e.target.value)}
-                  />
+                  <Label>Categoría</Label>
+                  <Select
+                    value={form.category || '__none__'}
+                    onValueChange={(v) =>
+                      setField('category', v === '__none__' ? '' : v)
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar categoría" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">— Sin categoría —</SelectItem>
+                      <SelectItem value={PENDING_CLASSIFICATION_NAME}>
+                        {PENDING_CLASSIFICATION_NAME}
+                      </SelectItem>
+                      {taxonomyCats.map((c) => (
+                        <SelectItem key={c.slug} value={c.name}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                      {form.category &&
+                      form.category !== PENDING_CLASSIFICATION_NAME &&
+                      !taxonomyCats.some((c) => c.name === form.category) ? (
+                        <SelectItem value={form.category}>
+                          {form.category} (legacy)
+                        </SelectItem>
+                      ) : null}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-1.5">
@@ -215,23 +250,31 @@ export function ProductFormDialog({
               </div>
             ) : null}
             <div className="space-y-1.5">
-              <Label htmlFor="stock">Stock</Label>
+              <Label htmlFor="stock">
+                Stock{' '}
+                <span className="font-normal text-muted-foreground">
+                  (opcional · no bloquea ventas)
+                </span>
+              </Label>
               <Input
                 id="stock"
                 inputMode="numeric"
                 value={form.stock}
                 onChange={(e) => setField('stock', e.target.value)}
-                required
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="minStock">Stock mín.</Label>
+              <Label htmlFor="minStock">
+                Stock mín.{' '}
+                <span className="font-normal text-muted-foreground">
+                  (opcional)
+                </span>
+              </Label>
               <Input
                 id="minStock"
                 inputMode="numeric"
                 value={form.minStock}
                 onChange={(e) => setField('minStock', e.target.value)}
-                required
               />
             </div>
           </div>
