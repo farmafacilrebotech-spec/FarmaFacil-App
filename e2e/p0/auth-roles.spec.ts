@@ -49,6 +49,11 @@ test.describe('P0 auth roles', () => {
     await page.goto(`/e/${PHARMACIES.fase7.publicId}/cuenta`);
     await expect(page.getByText(/cuenta|perfil|mis pedidos|mis farmacias/i).first()).toBeVisible();
     await page.getByRole('button', { name: /cerrar sesión/i }).click();
+    // sign-out redirige a catálogo; esperar esa navegación evita ERR_ABORTED
+    await expect(page).toHaveURL(
+      new RegExp(`/e/${PHARMACIES.fase7.publicId}/catalogo`),
+      { timeout: 20_000 }
+    );
     await page.goto(`/e/${PHARMACIES.fase7.publicId}/cuenta`);
     // Tras logout, cuenta pide acceso / login
     await expect(

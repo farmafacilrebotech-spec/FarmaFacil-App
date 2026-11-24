@@ -48,8 +48,14 @@ import {
 import { loadTariffConfigForSession } from '@/lib/commercial/tariff-queries';
 import { sendTransactionalEmail } from '@/lib/email/send';
 import { buildCommercialQuoteEmailBodies } from '@/lib/email/commercial-quote-email';
-import { getCorporateEmailSendMode } from '@/lib/email/send-config';
+import {
+  applyStagingEmailSubjectPrefix,
+  getCorporateEmailSendMode,
+} from '@/lib/email/send-config';
 import { assertCorporateEmailRecipientsAllowed } from '@/lib/email/send-recipient-allowlist';
+
+/** PDF HTML→Chromium: cold start + render en Vercel. */
+export const maxDuration = 120;
 
 function vatFromNet(netCents: number, vatBps: number): number {
   return Math.round((Math.max(0, netCents) * vatBps) / 10_000);
@@ -777,7 +783,7 @@ export async function sendCommercialQuoteEmailAction(input: {
 
   const sendResult = await sendTransactionalEmail({
     to,
-    subject: bodies.subject,
+    subject: applyStagingEmailSubjectPrefix(bodies.subject),
     html: bodies.html,
     text: bodies.text,
     from: readiness.fromConfigured ?? undefined,

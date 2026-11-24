@@ -4,10 +4,14 @@
  *
  * Owner / Admin de farmacia conservan solo la descarga individual del QR (PNG/SVG).
  *
- * Nota: los PDF se generan en el navegador (jsPDF); no existen Server Actions ni
- * endpoints de pack/carteles. La puerta efectiva es que solo la ficha SuperAdmin
- * (`app/(app)/farmacias/[id]`) calcula `canGenerateMaterials` en servidor con
- * `hasPlatformSuperAdminRole`; el panel tenant (`/f/[pharmacyId]/qr`) nunca lo activa.
+ * Puertas:
+ * 1) Ficha SuperAdmin calcula `canGenerateMaterials` con `hasPlatformSuperAdminRole`.
+ * 2) Antes de generar PDF, la UI debe llamar
+ *    `assertPharmacyMaterialsAccessAction` (server). El panel tenant nunca activa
+ *    `canGenerateMaterials`.
+ *
+ * Nota: el PDF del pack sigue generándose con jsPDF en cliente (assets DOM);
+ * la acción servidor refuerza ACL. Migración a Server Action de bytes: pendiente.
  */
 
 export const PHARMACY_TENANT_MATERIALS_CONTACT_MESSAGE =

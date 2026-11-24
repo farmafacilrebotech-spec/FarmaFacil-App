@@ -182,7 +182,14 @@ export function ContractsWorkspace({
         toast.error(result.error);
         return;
       }
-      toast.success('Email enviado (confirmado por el proveedor).');
+      const dry =
+        typeof result.providerId === 'string' &&
+        /^dry-run-/i.test(result.providerId);
+      toast.success(
+        dry
+          ? 'Envío simulado [PRUEBA STAGING] (sin Resend).'
+          : 'Email enviado (confirmado por el proveedor).'
+      );
       router.refresh();
     } finally {
       setBusy(false);

@@ -4,6 +4,8 @@
  * No usa direcciones de desarrollo inventadas.
  */
 
+import { applyStagingEmailSubjectPrefix } from '@/lib/email/send-config';
+
 export type SendEmailResult =
   | { ok: true; id?: string }
   | { ok: false; error: string; code?: 'not_configured' | 'send_failed' };
@@ -30,14 +32,23 @@ export async function sendTransactionalEmail(input: {
   bcc?: string[];
   /** Adjuntos opcionales (PDF/imagen/DOCX ya validados). */
   attachments?: ResendAttachment[];
+  /**
+   * Si false, no aplica prefijo staging (solo producción real autorizada).
+   * Por defecto sí se aplica cuando el entorno es staging.
+   */
+  applyStagingSubjectPrefix?: boolean;
 }): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = input.from?.trim() || process.env.EMAIL_FROM?.trim() || '';
+  const subject =
+    input.applyStagingSubjectPrefix === false
+      ? (input.subject ?? '').trim()
+      : applyStagingEmailSubjectPrefix(input.subject);
 
   if (!apiKey) {
     console.warn('[email] RESEND_API_KEY no configurada; email no enviado', {
       to: input.to,
-      subject: input.subject,
+      subject,
     });
     return {
       ok: false,
@@ -61,7 +72,7 @@ export async function sendTransactionalEmail(input: {
     const payload: Record<string, unknown> = {
       from,
       to: toList,
-      subject: input.subject,
+      subject,
       html: input.html,
       text: input.text,
     };

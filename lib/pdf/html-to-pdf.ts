@@ -94,9 +94,17 @@ async function resolveExecutablePath(): Promise<{
 async function launchBrowser(): Promise<Browser> {
   const puppeteer = await import('puppeteer-core');
   const resolved = await resolveExecutablePath();
+  const serverlessExtra = isServerlessRuntime()
+    ? [
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process',
+      ]
+    : [];
   const options: LaunchOptions = {
     executablePath: resolved.executablePath,
-    args: resolved.args,
+    args: [...resolved.args, ...serverlessExtra],
     headless: resolved.headless,
     acceptInsecureCerts: true,
   };
@@ -118,9 +126,10 @@ export async function renderHtmlToPdf(
   const browser = await launchBrowser();
   try {
     const page = await browser.newPage();
+    // Plantillas corporativas: CSS/inline + data URI; no esperar red externa.
     await page.setContent(html, {
-      waitUntil: 'load',
-      timeout: 45_000,
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000,
     });
     const margin = options.marginMm ?? {
       top: 0,

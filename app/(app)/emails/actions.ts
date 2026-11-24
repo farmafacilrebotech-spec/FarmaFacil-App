@@ -1845,8 +1845,13 @@ export async function sendCorporateEmailAction(input: {
   }
   const visualTestSend = input.visualTestSend === true;
   let subject = (input.subject ?? draft?.subject ?? '').trim();
-  if (visualTestSend && !/^\[PRUEBA\]/i.test(subject)) {
-    subject = `[PRUEBA] ${subject || 'Plantilla comercial'}`.trim();
+  if (visualTestSend) {
+    const { applyStagingEmailSubjectPrefix } = await import(
+      '@/lib/email/send-config'
+    );
+    subject = applyStagingEmailSubjectPrefix(
+      subject || 'Plantilla comercial'
+    );
   }
   const htmlBodyRaw = sanitizeEmailHtml(
     input.htmlBody ?? draft?.htmlBody ?? ''

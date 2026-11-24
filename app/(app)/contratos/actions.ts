@@ -15,6 +15,12 @@ import type {
   ContractEmailSendEntry,
   ContractPreviewModel,
 } from '@/lib/contracts/types';
+import { sendTransactionalEmail } from '@/lib/email/send';
+import {
+  applyStagingEmailSubjectPrefix,
+  getCorporateEmailSendMode,
+} from '@/lib/email/send-config';
+import { assertCorporateEmailRecipientsAllowed } from '@/lib/email/send-recipient-allowlist';
 
 export type ContractPrepareInput = {
   quoteId: string;
@@ -27,11 +33,20 @@ export type ContractPrepareInput = {
 export async function getContractEmailSendReadiness(): Promise<{
   ready: boolean;
   missing: string[];
+  /** Simulación: PDF/borrador sí, Resend no. */
+  dryRun: boolean;
 }> {
   const missing: string[] = [];
   if (!process.env.RESEND_API_KEY?.trim()) missing.push('RESEND_API_KEY');
   if (!process.env.EMAIL_FROM?.trim()) missing.push('EMAIL_FROM');
-  return { ready: missing.length === 0, missing };
+  const mode = getCorporateEmailSendMode();
+  const dryRun = !mode.enabled || mode.dryRun;
+  // ready = se puede iniciar el flujo (live con Resend, o simulación dry-run).
+  return {
+    ready: dryRun ? true : missing.length === 0,
+    missing,
+    dryRun,
+  };
 }
 
 export async function previewContractAction(
@@ -256,7 +271,10 @@ export async function sendContractEmailAction(
   }
 
   const readiness = await getContractEmailSendReadiness();
-  if (!readiness.ready) {
+  const mode = getCorporateEmailSendMode();
+  const forceDry = !mode.enabled || mode.dryRun;
+
+  if (!forceDry && !readiness.ready) {
     await appendContractEmailSend(input.quoteId, {
       at: new Date().toISOString(),
       to: '',
@@ -302,114 +320,118 @@ export async function sendContractEmailAction(
   }
 
   const filename = contractPdfFilename(preview, { signable: false });
-  const subject = sendAsDraft
+  const rawSubject = sendAsDraft
     ? `BORRADOR contrato FarmaFácil — ${preview.quoteReference ?? preview.quoteId}`
     : `Contrato FarmaFácil — ${preview.quoteReference ?? preview.quoteId}`;
+  const subject = applyStagingEmailSubjectPrefix(rawSubject);
   const draftNote = sendAsDraft
     ? 'Este documento es un BORRADOR. No es un contrato definitivo ni firmable. Pendiente de datos legales de ReBoTech y/o revisión jurídica y/o campos obligatorios.'
     : 'La firma y la activación del servicio son pasos independientes.';
 
-  const apiKey = process.env.RESEND_API_KEY!.trim();
-  const from = process.env.EMAIL_FROM!.trim();
-
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        subject,
-        text: [
-          'Adjuntamos el contrato FarmaFácil generado desde el presupuesto aceptado.',
-          `Referencia presupuesto: ${preview.quoteReference ?? preview.quoteId}`,
-          `Snapshot v${preview.snapshotVersion}`,
-          `Plantilla: ${preview.masterTemplateVersion} · ${preview.templateLabel}`,
-          draftNote,
-          'La aceptación del presupuesto no firma el contrato ni activa el servicio.',
-        ].join('\n'),
-        html: `<p>Adjuntamos el contrato FarmaFácil generado desde el presupuesto aceptado.</p>
+  const text = [
+    'Adjuntamos el contrato FarmaFácil generado desde el presupuesto aceptado.',
+    `Referencia presupuesto: ${preview.quoteReference ?? preview.quoteId}`,
+    `Snapshot v${preview.snapshotVersion}`,
+    `Plantilla: ${preview.masterTemplateVersion} · ${preview.templateLabel}`,
+    draftNote,
+    'La aceptación del presupuesto no firma el contrato ni activa el servicio.',
+  ].join('\n');
+  const html = `<p>Adjuntamos el contrato FarmaFácil generado desde el presupuesto aceptado.</p>
 <p>Referencia presupuesto: <strong>${preview.quoteReference ?? preview.quoteId}</strong><br/>
 Snapshot v${preview.snapshotVersion}<br/>
 Plantilla: ${preview.masterTemplateVersion} · ${preview.templateLabel}</p>
 <p><strong>${draftNote}</strong></p>
-<p>La aceptación del presupuesto no firma el contrato ni activa el servicio.</p>`,
-        attachments: [
-          {
-            filename,
-            content: Buffer.from(pdfBytes).toString('base64'),
-          },
-        ],
-      }),
-    });
+<p>La aceptación del presupuesto no firma el contrato ni activa el servicio.</p>`;
 
-    if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      console.error('[contracts] email send failed', res.status, body);
-      await appendContractEmailSend(input.quoteId, {
-        at: new Date().toISOString(),
-        to,
-        status: 'failed',
-        error: 'El proveedor de email rechazó el envío.',
-      });
-      return {
-        ok: false,
-        code: 'send_failed',
-        error: 'No se ha podido enviar el email. No se registra como enviado.',
-      };
-    }
-
-    const json = (await res.json().catch(() => null)) as { id?: string } | null;
-    const providerId = json?.id;
-    if (!providerId) {
-      await appendContractEmailSend(input.quoteId, {
-        at: new Date().toISOString(),
-        to,
-        status: 'failed',
-        error: 'El proveedor no devolvió id de envío.',
-      });
-      return {
-        ok: false,
-        code: 'send_failed',
-        error: 'El proveedor no confirmó el envío. No se marca como enviado.',
-      };
-    }
-
+  if (forceDry) {
+    const dryId = `dry-run-contract-${input.quoteId.slice(0, 8)}`;
     await appendContractEmailSend(input.quoteId, {
       at: new Date().toISOString(),
       to,
-      status: 'sent',
-      providerId,
+      status: 'simulated',
+      providerId: dryId,
+      error:
+        'Simulación staging: PDF borrador generado; no se llamó a Resend.',
     });
-
-    const supabase = createClient();
-    await supabase
-      .from('commercial_contracts')
-      .update({
-        lifecycle_status: 'emailed',
-        updated_at: new Date().toISOString(),
-      })
-      .eq('quote_id', input.quoteId);
-
     revalidatePath('/contratos');
-    return { ok: true, providerId };
-  } catch (err) {
-    console.error('[contracts] email fetch', err);
+    return { ok: true, providerId: dryId };
+  }
+
+  const recipientGate = assertCorporateEmailRecipientsAllowed([to]);
+  if (!recipientGate.ok) {
     await appendContractEmailSend(input.quoteId, {
       at: new Date().toISOString(),
       to,
       status: 'failed',
-      error: 'Error de red al contactar el proveedor de email.',
+      error: recipientGate.error,
     });
     return {
       ok: false,
       code: 'send_failed',
-      error: 'No se ha podido enviar el email. No se marca como enviado.',
+      error: recipientGate.error,
     };
   }
+
+  const sendResult = await sendTransactionalEmail({
+    to,
+    subject,
+    html,
+    text,
+    attachments: [
+      {
+        filename,
+        content: Buffer.from(pdfBytes).toString('base64'),
+      },
+    ],
+  });
+
+  if (!sendResult.ok) {
+    await appendContractEmailSend(input.quoteId, {
+      at: new Date().toISOString(),
+      to,
+      status: 'failed',
+      error: sendResult.error,
+    });
+    return {
+      ok: false,
+      code: sendResult.code ?? 'send_failed',
+      error: sendResult.error,
+    };
+  }
+
+  const providerId = sendResult.id;
+  if (!providerId) {
+    await appendContractEmailSend(input.quoteId, {
+      at: new Date().toISOString(),
+      to,
+      status: 'failed',
+      error: 'El proveedor no devolvió id de envío.',
+    });
+    return {
+      ok: false,
+      code: 'send_failed',
+      error: 'El proveedor no confirmó el envío. No se marca como enviado.',
+    };
+  }
+
+  await appendContractEmailSend(input.quoteId, {
+    at: new Date().toISOString(),
+    to,
+    status: 'sent',
+    providerId,
+  });
+
+  const supabase = createClient();
+  await supabase
+    .from('commercial_contracts')
+    .update({
+      lifecycle_status: 'emailed',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('quote_id', input.quoteId);
+
+  revalidatePath('/contratos');
+  return { ok: true, providerId };
 }
 
 async function appendContractEmailSend(

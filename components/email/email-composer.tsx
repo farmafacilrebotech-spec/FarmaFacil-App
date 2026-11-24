@@ -1058,7 +1058,7 @@ export function EmailComposer({
                 type="button"
                 variant="secondary"
                 disabled={!sendStatus?.sendEnabled || sending}
-                title="Prueba visual SA: allowlist interna, asunto [PRUEBA]"
+                title="Prueba visual SA: allowlist interna, asunto [PRUEBA STAGING]"
                 onClick={() => openConfirm('visual_test')}
               >
                 Enviar prueba
@@ -1109,7 +1109,7 @@ export function EmailComposer({
             </h2>
             {confirmMode === 'visual_test' ? (
               <p className="text-sm text-muted-foreground">
-                Asunto con prefijo [PRUEBA]. Solo destinatarios de la allowlist
+                Asunto con prefijo [PRUEBA STAGING]. Solo destinatarios de la allowlist
                 interna. No registra consentimiento comercial ni contacta
                 farmacias. Usa un asunto único para evitar agrupación de Gmail.
               </p>
@@ -1146,8 +1146,8 @@ export function EmailComposer({
                 <dt className="text-muted-foreground">Asunto</dt>
                 <dd className="font-medium">
                   {confirmMode === 'visual_test' &&
-                  !/^\[PRUEBA\]/i.test(draft.subject)
-                    ? `[PRUEBA] ${draft.subject || 'Plantilla comercial'}`
+                  !/^\[PRUEBA( STAGING)?\]/i.test(draft.subject)
+                    ? `[PRUEBA STAGING] ${draft.subject || 'Plantilla comercial'}`
                     : draft.subject || '—'}
                 </dd>
               </div>

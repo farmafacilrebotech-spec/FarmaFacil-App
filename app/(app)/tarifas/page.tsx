@@ -4,8 +4,8 @@ import { PageHeader } from '@/components/shared/page-header';
 import { TarifasWorkspace } from '@/components/tarifas/tarifas-workspace';
 import { Badge } from '@/components/ui/badge';
 
-/** PDF HTML→Chromium en Vercel (staging/prod serverless). */
-export const maxDuration = 60;
+/** PDF HTML→Chromium en Vercel (cold start + render). */
+export const maxDuration = 120;
 export const runtime = 'nodejs';
 import { hasPlatformPermission } from '@/lib/auth/platform';
 import {
