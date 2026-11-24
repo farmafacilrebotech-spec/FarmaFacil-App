@@ -31,11 +31,22 @@
 
 ## 3. Tests
 
-Ver salida en informe de ejecución / CI del PR.
+| Suite | Resultado |
+|-------|-----------|
+| `lib/email/send-config.test.ts` | 8/8 pass |
+| `lib/pdf/html-to-pdf.test.ts` | 1/1 pass |
+| E2E CLI-05 (logout cliente) vs staging | pass |
+| E2E order-circuit valoración vs staging | pass |
+| E2E webkit-smoke (×2 proyectos) | pass |
+| Preview Vercel build | pass (tras quitar `maxDuration` de `"use server"`) |
+
+PDF/email server-side del preview: validar manualmente (QA-72/73/77); no redeploy del staging QA.
 
 ## 4. Preview
 
-Sin sustituir staging: abrir PR con preview Vercel del branch si el proyecto lo genera automáticamente; **no** promover a `farmafacil-staging`.
+- PR: https://github.com/farmafacilrebotech-spec/FarmaFacil-App/pull/29  
+- Preview aislado: https://farmafacil-1gs8o01af-pilars-projects-4b376277.vercel.app  
+- **No** es `farmafacil-staging`; no sustituye el entorno de QA manual.
 
 ## 5. Pruebas manuales nuevas (desde QA-72)
 
