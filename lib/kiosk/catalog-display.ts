@@ -21,7 +21,7 @@ function formatEuroLocal(amount: number): string {
 
 /** True si el ítem es proyección genérica (sin PVP comercial inventado). */
 export function isGenericCatalogProduct(
-  product: Pick<KioskCatalogProduct, 'source' | 'price' | 'stock'>
+  product: Pick<KioskCatalogProduct, 'source'>
 ): boolean {
   return product.source === 'generic' || product.source === 'demo';
 }

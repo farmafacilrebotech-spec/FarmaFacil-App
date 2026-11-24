@@ -1,0 +1,30 @@
+                                         def                                         
+-------------------------------------------------------------------------------------
+ CREATE OR REPLACE FUNCTION public.ff_customer_claim_order_v1(p_order_id uuid)      +
+  RETURNS jsonb                                                                     +
+  LANGUAGE plpgsql                                                                  +
+  SECURITY DEFINER                                                                  +
+  SET search_path TO 'pg_catalog', 'public'                                         +
+ AS $function$                                                                      +
+ BEGIN                                                                              +
+   RETURN jsonb_build_object(                                                       +
+     'status', 'disabled',                                                          +
+     'message', 'Claim por teléfono deshabilitado. Use el enlace seguro del ticket.'+
+   );                                                                               +
+ END;                                                                               +
+ $function$                                                                         +
+ 
+(1 row)
+
+    grantee    | privilege_type 
+---------------+----------------
+ authenticated | EXECUTE
+ postgres      | EXECUTE
+ service_role  | EXECUTE
+(3 rows)
+
+ unlinked_with_phone | linked | total 
+---------------------+--------+-------
+                 125 |     50 |   176
+(1 row)
+

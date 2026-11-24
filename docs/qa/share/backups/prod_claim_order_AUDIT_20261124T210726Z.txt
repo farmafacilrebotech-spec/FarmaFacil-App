@@ -1,0 +1,27 @@
+    db    | current_user 
+----------+--------------
+ postgres | postgres
+(1 row)
+
+          proname           |      args       |     security     |  owner   | def_len 
+----------------------------+-----------------+------------------+----------+---------
+ ff_customer_claim_order_v1 | p_order_id uuid | SECURITY DEFINER | postgres |    1589
+(1 row)
+
+    grantee    | privilege_type 
+---------------+----------------
+ authenticated | EXECUTE
+ postgres      | EXECUTE
+ service_role  | EXECUTE
+(3 rows)
+
+ unlinked_with_phone | linked | total 
+---------------------+--------+-------
+                   6 |      1 |    26
+(1 row)
+
+ mentions_customer_phone | mentions_phone_mismatch | already_disabled 
+-------------------------+-------------------------+------------------
+ t                       | t                       | f
+(1 row)
+

@@ -12,7 +12,7 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_proc WHERE proname = 'ff_assign_commercial_plan_v1'
   ) THEN
-    RAISE EXCEPTION '084 requires ff_assign_commercial_plan_v1 (apply 083_00 / draft 056)';
+    RAISE EXCEPTION '084 requires ff_assign_commercial_plan_v1 (apply 083 section A / draft 056)';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM public.plans WHERE key = 'general' AND is_active) THEN
     RAISE EXCEPTION '084 requires plans.general (apply 083_commercial_plans_activation_v1)';

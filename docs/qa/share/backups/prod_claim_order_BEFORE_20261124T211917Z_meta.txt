@@ -1,0 +1,53 @@
+=== GRANTS ===
+    grantee    | privilege_type 
+---------------+----------------
+ authenticated | EXECUTE
+ postgres      | EXECUTE
+ service_role  | EXECUTE
+(3 rows)
+
+=== DEPENDENTS ===
+ dep_schema | dep_name | relkind 
+------------+----------+---------
+(0 rows)
+
+ classid | objid | refobjid 
+---------+-------+----------
+(0 rows)
+
+=== INVARIANTS ===
+ unlinked_phone | linked | total 
+----------------+--------+-------
+              6 |      1 |    26
+(1 row)
+
+=== LIVE BODY SNIPPET ===
+                                     left                                      
+-------------------------------------------------------------------------------
+ CREATE OR REPLACE FUNCTION public.ff_customer_claim_order_v1(p_order_id uuid)+
+  RETURNS jsonb                                                               +
+  LANGUAGE plpgsql                                                            +
+  SECURITY DEFINER                                                            +
+  SET search_path TO 'pg_catalog', 'public'                                   +
+ AS $function$                                                                +
+ DECLARE                                                                      +
+   v_uid uuid := auth.uid();                                                  +
+   v_order public.pharmacy_orders%ROWTYPE;                                    +
+   v_phone text;                                                              +
+ BEGIN                                                                        +
+   IF v_uid IS NULL THEN                                                      +
+     RETURN jsonb_build_object('status', 'unauthenticated');                  +
+   END IF;                                                                    +
+                                                                              +
+   IF NOT EXISTS (                                                            +
+  
+(1 row)
+
+=== ORDER CIRCUIT RPCs ===
+              proname               
+------------------------------------
+ ff_customer_claim_order_v1
+ ff_kiosk_create_order_v1
+ ff_update_pharmacy_order_status_v1
+(3 rows)
+

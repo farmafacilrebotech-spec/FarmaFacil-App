@@ -1,0 +1,195 @@
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+DO
+ALTER TABLE
+psql:/Users/pilar/Desktop/Proyectos/FarmaFacil-App/.worktrees/catalog-fase-b/docs/qa/share/scripts/smoke_catalog_integral_54532.sql:56: NOTICE:  policy "pharmacy_products_smoke_tenant" for relation "public.pharmacy_products" does not exist, skipping
+DROP POLICY
+CREATE POLICY
+GRANT
+GRANT
+GRANT
+GRANT
+TRUNCATE TABLE
+DELETE 0
+DELETE 0
+INSERT 0 1
+INSERT 0 2
+              set_config              
+--------------------------------------
+ cccccccc-cccc-cccc-cccc-ccccccccccc3
+(1 row)
+
+ set_config 
+------------
+ 
+(1 row)
+
+              set_config              
+--------------------------------------
+ aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1
+(1 row)
+
+   set_config   
+----------------
+ catalog.manage
+(1 row)
+
+INSERT 0 1
+=== T1 import create ===
+                                                                 t1_result                                                                  
+--------------------------------------------------------------------------------------------------------------------------------------------
+ {"errors": 0, "job_id": "dddddddd-dddd-dddd-dddd-ddddddddddd1", "created": 4, "skipped": 1, "updated": 0, "replayed": 0, "error_rows": []}
+(1 row)
+
+=== T1 counts ===
+ classification_status  | count 
+------------------------+-------
+ classified             |     3
+ pending_classification |     1
+(2 rows)
+
+ products_a 
+------------
+          4
+(1 row)
+
+  status   |                                summary                                
+-----------+-----------------------------------------------------------------------
+ completed | {"errors": 0, "batches": 1, "created": 4, "skipped": 1, "updated": 0}
+(1 row)
+
+=== T2 idempotent replay same job ===
+                                                                 t2_replay                                                                  
+--------------------------------------------------------------------------------------------------------------------------------------------
+ {"errors": 0, "job_id": "dddddddd-dddd-dddd-dddd-ddddddddddd1", "created": 0, "skipped": 0, "updated": 0, "replayed": 2, "error_rows": []}
+(1 row)
+
+ products_a_after_replay 
+-------------------------
+                       4
+(1 row)
+
+=== T3 duplicate ean → update ===
+UPDATE 1
+                                                                   t3_dup                                                                   
+--------------------------------------------------------------------------------------------------------------------------------------------
+ {"errors": 0, "job_id": "dddddddd-dddd-dddd-dddd-ddddddddddd2", "created": 0, "skipped": 0, "updated": 1, "replayed": 0, "error_rows": []}
+(1 row)
+
+          name          | stock | price 
+------------------------+-------+-------
+ Crema solar FPS50 PLUS |    99 |  13.0
+(1 row)
+
+=== T4 equivalences ===
+        name         |      source_family      | classification_status  |       slug       
+---------------------+-------------------------+------------------------+------------------
+ Pasta dental menta  | Higiene oral            | classified             | salud_bucodental
+ Producto sin mapear | Familia desconocida XYZ | pending_classification | 
+(2 rows)
+
+=== T5 history + revert ===
+                  id                  |  status   |    source_filename    | created 
+--------------------------------------+-----------+-----------------------+---------
+ dddddddd-dddd-dddd-dddd-ddddddddddd1 | completed | synth_catalog_v1.csv  | 4
+ dddddddd-dddd-dddd-dddd-ddddddddddd2 | completed | synth_reimport_v2.csv | 0
+(2 rows)
+
+UPDATE 1
+                                                                                t5_revert                                                                                 
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ {"job_id": "dddddddd-dddd-dddd-dddd-ddddddddddd1", "status": "partially_reverted", "reverted": 3, "created_by_job": 4, "already_inactive": 0, "kept_active_modified": 1}
+(1 row)
+
+      ean      | is_active |          name          
+---------------+-----------+------------------------
+ 8410000000002 | t         | Champú suave (editado)
+ 8410000000003 | f         | Pasta dental menta
+ 8410000000004 | f         | Producto sin mapear
+(3 rows)
+
+       status       
+--------------------
+ partially_reverted
+(1 row)
+
+=== T6 RLS multifarmacia ===
+ set_config 
+------------
+ 1
+(1 row)
+
+INSERT 0 1
+ set_config 
+------------
+ 
+(1 row)
+
+              set_config              
+--------------------------------------
+ aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1
+(1 row)
+
+   set_config   
+----------------
+ catalog.manage
+(1 row)
+
+SET
+ visible_as_a 
+--------------
+            4
+(1 row)
+
+ b_leak 
+--------
+      0
+(1 row)
+
+RESET
+psql:/Users/pilar/Desktop/Proyectos/FarmaFacil-App/.worktrees/catalog-fase-b/docs/qa/share/scripts/smoke_catalog_integral_54532.sql:281: NOTICE:  OK cross-pharmacy denied: catalog_permission: se requiere catalog.manage
+DO
+=== T7 stock non-blocking ===
+ set_config 
+------------
+ 
+(1 row)
+
+              set_config              
+--------------------------------------
+ aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1
+(1 row)
+
+UPDATE 1
+                                                                  t7_stock                                                                  
+--------------------------------------------------------------------------------------------------------------------------------------------
+ {"errors": 0, "job_id": "dddddddd-dddd-dddd-dddd-ddddddddddd3", "created": 1, "skipped": 0, "updated": 1, "replayed": 0, "error_rows": []}
+(1 row)
+
+      ean      | stock | price |          name          
+---------------+-------+-------+------------------------
+ 8410000000001 |    50 |    14 | Crema solar FPS50 PLUS
+ 8410000000091 |     0 |     2 | Nuevo sin stock col
+(2 rows)
+
+=== T8 perf 500-row batch ===
+ set_config 
+------------
+ 1
+(1 row)
+
+psql:/Users/pilar/Desktop/Proyectos/FarmaFacil-App/.worktrees/catalog-fase-b/docs/qa/share/scripts/smoke_catalog_integral_54532.sql:364: NOTICE:  PERF_500_MS=57.0 RESULT={"errors": 0, "job_id": "dddddddd-dddd-dddd-dddd-ddddddddddd4", "created": 500, "skipped": 0, "updated": 0, "replayed": 0, "error_rows": []}
+DO
+ perf_500_ms |                                                                 batch_result                                                                 
+-------------+----------------------------------------------------------------------------------------------------------------------------------------------
+ 57.037000   | {"errors": 0, "job_id": "dddddddd-dddd-dddd-dddd-ddddddddddd4", "created": 500, "skipped": 0, "updated": 0, "replayed": 0, "error_rows": []}
+(1 row)
+
+ products_b 
+------------
+        501
+(1 row)
+
+=== SMOKE INTEGRAL DONE ===

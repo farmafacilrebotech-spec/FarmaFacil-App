@@ -14,4 +14,5 @@ Generado: 2026-11-24T20:27:48.060Z
 Notas:
 - Medición **local CPU** (parse/validación/planificación). No incluye latencia PostgREST/Vercel↔Supabase.
 - Escritura real en staging ya medida históricamente ~4,5 min (1 insert/fila); código actual usa multi-insert ×100 + lotes cliente.
-- **No se aplicaron migraciones 089/090** (sin BD aislada; Docker no disponible).
+- Escritura real en BD desechable `:54532` (2026-11-24): batch **500** creates en **~57 ms** (`SMOKE_CATALOG_INTEGRAL_54532_2026-11-24.md`).
+- **No se aplicaron migraciones 089/090** en staging/prod.

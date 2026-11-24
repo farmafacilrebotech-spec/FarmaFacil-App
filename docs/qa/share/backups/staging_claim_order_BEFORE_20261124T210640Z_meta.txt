@@ -1,0 +1,27 @@
+          captured_at          
+-------------------------------
+ 2026-11-24 21:06:41.458204+00
+(1 row)
+
+          proname           |      args       |     security     |  owner   
+----------------------------+-----------------+------------------+----------
+ ff_customer_claim_order_v1 | p_order_id uuid | SECURITY DEFINER | postgres
+(1 row)
+
+    grantee    | privilege_type 
+---------------+----------------
+ anon          | EXECUTE
+ authenticated | EXECUTE
+ postgres      | EXECUTE
+ service_role  | EXECUTE
+(4 rows)
+
+ dependent_class | objid 
+-----------------+-------
+(0 rows)
+
+ unlinked_with_phone | linked | total 
+---------------------+--------+-------
+                 125 |     50 |   176
+(1 row)
+
