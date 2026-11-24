@@ -137,11 +137,13 @@ drop policy if exists ff_catalog_categories_select on public.ff_catalog_categori
 create policy ff_catalog_categories_select on public.ff_catalog_categories
   for select to authenticated using (true);
 
+-- Firmas reales: ff_has_platform_permission(text),
+-- ff_has_pharmacy_permission(uuid, text). Escritura taxonomía: platform.pharmacies.write.
 drop policy if exists ff_catalog_categories_write on public.ff_catalog_categories;
 create policy ff_catalog_categories_write on public.ff_catalog_categories
   for all to authenticated
-  using (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'))
-  with check (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'));
+  using (public.ff_has_platform_permission('platform.pharmacies.write'))
+  with check (public.ff_has_platform_permission('platform.pharmacies.write'));
 
 drop policy if exists ff_catalog_subcategories_select on public.ff_catalog_subcategories;
 create policy ff_catalog_subcategories_select on public.ff_catalog_subcategories
@@ -150,20 +152,32 @@ create policy ff_catalog_subcategories_select on public.ff_catalog_subcategories
 drop policy if exists ff_catalog_subcategories_write on public.ff_catalog_subcategories;
 create policy ff_catalog_subcategories_write on public.ff_catalog_subcategories
   for all to authenticated
-  using (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'))
-  with check (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'));
+  using (public.ff_has_platform_permission('platform.pharmacies.write'))
+  with check (public.ff_has_platform_permission('platform.pharmacies.write'));
 
 drop policy if exists pharmacy_featured_categories_tenant on public.pharmacy_featured_categories;
 create policy pharmacy_featured_categories_tenant on public.pharmacy_featured_categories
   for all to authenticated
-  using (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'))
-  with check (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'));
+  using (
+    public.ff_has_platform_permission('platform.pharmacies.write')
+    or public.ff_has_pharmacy_permission(pharmacy_id, 'catalog.manage')
+  )
+  with check (
+    public.ff_has_platform_permission('platform.pharmacies.write')
+    or public.ff_has_pharmacy_permission(pharmacy_id, 'catalog.manage')
+  );
 
 drop policy if exists pharmacy_category_import_equivalences_tenant on public.pharmacy_category_import_equivalences;
 create policy pharmacy_category_import_equivalences_tenant on public.pharmacy_category_import_equivalences
   for all to authenticated
-  using (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'))
-  with check (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'));
+  using (
+    public.ff_has_platform_permission('platform.pharmacies.write')
+    or public.ff_has_pharmacy_permission(pharmacy_id, 'catalog.manage')
+  )
+  with check (
+    public.ff_has_platform_permission('platform.pharmacies.write')
+    or public.ff_has_pharmacy_permission(pharmacy_id, 'catalog.manage')
+  );
 
 -- rollback; -- mantener comentado; usar rollback en ensayos
 -- commit;
