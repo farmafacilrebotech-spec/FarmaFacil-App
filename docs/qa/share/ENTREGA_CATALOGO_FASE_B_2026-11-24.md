@@ -1,67 +1,92 @@
-# Entrega — Catálogo Fase B + limpieza staging
+# Entrega — Catálogo Fase B (continuación)
 
 **Fecha:** 2026-11-24  
-**Rama:** `feat/catalog-taxonomy-import-b`
+**Rama:** `feat/catalog-taxonomy-import-b`  
+**PR:** https://github.com/farmafacilrebotech-spec/FarmaFacil-App/pull/30
 
-## 1. Limpieza staging (única escritura BD autorizada)
+## Bloqueo BD aislada
 
-| Campo | Valor |
-|-------|-------|
-| Entorno | `dazfdcjscnpfvhcyjddt` |
-| Farmacia | TEST Fase7 QR Requests 20261021 (`98ea2742-…`) |
-| Criterio | `source=import` ∧ `name∈{0,0.0}` ∧ sku/ean vacíos |
-| Coincidencias | **667** |
-| Ya inactivos | 2 |
-| Desactivados ahora | **665** |
-| Refs `pharmacy_order_items` | **0** |
-| Activos farmacia antes → después | **2099 → 1434** (Δ −665) |
-| Total filas farmacia | **2101** (sin borrado físico) |
-| Import activos después | **1333** (conservados) |
-| Backup | `docs/qa/share/backups/staging_soft_deactivate_junk_20261124T181742Z.json` |
-| Resultado | `docs/qa/share/backups/CLEANUP_RESULT.json` |
+| Recurso | Estado |
+|---------|--------|
+| Docker Desktop / Supabase local | **No disponible** (daemon down) |
+| Proyecto Supabase desechable | **No existe** en env locales |
+| Staging `dazfdcj…` | **Prohibido** para 089/090 |
+| Producción | **No tocar** |
 
-Método: `psql` + `SET LOCAL session_replication_role = replica` (el trigger 074 bloqueaba service_role REST).
+**Migraciones 089/090 NO aplicadas.** Crear un proyecto Supabase free/local o arrancar Docker antes de authorize apply. No se han creado recursos de pago.
 
-## 2. Funcionalidades implementadas (código)
+## Numeración vs PR #28 / #29
 
-- Fase A validación (vacías/0/cabeceras/CN≠EAN/marca≠lab/contadores/informe).
-- Taxonomía 26 + pending (`lib/catalog/taxonomy.ts`) + UI SuperAdmin `/catalogo/taxonomia`.
-- Import escritura **por lotes de 100** (multi-insert PostgREST) + `elapsedMs`.
-- Límite archivo 20.000 filas / 8 MB.
-- Catálogo farmacia: paginación 50, selección múltiple, archivado y categorización masiva.
-- Migraciones **propuestas** (no aplicadas en staging): `106`, `107` (jobs + RPC batch + revert).
+- Tip migraciones en main: **088**
+- PR #29 reserva draft **`106_visible_name_…`** → **106 no es catálogo**
+- Catálogo Fase B: `supabase/proposed/089_…` + `090_…`
+- Ver `docs/qa/share/MIGRATION_NUMBERING_CATALOG_VS_PR28_29.md`
+- **No** migración 105
 
-## 3. Taxonomía definitiva (comercial)
+## Funcionalidades completadas en código
 
-Ver `listCommercialCategories()` — 26 nombres del brief + `pending_classification` interno.
+| Ítem | Estado |
+|------|--------|
+| Wizard columnas | Sí |
+| Wizard equivalencias familia→26 cats | Sí (localStorage + upsert BD si 089) |
+| Equivalencias por farmacia/proveedor/formato | Sí (actions + UI) |
+| Taxonomía SA + subcategorías | Sí (seed + CRUD borrador sesión; persist BD tras 089) |
+| Historial importaciones | Sí (UI; datos si 090) |
+| Reversión segura | Sí (RPC 090 o fallback soft-deactivate sin tocar editados) |
+| Progreso real por lotes | Sí (`runProductImportBatches` + barra %) |
+| Pendientes de clasificación | Sí (persisten inactivos; filtro admin; no en kiosko) |
+| 26 cats en SA / farmacia / form / kiosko | Sí (seed + selects + iconos) |
+| Activos / archivados / pendientes | Sí (filtros admin) |
+| Desactivados fuera de catálogos comerciales | Sí (`is_active=false` + filtro pending en kiosko) |
 
-## 4. Rendimiento
+## Rendimiento sintético (CPU local, sin BD)
 
-| Escenario | Before | After (código) |
-|-----------|--------|----------------|
-| Confirm ~2000 altas | ~4,5 min (1 insert/fila, staging real) | multi-insert ×100 → objetivo &lt;15 s (medir en preview) |
-| Preview padding `0` | 2000 nuevos / 0 omitidas | vacías descartadas |
+Ver `PERF_CATALOG_SYNTHETIC_2026-11-24.md`:
 
-Medición real post-deploy: repetir import sintético en preview y anotar `elapsedMs` del toast.
+| Productos | total CPU ms | inválidas (sim) | lotes×100 |
+|----------:|-------------:|----------------:|----------:|
+| 100 | ~0.1 | 0 | 1 |
+| 1.000 | ~0.6 | 0 | 10 |
+| 2.000 | ~0.5 | 1334* | 14 |
+| 5.000 | ~1.3 | 3336 | 34 |
+| 10.000 | ~2.5 | 6670 | 67 |
+| 20.000 | ~5.0 | 13340 | 134 |
 
-## 5. Migraciones pendientes de autorización
+\* En 2k se simula ratio ~667/2000 basura. Validación unitaria: **667/2000 rechazados** con criterios name=`0` + sku/ean vacíos.
 
-- `supabase/proposed/106_catalog_taxonomy_import_v1.sql`
-- `supabase/proposed/107_catalog_import_jobs_v1.sql`  
-**No** aplicadas en staging. **No** 105.
+Latencia red PostgREST no medida aquí (sin BD aislada). Histórico staging 1-insert/fila ≈ 4,5 min; código actual multi-insert ×100 + lotes cliente.
 
-## 6. Pruebas manuales nuevas
+## Excel original / reimport / duplicados / revert
 
-1. Staging: catálogo Fase7 — 667 basura archivadas; 1333 visibles/activos import.  
-2. Preview: import Excel con filas `0` → contador vacías &gt; 0; confirm batch &lt;15 s si ~2k válidos.  
-3. `/catalogo/taxonomia` lista 26 + pending.  
-4. Catálogo farmacia: paginar, seleccionar, archivar masivo, categorizar.  
-5. Reimport mismos EAN/CN → updates / sin cambios, sin duplicar.  
-6. Aislamiento multifarmacia + roles sin write.
+| Prueba | Resultado |
+|--------|-----------|
+| Reimport Excel original en BD aislada | **Pendiente** (sin BD aislada; Excel QA parcial en AgentStore) |
+| Rechazo 667 inválidos | **OK en validación sintética** (667/2000) |
+| Reimport sin duplicados | Lógica match EAN/CN → update/unchanged (código); **E2E BD pendiente** |
+| Revert no pisa edits farmacia | RPC/fallback `updated_at ≈ created_at` (código); **E2E BD pendiente** |
 
-## 7. Tests automatizados
+## Tests ejecutados
 
 ```bash
-npm run test:product-import
-npm run test:taxonomy
+npm run test:product-import   # 13 pass (validate + batch + equivalences)
+npm run test:taxonomy         # 9 pass
+npm run test:master-catalog   # 19 pass
+npm run bench:catalog-import  # PERF_*.md/json
 ```
+
+E2E Playwright sobre preview: ejecutar manualmente con credenciales staging (preview apunta a staging DB **sin** tablas 089/090 → historial/RPC degradado).
+
+## Checklist manual (preview)
+
+1. SuperAdmin → `/catalogo/taxonomia`: 26 + pending + subcategorías seed/borrador.
+2. Farmacia catálogo propio → Importar: mapeo columnas → equivalencias → preview → progreso por lotes.
+3. Filtros: Activos / Archivados / Pend. clasificar.
+4. Categorizar masivo pendientes → quedan activos comerciales.
+5. Kiosko/QR: no listan `is_active=false` ni «Pendiente de clasificar».
+6. Historial → Revertir (mensaje claro si falta 090).
+7. Reimport mismo archivo: updates/unchanged, sin duplicar EAN.
+8. Roles sin `catalog.manage`: no escriben.
+
+## Constraints respetados
+
+- No prod · No 089/090 en staging · No 105 · No re-tocar QA data · No merge · No APK

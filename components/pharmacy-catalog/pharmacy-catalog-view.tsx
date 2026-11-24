@@ -47,7 +47,11 @@ import {
   catalogUiPermissions,
   type CatalogWriteCapability,
 } from '@/lib/pharmacies/catalog-permissions';
-import { listCommercialCategories } from '@/lib/catalog/taxonomy';
+import {
+  PENDING_CLASSIFICATION_NAME,
+  isPendingClassificationCategory,
+  listCommercialCategories,
+} from '@/lib/catalog/taxonomy';
 import { Checkbox } from '@/components/ui/checkbox';
 
 export function PharmacyCatalogView({
@@ -79,9 +83,9 @@ export function PharmacyCatalogView({
   const showWriteActions = !isGeneric && (ui.canEditStock || ui.canEditCommercial);
   const [query, setQuery] = React.useState('');
   const [category, setCategory] = React.useState('all');
-  const [status, setStatus] = React.useState<'all' | 'active' | 'inactive'>(
-    'all'
-  );
+  const [status, setStatus] = React.useState<
+    'all' | 'active' | 'inactive' | 'pending'
+  >('all');
   const [formOpen, setFormOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<PharmacyProduct | null>(null);
   const [importOpen, setImportOpen] = React.useState(false);
@@ -91,11 +95,22 @@ export function PharmacyCatalogView({
   const pageSize = 50;
   const taxonomyCats = React.useMemo(() => listCommercialCategories(), []);
 
+  const categoryOptions = React.useMemo(() => {
+    const fromTaxonomy = taxonomyCats.map((c) => c.name);
+    const extras = categories.filter(
+      (c) =>
+        !fromTaxonomy.includes(c) && !isPendingClassificationCategory(c)
+    );
+    return [...fromTaxonomy, ...extras.sort((a, b) => a.localeCompare(b, 'es'))];
+  }, [categories, taxonomyCats]);
+
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     return products.filter((p) => {
-      if (status === 'active' && !p.isActive) return false;
-      if (status === 'inactive' && p.isActive) return false;
+      const pending = isPendingClassificationCategory(p.category);
+      if (status === 'active' && (!p.isActive || pending)) return false;
+      if (status === 'inactive' && (p.isActive || pending)) return false;
+      if (status === 'pending' && !pending) return false;
       if (category !== 'all' && p.category !== category) return false;
       if (!q) return true;
       return (
@@ -345,7 +360,10 @@ export function PharmacyCatalogView({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todas las categorías</SelectItem>
-                {categories.map((c) => (
+                <SelectItem value={PENDING_CLASSIFICATION_NAME}>
+                  {PENDING_CLASSIFICATION_NAME}
+                </SelectItem>
+                {categoryOptions.map((c) => (
                   <SelectItem key={c} value={c}>
                     {c}
                   </SelectItem>
@@ -355,16 +373,17 @@ export function PharmacyCatalogView({
             <Select
               value={status}
               onValueChange={(v) =>
-                setStatus(v as 'all' | 'active' | 'inactive')
+                setStatus(v as 'all' | 'active' | 'inactive' | 'pending')
               }
             >
-              <SelectTrigger className="w-full sm:w-[160px]">
+              <SelectTrigger className="w-full sm:w-[180px]">
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Todos</SelectItem>
                 <SelectItem value="active">Activos</SelectItem>
                 <SelectItem value="inactive">Archivados</SelectItem>
+                <SelectItem value="pending">Pend. clasificar</SelectItem>
               </SelectContent>
             </Select>
           </div>

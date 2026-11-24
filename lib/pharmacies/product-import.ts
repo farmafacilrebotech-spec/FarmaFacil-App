@@ -543,11 +543,7 @@ export function shouldPersistImportRow(row: {
   action: ProductImportAction;
   draft: ProductImportDraft;
 }): boolean {
-  if (
-    row.action === 'skip' ||
-    row.action === 'pending_classification' ||
-    row.action === 'unchanged'
-  ) {
+  if (row.action === 'skip' || row.action === 'unchanged') {
     return false;
   }
   if (
@@ -557,7 +553,11 @@ export function shouldPersistImportRow(row: {
   ) {
     return false;
   }
-  return row.action === 'create' || row.action === 'update';
+  return (
+    row.action === 'create' ||
+    row.action === 'update' ||
+    row.action === 'pending_classification'
+  );
 }
 
 /** Informe de previsualización descargable (sin PII de clientes). */

@@ -1,0 +1,77 @@
+{
+  "generatedAt": "2026-11-24T20:27:48.059Z",
+  "results": [
+    {
+      "products": 100,
+      "previewMs": 0.05,
+      "batchPlanMs": 0.08,
+      "totalCpuMs": 0.14,
+      "emptyOrInvalid": 0,
+      "creates": 100,
+      "pending": 0,
+      "batchesOf100": 1,
+      "payloadBytes": 14691,
+      "note": null
+    },
+    {
+      "products": 1000,
+      "previewMs": 0.13,
+      "batchPlanMs": 0.5,
+      "totalCpuMs": 0.64,
+      "emptyOrInvalid": 0,
+      "creates": 1000,
+      "pending": 0,
+      "batchesOf100": 10,
+      "payloadBytes": 147900,
+      "note": null
+    },
+    {
+      "products": 2000,
+      "previewMs": 0.19,
+      "batchPlanMs": 0.34,
+      "totalCpuMs": 0.53,
+      "emptyOrInvalid": 1334,
+      "creates": 1333,
+      "pending": 0,
+      "batchesOf100": 14,
+      "payloadBytes": 197521,
+      "note": "junkRatio≈667/2000 para simular rechazo de basura del Excel original"
+    },
+    {
+      "products": 5000,
+      "previewMs": 0.4,
+      "batchPlanMs": 0.89,
+      "totalCpuMs": 1.29,
+      "emptyOrInvalid": 3336,
+      "creates": 3332,
+      "pending": 0,
+      "batchesOf100": 34,
+      "payloadBytes": 495392,
+      "note": null
+    },
+    {
+      "products": 10000,
+      "previewMs": 0.75,
+      "batchPlanMs": 1.7,
+      "totalCpuMs": 2.45,
+      "emptyOrInvalid": 6670,
+      "creates": 6665,
+      "pending": 0,
+      "batchesOf100": 67,
+      "payloadBytes": 992042,
+      "note": null
+    },
+    {
+      "products": 20000,
+      "previewMs": 1.54,
+      "batchPlanMs": 3.51,
+      "totalCpuMs": 5.04,
+      "emptyOrInvalid": 13340,
+      "creates": 13330,
+      "pending": 0,
+      "batchesOf100": 134,
+      "payloadBytes": 1988524,
+      "note": null
+    }
+  ]
+}

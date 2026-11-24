@@ -55,13 +55,13 @@ IDs estables slug (`dermocosmetica`, …). Iconos: reutilizar SVG actuales donde
 
 ## Migraciones propuestas (NO aplicadas)
 
-1. `supabase/proposed/106_catalog_taxonomy_import_v1.sql`  
+1. `supabase/proposed/089_catalog_taxonomy_import_v1.sql`  
    - `ff_catalog_categories` / `ff_catalog_subcategories`  
    - seed 26 + pending  
    - `pharmacy_products.national_code`, `laboratory`, `category_id`, `subcategory_id`, `source_family`, `classification_status`  
    - RLS SA manage / farmacia read  
 
-2. `supabase/proposed/107_catalog_import_jobs_v1.sql` (siguiente)  
+2. `supabase/proposed/090_catalog_import_jobs_v1.sql` (siguiente)  
    - `pharmacy_catalog_import_jobs` + items + equivalencias  
    - RPC batch upsert idempotente  
    - revert por `import_job_id` sin borrar edits posteriores  

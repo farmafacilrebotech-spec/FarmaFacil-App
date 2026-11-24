@@ -15,6 +15,7 @@ import { useRouter } from 'next/navigation';
 import { searchKioskCatalogAction } from '@/app/k/catalogo/actions';
 import { useKioskCart } from '@/components/kiosk/kiosk-cart-provider';
 import { resolveMasterCategoryIcon } from '@/lib/catalog/category-icons';
+import { resolveCatalogCategoryIcon } from '@/lib/catalog/taxonomy';
 import { resolveProductIllustration } from '@/lib/catalog/product-illustration';
 import type { KioskCatalogProduct } from '@/lib/kiosk/catalog';
 import {
@@ -37,7 +38,9 @@ function useDebounced(value: string, ms: number) {
 }
 
 function productIllustration(product: KioskCatalogProduct) {
-  const categoryIcon = resolveMasterCategoryIcon(product.category);
+  const categoryIcon =
+    resolveCatalogCategoryIcon(product.category) ??
+    resolveMasterCategoryIcon(product.category);
   return resolveProductIllustration(
     {
       name: product.name,

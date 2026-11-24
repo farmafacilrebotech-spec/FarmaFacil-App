@@ -9,10 +9,14 @@ import { join } from 'node:path';
 import {
   FF_COMMERCIAL_CATEGORY_COUNT,
   FF_TAXONOMY_CATEGORIES,
+  FF_TAXONOMY_SUBCATEGORIES,
   LEGACY_CATEGORY_ALIASES,
   PENDING_CLASSIFICATION_SLUG,
   getCategoryBySlug,
+  isPendingClassificationCategory,
   listCommercialCategories,
+  listSubcategoriesForCategory,
+  resolveCategoryLabel,
   resolveLegacyCategory,
 } from './taxonomy.ts';
 import { MASTER_CATEGORY_ICONS } from './category-icons.ts';
@@ -81,5 +85,20 @@ describe('taxonomía FarmaFácil', () => {
     for (const c of withIcon) {
       assert.ok(existsSync(join(process.cwd(), 'public', c.iconSrc!)));
     }
+  });
+
+  it('subcategorías seed apuntan a categorías comerciales', () => {
+    assert.ok(FF_TAXONOMY_SUBCATEGORIES.length >= 1);
+    for (const s of FF_TAXONOMY_SUBCATEGORIES) {
+      assert.equal(getCategoryBySlug(s.categorySlug)?.isCommercial, true);
+    }
+    assert.ok(listSubcategoriesForCategory('dermocosmetica').length >= 1);
+  });
+
+  it('resolveCategoryLabel cubre slug, nombre comercial y legacy', () => {
+    assert.equal(resolveCategoryLabel('dermocosmetica')?.name, 'Dermocosmética');
+    assert.equal(resolveCategoryLabel('Dermocosmética')?.slug, 'dermocosmetica');
+    assert.equal(resolveCategoryLabel('Cuidado facial')?.slug, 'dermocosmetica');
+    assert.equal(isPendingClassificationCategory('Pendiente de clasificar'), true);
   });
 });

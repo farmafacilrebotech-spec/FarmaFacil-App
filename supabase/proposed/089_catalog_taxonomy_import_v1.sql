@@ -1,5 +1,5 @@
 -- =============================================================================
--- PROPUESTA 106 — Taxonomía FarmaFácil + campos import (NO APLICAR)
+-- PROPUESTA 089 — Taxonomía FarmaFácil + campos import (NO APLICAR)
 -- =============================================================================
 -- Autorización explícita requerida. No ejecutar en prod ni staging sin OK.
 -- Conserva las 8 categorías del maestro vía tabla de alias / seed.
@@ -131,8 +131,39 @@ alter table public.ff_catalog_subcategories enable row level security;
 alter table public.pharmacy_featured_categories enable row level security;
 alter table public.pharmacy_category_import_equivalences enable row level security;
 
--- Políticas concretas: completar en apply autorizado (lectura autenticada;
--- escritura solo PLATFORM_SUPERADMIN / entitlements.manage equivalente).
+
+-- Políticas RLS (lectura autenticada; escritura plataforma)
+drop policy if exists ff_catalog_categories_select on public.ff_catalog_categories;
+create policy ff_catalog_categories_select on public.ff_catalog_categories
+  for select to authenticated using (true);
+
+drop policy if exists ff_catalog_categories_write on public.ff_catalog_categories;
+create policy ff_catalog_categories_write on public.ff_catalog_categories
+  for all to authenticated
+  using (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'))
+  with check (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'));
+
+drop policy if exists ff_catalog_subcategories_select on public.ff_catalog_subcategories;
+create policy ff_catalog_subcategories_select on public.ff_catalog_subcategories
+  for select to authenticated using (true);
+
+drop policy if exists ff_catalog_subcategories_write on public.ff_catalog_subcategories;
+create policy ff_catalog_subcategories_write on public.ff_catalog_subcategories
+  for all to authenticated
+  using (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'))
+  with check (public.ff_has_platform_permission(auth.uid(), 'entitlements.manage'));
+
+drop policy if exists pharmacy_featured_categories_tenant on public.pharmacy_featured_categories;
+create policy pharmacy_featured_categories_tenant on public.pharmacy_featured_categories
+  for all to authenticated
+  using (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'))
+  with check (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'));
+
+drop policy if exists pharmacy_category_import_equivalences_tenant on public.pharmacy_category_import_equivalences;
+create policy pharmacy_category_import_equivalences_tenant on public.pharmacy_category_import_equivalences
+  for all to authenticated
+  using (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'))
+  with check (public.ff_has_pharmacy_permission(auth.uid(), pharmacy_id, 'catalog.manage'));
 
 -- rollback; -- mantener comentado; usar rollback en ensayos
 -- commit;

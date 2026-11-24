@@ -3,7 +3,8 @@
  * Pure TS: sin dependencias de React ni de Supabase.
  *
  * Cada lote se envía a una server action que invoca
- * ff_pharmacy_products_import_batch_v1 (supabase/proposed/107).
+ * ff_pharmacy_products_import_batch_v1 (supabase/proposed/090)
+ * o hace fallback a multi-insert PostgREST.
  */
 
 import type { ProductImportDraft } from '@/lib/pharmacies/product-import';

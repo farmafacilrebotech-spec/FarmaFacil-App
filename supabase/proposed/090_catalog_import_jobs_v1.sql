@@ -1,13 +1,13 @@
 -- =============================================================================
--- PROPUESTA 107 — Jobs de importación de catálogo + RPC batch + revert (NO APLICAR)
+-- PROPUESTA 090 — Jobs de importación de catálogo + RPC batch + revert (NO APLICAR)
 -- =============================================================================
 -- Prerrequisitos: 020/022/054 (pharmacy_products, source, generic),
 --   074 (catalog.manage / ff_has_pharmacy_permission), 028 (ff_pharmacy_is_operable),
---   106 (national_code, laboratory, source_family, category_id,
+--   089 (national_code, laboratory, source_family, category_id,
 --        classification_status, ff_catalog_categories, ff_catalog_category_aliases,
 --        pharmacy_category_import_equivalences).
 --
--- pharmacy_category_import_equivalences ya se crea en 106; aquí NO se redefine.
+-- pharmacy_category_import_equivalences ya se crea en 089; aquí NO se redefine.
 --
 -- Autorización explícita requerida. No ejecutar en prod ni staging sin OK.
 -- =============================================================================

@@ -81,4 +81,4 @@ rollback;   -- por defecto en ensayos
 ## Pendiente (requiere autorización + migraciones)
 
 Ver `PLAN_CATALOGOS_TAXONOMIA_IMPORT_2026-11-24.md` y  
-`supabase/proposed/106_catalog_taxonomy_import_v1.sql` (no aplicada).
+`supabase/proposed/089_catalog_taxonomy_import_v1.sql` (no aplicada).

@@ -127,6 +127,17 @@ export async function searchKioskCatalog(input: {
     if (!id) continue;
     // Defensa en profundidad: no aceptar filas sin is_active true
     if (row.is_active === false) continue;
+    // Pendientes de clasificar no son comerciales.
+    const catLabel =
+      row.category == null || row.category === ''
+        ? ''
+        : String(row.category).toLowerCase();
+    if (
+      catLabel === 'pendiente de clasificar' ||
+      catLabel === 'pending_classification'
+    ) {
+      continue;
+    }
     const source =
       row.source == null || row.source === '' ? null : String(row.source);
     const availabilityStatus =

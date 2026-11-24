@@ -26,6 +26,7 @@ import {
   listCategoriesFromItems,
   resolveMasterCategoryIcon,
 } from '@/lib/catalog/category-icons';
+import { resolveCatalogCategoryIcon } from '@/lib/catalog/taxonomy';
 import { resolveProductIllustration } from '@/lib/catalog/product-illustration';
 
 type Props = {
@@ -286,7 +287,8 @@ export function PublicCatalogRequestClient({
       {categories.length > 0 ? (
         <div className="mb-5 flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {categories.map((cat) => {
-            const icon = resolveMasterCategoryIcon(cat);
+            const icon =
+              resolveCatalogCategoryIcon(cat) ?? resolveMasterCategoryIcon(cat);
             const active = categoryFilter === cat;
             return (
               <button
@@ -344,7 +346,9 @@ export function PublicCatalogRequestClient({
             const qty = qtyOf(item.id);
             const disabled =
               !item.requestable || item.availabilityStatus === 'unavailable';
-            const categoryIcon = resolveMasterCategoryIcon(item.category);
+            const categoryIcon =
+              resolveCatalogCategoryIcon(item.category) ??
+              resolveMasterCategoryIcon(item.category);
             const illustration = resolveProductIllustration(
               {
                 name: item.name,

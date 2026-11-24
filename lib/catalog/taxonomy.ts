@@ -2,13 +2,21 @@
  * Taxonomía oficial FarmaFácil (Fase B): 26 categorías comerciales
  * + 1 estado interno no comercial (`pending_classification`).
  *
- * Los slugs coinciden con el seed de supabase/proposed/106_catalog_taxonomy_import_v1.sql.
+ * Los slugs coinciden con el seed de supabase/proposed/089_catalog_taxonomy_import_v1.sql.
  * Pure TS: usable en tests sin DB.
  */
 
 export const PENDING_CLASSIFICATION_SLUG = 'pending_classification';
+export const PENDING_CLASSIFICATION_NAME = 'Pendiente de clasificar';
 
 export const FF_COMMERCIAL_CATEGORY_COUNT = 26;
+
+export type FfTaxonomySubcategory = {
+  categorySlug: string;
+  slug: string;
+  name: string;
+  sortOrder: number;
+};
 
 export type FfTaxonomyCategory = {
   /** Clave estable (igual que ff_catalog_categories.slug). */
@@ -216,9 +224,46 @@ export const FF_TAXONOMY_CATEGORIES: readonly FfTaxonomyCategory[] = [
 ] as const;
 
 /**
+ * Subcategorías seed (editables en SuperAdmin tras apply 089).
+ * Vacío por defecto; la UI permite borradores locales hasta persistir en BD.
+ */
+export const FF_TAXONOMY_SUBCATEGORIES: readonly FfTaxonomySubcategory[] = [
+  {
+    categorySlug: 'dermocosmetica',
+    slug: 'facial_limpieza',
+    name: 'Limpieza facial',
+    sortOrder: 10,
+  },
+  {
+    categorySlug: 'dermocosmetica',
+    slug: 'facial_hidratacion',
+    name: 'Hidratación facial',
+    sortOrder: 20,
+  },
+  {
+    categorySlug: 'bebe_infantil',
+    slug: 'higiene_bebe',
+    name: 'Higiene bebé',
+    sortOrder: 10,
+  },
+  {
+    categorySlug: 'proteccion_solar',
+    slug: 'solar_adulto',
+    name: 'Solar adulto',
+    sortOrder: 10,
+  },
+  {
+    categorySlug: 'proteccion_solar',
+    slug: 'solar_infantil',
+    name: 'Solar infantil',
+    sortOrder: 20,
+  },
+];
+
+/**
  * Alias de conservación: nombre exacto de las 8 categorías del maestro
  * (_validated_master.json / pharmacy_products.category) → slug oficial.
- * Misma correspondencia que ff_catalog_category_aliases en 106.
+ * Misma correspondencia que ff_catalog_category_aliases en 089.
  */
 export const LEGACY_CATEGORY_ALIASES: Readonly<Record<string, string>> = {
   'Cuidado facial': 'dermocosmetica',
@@ -254,6 +299,43 @@ export function listCommercialCategories(): FfTaxonomyCategory[] {
   );
 }
 
+export function listSubcategoriesForCategory(
+  categorySlug: string
+): FfTaxonomySubcategory[] {
+  return FF_TAXONOMY_SUBCATEGORIES.filter(
+    (s) => s.categorySlug === categorySlug
+  ).sort((a, b) => a.sortOrder - b.sortOrder);
+}
+
+/** true si el texto de categoría es el estado interno no comercial. */
+export function isPendingClassificationCategory(
+  categoryName: string | null | undefined
+): boolean {
+  if (!categoryName?.trim()) return false;
+  const n = categoryName.trim().toLowerCase();
+  return (
+    n === PENDING_CLASSIFICATION_NAME.toLowerCase() ||
+    n === PENDING_CLASSIFICATION_SLUG
+  );
+}
+
+/**
+ * Resuelve nombre (comercial, legacy o slug) a categoría oficial.
+ */
+export function resolveCategoryLabel(
+  label: string | null | undefined
+): FfTaxonomyCategory | null {
+  if (!label?.trim()) return null;
+  const raw = label.trim();
+  const bySlug = getCategoryBySlug(raw);
+  if (bySlug) return bySlug;
+  const lower = raw.toLowerCase();
+  for (const c of FF_TAXONOMY_CATEGORIES) {
+    if (c.name.toLowerCase() === lower) return c;
+  }
+  return resolveLegacyCategory(raw);
+}
+
 /**
  * Resuelve un nombre legacy (insensible a mayúsculas) a su categoría oficial.
  * Devuelve null si no es uno de los 8 nombres del maestro.
@@ -264,4 +346,22 @@ export function resolveLegacyCategory(
   if (!legacyName?.trim()) return null;
   const slug = aliasByLowerName.get(legacyName.trim().toLowerCase());
   return slug ? getCategoryBySlug(slug) : null;
+}
+
+/**
+ * Icono para taxonomía 26 / alias legacy.
+ * Preferir en kiosko/cliente frente a solo maestro 8.
+ */
+export function resolveCatalogCategoryIcon(
+  categoryName: string | null | undefined
+): { categoryName: string; slug: string; iconSrc: string } | null {
+  const resolved = resolveCategoryLabel(categoryName);
+  if (resolved?.iconSrc) {
+    return {
+      categoryName: resolved.name,
+      slug: resolved.slug,
+      iconSrc: resolved.iconSrc,
+    };
+  }
+  return null;
 }
