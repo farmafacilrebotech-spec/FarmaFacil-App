@@ -66,8 +66,14 @@ export const navItems: NavItem[] = [
     label: 'Catálogo',
     href: '/catalogo',
     icon: Pill,
-  Tags,
     description: 'Catálogo maestro FarmaFácil',
+  },
+  {
+    label: 'Taxonomía',
+    href: '/catalogo/taxonomia',
+    icon: Tags,
+    description: 'Categorías globales FarmaFácil',
+    superAdminOnly: true,
   },
   {
     label: 'Pedidos',
