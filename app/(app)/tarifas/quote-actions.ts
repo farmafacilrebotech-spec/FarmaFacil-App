@@ -54,9 +54,6 @@ import {
 } from '@/lib/email/send-config';
 import { assertCorporateEmailRecipientsAllowed } from '@/lib/email/send-recipient-allowlist';
 
-/** PDF HTML→Chromium: cold start + render en Vercel. */
-export const maxDuration = 120;
-
 function vatFromNet(netCents: number, vatBps: number): number {
   return Math.round((Math.max(0, netCents) * vatBps) / 10_000);
 }
