@@ -15,11 +15,13 @@ import { useRouter } from 'next/navigation';
 import { searchKioskCatalogAction } from '@/app/k/catalogo/actions';
 import { useKioskCart } from '@/components/kiosk/kiosk-cart-provider';
 import { resolveMasterCategoryIcon } from '@/lib/catalog/category-icons';
+import { resolveCatalogCategoryIcon } from '@/lib/catalog/taxonomy';
 import { resolveProductIllustration } from '@/lib/catalog/product-illustration';
 import type { KioskCatalogProduct } from '@/lib/kiosk/catalog';
 import {
   canAddKioskProductToCart,
   formatKioskProductAvailability,
+  formatKioskProductAvailabilityHint,
   formatKioskProductPrice,
 } from '@/lib/kiosk/catalog-display';
 import { cn } from '@/lib/utils';
@@ -37,7 +39,9 @@ function useDebounced(value: string, ms: number) {
 }
 
 function productIllustration(product: KioskCatalogProduct) {
-  const categoryIcon = resolveMasterCategoryIcon(product.category);
+  const categoryIcon =
+    resolveCatalogCategoryIcon(product.category) ??
+    resolveMasterCategoryIcon(product.category);
   return resolveProductIllustration(
     {
       name: product.name,
@@ -124,21 +128,20 @@ export function KioskCatalogView({
   function onAdd(product: KioskCatalogProduct) {
     if (!canAddKioskProductToCart(product)) return;
     const unitPrice = product.price;
-    const stock = product.stock;
-    if (unitPrice == null || stock == null) return;
+    if (unitPrice == null) return;
     addProduct({
       productId: product.id,
       name: product.name,
       brand: product.brand,
       unitPrice,
-      stock,
+      // Campo legado; no limita la cantidad solicitada.
+      stock: product.stock ?? 0,
     });
   }
 
   function onIncrement(product: KioskCatalogProduct) {
     const qty = qtyOf(product.id);
-    const stock = product.stock ?? 0;
-    if (qty >= stock) return;
+    if (qty >= 99) return;
     onAdd(product);
   }
 
@@ -227,8 +230,7 @@ export function KioskCatalogView({
             const qty = qtyOf(product.id);
             const selected = qty > 0;
             const canAdd = canAddKioskProductToCart(product);
-            const stock = product.stock ?? 0;
-            const atStockLimit = selected && stock > 0 && qty >= stock;
+            const atQtyLimit = selected && qty >= 99;
             const illustration = productIllustration(product);
 
             return (
@@ -276,6 +278,11 @@ export function KioskCatalogView({
                   >
                     {formatKioskProductAvailability(product)}
                   </span>
+                  {formatKioskProductAvailabilityHint(product) ? (
+                    <p className="mt-1 text-center text-[10px] leading-snug text-slate-500 sm:text-[11px]">
+                      {formatKioskProductAvailabilityHint(product)}
+                    </p>
+                  ) : null}
                   <div className="mt-3 sm:mt-auto sm:pt-3 lg:mt-4">
                     {selected ? (
                       <div className="flex h-12 w-full items-center justify-between gap-2 rounded-xl bg-[#2EC4C7]/12 px-1.5 sm:h-14 sm:rounded-2xl lg:h-16">
@@ -296,7 +303,7 @@ export function KioskCatalogView({
                         <button
                           type="button"
                           aria-label={`Añadir uno de ${product.name}`}
-                          disabled={!canAdd || atStockLimit}
+                          disabled={!canAdd || atQtyLimit}
                           onClick={() => onIncrement(product)}
                           className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2EC4C7] text-white shadow-sm active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:h-11 sm:w-11 lg:h-12 lg:w-12"
                         >

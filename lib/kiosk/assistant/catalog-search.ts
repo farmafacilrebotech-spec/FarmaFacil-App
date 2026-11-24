@@ -85,10 +85,7 @@ export async function searchAssistantCatalog(input: {
   }
 
   const products = Array.from(byId.values())
-    .sort(
-      (a, b) =>
-        Number(b.available) - Number(a.available) || a.name.localeCompare(b.name)
-    )
+    .sort((a, b) => a.name.localeCompare(b.name, 'es'))
     .slice(0, limit)
     .map((p) => ({
       ...p,
@@ -111,6 +108,6 @@ export function formatCatalogHitsForPrompt(
       const stockNote = formatKioskProductAvailability(p);
       return `${i + 1}. id=${p.id} · ${p.name}${p.brand ? ` (${p.brand})` : ''} · ${priceNote} · ${stockNote}`;
     }),
-    'Presenta estas coincidencias como orientación sobre el catálogo autorizado. No inventes PVP ni stock. No inventes características ni afirmes idoneidad clínica individual. Si no encajan del todo, dilo y sugiere el buscador o el farmacéutico del mostrador.',
+    'Presenta estas coincidencias como orientación sobre el catálogo autorizado. No inventes PVP ni cantidades de stock. No digas «agotado». Indica que están disponibles para solicitar y que la farmacia confirmará la recogida. No inventes características ni afirmes idoneidad clínica individual. Si no encajan del todo, dilo y sugiere el buscador o el farmacéutico del mostrador.',
   ].join('\n');
 }

@@ -1,0 +1,44 @@
+                               pg_get_functiondef                               
+--------------------------------------------------------------------------------
+ CREATE OR REPLACE FUNCTION auth.uid()                                         +
+  RETURNS uuid                                                                 +
+  LANGUAGE sql                                                                 +
+  STABLE                                                                       +
+ AS $function$                                                                 +
+   select                                                                      +
+   coalesce(                                                                   +
+     nullif(current_setting('request.jwt.claim.sub', true), ''),               +
+     (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')+
+   )::uuid                                                                     +
+ $function$                                                                    +
+ 
+(1 row)
+
+                                            call_as_postgres                                             
+---------------------------------------------------------------------------------------------------------
+ {"status": "disabled", "message": "Claim por teléfono deshabilitado. Use el enlace seguro del ticket."}
+(1 row)
+
+DO
+ linked_still | unlinked_with_phone_still 
+--------------+---------------------------
+           50 |                       125
+(1 row)
+
+ linked_orders_readable 
+------------------------
+                     50
+(1 row)
+
+              proname               
+------------------------------------
+ ff_customer_claim_order_v1
+ ff_kiosk_create_order_v1
+ ff_update_pharmacy_order_status_v1
+(3 rows)
+
+ anon_execute_grants 
+---------------------
+                   0
+(1 row)
+

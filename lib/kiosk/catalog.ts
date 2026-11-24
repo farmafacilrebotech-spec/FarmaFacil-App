@@ -20,8 +20,8 @@ export type KioskCatalogProduct = {
   availabilityStatus?: string | null;
   source?: string | null;
   /**
-   * Compat: true solo si hay stock confirmado (>0).
-   * Genéricos con confirm_with_pharmacy → false (solicitar a farmacia).
+   * Solicitabile en catálogo propio (activo / no unavailable).
+   * Independiente del stock (0/null no bloquean).
    */
   available: boolean;
 };
@@ -127,6 +127,17 @@ export async function searchKioskCatalog(input: {
     if (!id) continue;
     // Defensa en profundidad: no aceptar filas sin is_active true
     if (row.is_active === false) continue;
+    // Pendientes de clasificar no son comerciales.
+    const catLabel =
+      row.category == null || row.category === ''
+        ? ''
+        : String(row.category).toLowerCase();
+    if (
+      catLabel === 'pendiente de clasificar' ||
+      catLabel === 'pending_classification'
+    ) {
+      continue;
+    }
     const source =
       row.source == null || row.source === '' ? null : String(row.source);
     const availabilityStatus =
@@ -161,14 +172,12 @@ export async function searchKioskCatalog(input: {
           ? null
           : String(row.subcategory),
       price: isGeneric ? null : priceNum,
+      // Stock se conserva por compat/integraciones; no condiciona visibilidad.
       stock: isGeneric ? null : stockNum,
       availabilityStatus,
       source,
-      available:
-        !isGeneric &&
-        availabilityStatus !== 'confirm_with_pharmacy' &&
-        stockNum != null &&
-        stockNum > 0,
+      // Stock 0/null no bloquea: solicitabile si no está marcado unavailable.
+      available: !isGeneric && availabilityStatus !== 'unavailable',
     });
   }
 

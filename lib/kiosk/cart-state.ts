@@ -1,11 +1,14 @@
 /**
  * Estado puro del carrito kiosko (testeable sin React).
  * Precios mostrados son informativos; el servidor recalcula al crear el pedido.
+ * El stock NO limita la cantidad solicitada (política stock no bloqueante).
  */
 
 export const KIOSK_CART_STORAGE_KEY = 'ff_kiosk_cart_v1';
 /** Inactividad de compra (ms). No afecta la cookie de dispositivo. */
 export const KIOSK_CART_IDLE_MS = 3 * 60 * 1000;
+/** Tope de unidades por línea de solicitud (no inventario). */
+export const KIOSK_CART_MAX_QTY = 99;
 
 export type KioskCartLine = {
   productId: string;
@@ -14,6 +17,9 @@ export type KioskCartLine = {
   /** Precio de catálogo al añadir (UI). El RPC ignora este valor. */
   unitPrice: number;
   quantity: number;
+  /**
+   * Campo legado (integraciones). No se usa para topar la cantidad del pedido.
+   */
   stock: number;
 };
 
@@ -77,10 +83,7 @@ export function addOrUpdateCartLine(
 ): KioskCartState {
   const delta = input.quantityDelta ?? 1;
   const existing = state.lines.find((l) => l.productId === input.productId);
-  const maxQty = Math.min(99, Math.max(0, input.stock));
-  if (maxQty < 1) {
-    return { ...state, updatedAt: Date.now() };
-  }
+  const maxQty = KIOSK_CART_MAX_QTY;
 
   if (!existing) {
     if (delta < 1) return { ...state, updatedAt: Date.now() };
@@ -129,7 +132,7 @@ export function setCartLineQuantity(
 ): KioskCartState {
   const line = state.lines.find((l) => l.productId === productId);
   if (!line) return state;
-  const maxQty = Math.min(99, Math.max(0, line.stock));
+  const maxQty = KIOSK_CART_MAX_QTY;
   const qty = Math.min(maxQty, Math.max(0, Math.floor(quantity)));
   if (qty === 0) {
     return {

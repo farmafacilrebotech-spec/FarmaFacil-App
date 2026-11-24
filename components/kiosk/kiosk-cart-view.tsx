@@ -398,7 +398,7 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
                       <button
                         type="button"
                         className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-800 active:scale-95 disabled:opacity-40 lg:h-16 lg:w-16"
-                        disabled={line.quantity >= Math.min(99, line.stock)}
+                        disabled={line.quantity >= 99}
                         onClick={() =>
                           setQuantity(line.productId, line.quantity + 1)
                         }

@@ -1,5 +1,13 @@
 import type { KioskCatalogProduct } from '@/lib/kiosk/catalog';
 
+/** Copy comercial aprobado (stock no bloqueante). */
+export const KIOSK_CLIENT_AVAILABILITY = {
+  requestable: 'Disponible para solicitar.',
+  pharmacyWillConfirm: 'Tu farmacia te confirmará cuándo puedes recogerlo.',
+  genericConfirm: 'Confirmar disponibilidad en farmacia',
+  genericUnavailable: 'No disponible como solicitud genérica',
+} as const;
+
 function formatEuroLocal(amount: number): string {
   try {
     return new Intl.NumberFormat('es-ES', {
@@ -11,13 +19,11 @@ function formatEuroLocal(amount: number): string {
   }
 }
 
-/** True si el ítem es proyección genérica (sin PVP/stock comerciales). */
+/** True si el ítem es proyección genérica (sin PVP comercial inventado). */
 export function isGenericCatalogProduct(
-  product: Pick<KioskCatalogProduct, 'source' | 'price' | 'stock'>
+  product: Pick<KioskCatalogProduct, 'source'>
 ): boolean {
-  if (product.source === 'generic' || product.source === 'demo') return true;
-  // Defensa: price/stock null también implica no inventar 0 €.
-  return product.price == null || product.stock == null;
+  return product.source === 'generic' || product.source === 'demo';
 }
 
 /**
@@ -27,15 +33,18 @@ export function isGenericCatalogProduct(
 export function formatKioskProductPrice(
   product: Pick<KioskCatalogProduct, 'price' | 'source'>
 ): string {
-  if (product.price == null || product.source === 'generic') {
+  if (product.source === 'generic' || product.source === 'demo') {
+    return 'Confirmar PVP en farmacia';
+  }
+  if (product.price == null) {
     return 'Confirmar PVP en farmacia';
   }
   return formatEuroLocal(product.price);
 }
 
 /**
- * Disponibilidad para UI.
- * Genéricos: stock=0/null no significa «sin stock» comercial.
+ * Disponibilidad para UI comercial.
+ * Nunca muestra cantidades de stock ni «Sin stock» / «Agotado».
  */
 export function formatKioskProductAvailability(
   product: Pick<
@@ -44,30 +53,38 @@ export function formatKioskProductAvailability(
   >
 ): string {
   if (isGenericCatalogProduct(product)) {
-    if (
-      product.availabilityStatus === 'confirm_with_pharmacy' ||
-      product.availabilityStatus == null
-    ) {
-      return 'Confirmar disponibilidad en farmacia';
-    }
     if (product.availabilityStatus === 'unavailable') {
-      return 'No disponible como solicitud genérica';
+      return KIOSK_CLIENT_AVAILABILITY.genericUnavailable;
     }
-    return 'Tipo genérico · sin stock inventado';
+    return KIOSK_CLIENT_AVAILABILITY.genericConfirm;
   }
-  if (product.available && product.stock != null) {
-    return `Disponible · ${product.stock}`;
+  if (product.availabilityStatus === 'unavailable') {
+    return KIOSK_CLIENT_AVAILABILITY.genericUnavailable;
   }
-  return 'Sin stock';
+  return KIOSK_CLIENT_AVAILABILITY.requestable;
 }
 
-/** Solo productos propios con PVP y stock confirmados pueden ir al carrito. */
+/** Pie de apoyo (sin afirmar stock físico). */
+export function formatKioskProductAvailabilityHint(
+  product: Pick<KioskCatalogProduct, 'source' | 'availabilityStatus'>
+): string | null {
+  if (isGenericCatalogProduct(product)) return null;
+  if (product.availabilityStatus === 'unavailable') return null;
+  return KIOSK_CLIENT_AVAILABILITY.pharmacyWillConfirm;
+}
+
+/**
+ * Productos propios con PVP pueden ir al carrito.
+ * Stock 0 / null no bloquea.
+ */
 export function canAddKioskProductToCart(
-  product: Pick<KioskCatalogProduct, 'available' | 'price' | 'stock' | 'source'>
+  product: Pick<
+    KioskCatalogProduct,
+    'available' | 'price' | 'stock' | 'source' | 'availabilityStatus'
+  >
 ): boolean {
   if (isGenericCatalogProduct(product)) return false;
-  if (!product.available) return false;
+  if (product.availabilityStatus === 'unavailable') return false;
   if (product.price == null || product.price < 0) return false;
-  if (product.stock == null || product.stock <= 0) return false;
   return true;
 }

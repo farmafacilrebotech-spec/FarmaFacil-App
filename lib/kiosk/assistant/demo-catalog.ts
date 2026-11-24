@@ -59,7 +59,8 @@ export const DEMO_CATALOG_PRODUCTS: KioskCatalogProduct[] = [
     category: 'Complementos',
     price: 11.0,
     stock: 0,
-    available: false,
+    // Stock 0 no bloquea: sigue siendo demostrable / solicitabile.
+    available: true,
   },
 ];
 

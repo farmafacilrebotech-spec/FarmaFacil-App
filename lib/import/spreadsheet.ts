@@ -3,8 +3,9 @@
  * Reutilizable para Catálogo (ahora) y Clientes (futuro).
  */
 
-export const IMPORT_MAX_FILE_BYTES = 2 * 1024 * 1024; // 2 MB
-export const IMPORT_MAX_ROWS = 2000;
+export const IMPORT_MAX_FILE_BYTES = 8 * 1024 * 1024; // 8 MB (catálogos grandes)
+/** Límite de filas por archivo (sintéticos hasta 20k en preview aislado). */
+export const IMPORT_MAX_ROWS = 20_000;
 
 export type ColumnMappingHint = {
   field: string;
@@ -84,7 +85,13 @@ export function parseCsvText(text: string): ParsedSpreadsheet {
   const lines = text
     .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
-    .filter((l) => l.trim().length > 0);
+    .filter((l) => {
+      const t = l.trim();
+      if (!t) return false;
+      // Filas solo delimitadores / ceros (p. ej. ;;;; o 0;0;0) se evalúan después
+      // en product-import; aquí quitamos líneas totalmente vacías.
+      return true;
+    });
   if (lines.length === 0) return { headers: [], rows: [] };
 
   const delim =

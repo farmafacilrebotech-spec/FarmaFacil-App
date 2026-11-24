@@ -119,7 +119,7 @@ function parseProductCard(raw: unknown): AssistantProductCard | null {
     price,
     stock,
     available: row.available === true,
-    canAddToCart: row.canAddToCart === true && price != null && stock != null,
+    canAddToCart: row.canAddToCart === true && price != null,
     imageUrl:
       row.imageUrl == null || row.imageUrl === ''
         ? null

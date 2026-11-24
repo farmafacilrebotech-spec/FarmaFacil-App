@@ -1,0 +1,85 @@
+{
+  "pharmacy_id": "98ea2742-5b57-4271-8448-b132cae70598",
+  "pharmacy": {
+    "id": "98ea2742-5b57-4271-8448-b132cae70598",
+    "name": "TEST Fase7 QR Requests 20261021"
+  },
+  "import_count": 2000,
+  "classes": {
+    "has_identifier": 1333,
+    "junk_zero_placeholder": 667
+  },
+  "validish_count": 1333,
+  "name_top": [
+    [
+      "0",
+      667
+    ],
+    [
+      "MERITENE CLINICAL EXTRA PROTEIN MULTISABOR 24X200 ML",
+      2
+    ],
+    [
+      "SENSILACER GEL DENTAL 125 ML",
+      2
+    ],
+    [
+      "LACER MUCOREPAIR GEL 30 ML",
+      2
+    ],
+    [
+      "LACER OROS COLUTORIO 500 ML",
+      2
+    ],
+    [
+      "GINGILACER COLUTORIO 500 ML",
+      2
+    ],
+    [
+      "AVENE EMULSION REPARADORA PARA DESPUES DEL SOL 200 ML",
+      1
+    ],
+    [
+      "AVENE CLEANANCE MASCARILLA 40 ML",
+      1
+    ],
+    [
+      "AVENE PEDIATRIL GEL LIMPIADOR 500 ML",
+      1
+    ],
+    [
+      "AVENE HYDRANCE OPTIMALE UV ENRIQUECIDA 40 ML",
+      1
+    ]
+  ],
+  "brand_top": [
+    [
+      "0",
+      1456
+    ],
+    [
+      "LACER",
+      150
+    ],
+    [
+      "sesderma",
+      150
+    ],
+    [
+      "CANTABRIA LABS",
+      100
+    ],
+    [
+      "AVENE",
+      92
+    ],
+    [
+      "ISDIN",
+      52
+    ]
+  ],
+  "created_range": [
+    "2026-11-24T17:38:42.772914+00:00",
+    "2026-11-24T17:43:16.537114+00:00"
+  ]
+}
