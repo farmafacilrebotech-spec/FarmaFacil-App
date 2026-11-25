@@ -27,7 +27,7 @@ concurrency:
 jobs:
   playwright:
     name: Playwright ${{ github.event.inputs.suite || 'full' }}
-    # Pin 24.04: ubuntu-latest→26.04 breaks Playwright 1.49.1 --with-deps (libicu74 etc.).
+    # Pin 24.04: ubuntu-latest→26.04 breaks Playwright 1.49.1 --with-deps.
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     env:
@@ -40,6 +40,13 @@ jobs:
       E2E_PASSWORD: ${{ secrets.E2E_PASSWORD }}
       APP_URL: http://127.0.0.1:3070
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3070
+      # Emails: dry-run seguro en CI (sin envío real). Placeholders permiten canSend.
+      FF_APP_ENV: staging
+      FF_CORPORATE_EMAIL_SEND_ENABLED: '1'
+      FF_CORPORATE_EMAIL_DRY_RUN: '1'
+      EMAIL_FROM: staging-ci@farmafacil.local
+      RESEND_API_KEY: re_ci_dry_run_not_a_real_key
+      FF_CORPORATE_EMAIL_TEST_RECIPIENTS: ${{ secrets.FF_CORPORATE_EMAIL_TEST_RECIPIENTS }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -86,6 +93,12 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
           EOF
           E2E_PASSWORD="$E2E_PASSWORD" npm run test:e2e:prepare
+
+      - name: Default corporate email test recipients
+        run: |
+          if [ -z "$FF_CORPORATE_EMAIL_TEST_RECIPIENTS" ]; then
+            echo "FF_CORPORATE_EMAIL_TEST_RECIPIENTS=qa-e2e-staging@example.com" >> "$GITHUB_ENV"
+          fi
 
       - name: Run suite
         run: |
