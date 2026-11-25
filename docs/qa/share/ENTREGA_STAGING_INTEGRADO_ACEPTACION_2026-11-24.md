@@ -67,8 +67,8 @@
 | `test:taxonomy` | **9/9** |
 | Smoke BD `:54532` import/RLS/perf | **OK** (57 ms / 500 filas) |
 | HTTP staging `/login` `/e/…/catalogo` `/k` | **200** |
-| Playwright CI #28 | Browser install **OK** tras ubuntu-24.04; prepare falló Node20 → **fix Node22 pusheado**; re-run disparado |
-| E2E roles completo post-Node22 | **Pendiente** resultado run |
+| Playwright CI | ubuntu-24.04 + Node22 OK (install/build/prepare) |
+| E2E full run `45492490568` | **66 passed / 6 failed** — 5 por falta `FF_CORPORATE_EMAIL_TEST_RECIPIENTS` + dry-run env; 1 PDF simulación sin RESEND/EMAIL_FROM en CI. Fix workflow dry-run pusheado; re-run pendiente |
 
 ## Rendimiento ENTREGA 1B (HTTP real staging)
 
@@ -144,7 +144,7 @@ Base: https://farmafacil-staging.vercel.app
 | Stock no bloqueante | validada código+smoke · pendiente manual |
 | Pedidos create/status RPCs | presentes · claim phone **disabled** |
 | Seguridad P0 prod/staging | **validada** |
-| E2E CI full | **bloqueada** hasta run Node22 verde |
+| E2E CI full | **66/72** · re-run con dry-run email CI pendiente de verde |
 | Avisos recogida | no empezada |
 | Perf auth/PDF | pendiente |
 
