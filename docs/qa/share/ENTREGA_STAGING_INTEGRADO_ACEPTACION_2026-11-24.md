@@ -1,7 +1,7 @@
 # Entrega — STAGING integrado para aceptación manual
 
 **Fecha:** 2026-11-24  
-**Estado global:** controles técnicos **mayormente superados**; E2E CI Playwright **en re-ejecución** (Node 22). No declarar aceptación cerrada hasta verde E2E + checklist manual.
+**Estado global:** controles técnicos automatizados **superados** (E2E full verde). Listo para **pruebas manuales de aceptación**. Aceptación formal pendiente de tu checklist.
 
 ## URL y versión
 
@@ -11,8 +11,8 @@
 | Deploy | `dpl_7S1ZFSZiSeY9myfuzekGd42T7HG4` |
 | Inspector | https://vercel.com/pilars-projects-4b376277/farmafacil-staging/7S1ZFSZiSeY9myfuzekGd42T7HG4 |
 | Rama integrada | `integration/farmafacil-release` (= `integration/farmafacil-staging-2026-11-24`) |
-| Commit tip (CI Node22) | `d54c090` |
-| Commit app desplegado | `95669a6` (equivalente funcional; tip CI posterior solo workflow) |
+| Commit tip integrado | `f8e7603` |
+| Commit app desplegado Vercel | `95669a6` (funcional; tip posterior = CI/e2e/docs) |
 | Supabase staging | `dazfdcjscnpfvhcyjddt` |
 | APK | TEST v0.2.13 — **sin cambios** |
 
@@ -68,7 +68,7 @@
 | Smoke BD `:54532` import/RLS/perf | **OK** (57 ms / 500 filas) |
 | HTTP staging `/login` `/e/…/catalogo` `/k` | **200** |
 | Playwright CI | ubuntu-24.04 + Node22 OK (install/build/prepare) |
-| E2E full | Run1 66/72 · Run2 **67/72** (PDF simulación OK). Quedan 5 emails: dominio EMAIL_FROM CI + prefijo [PRUEBA STAGING]. Fix dominio/prefijo aplicado; re-run `pending` |
+| E2E full | **PASSED** run `45552069936` |
 
 ## Rendimiento ENTREGA 1B (HTTP real staging)
 
