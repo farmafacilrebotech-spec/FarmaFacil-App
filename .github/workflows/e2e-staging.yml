@@ -96,7 +96,9 @@ jobs:
           E2E_PASSWORD=${E2E_PASSWORD}
           FF_CORPORATE_EMAIL_TEST_RECIPIENTS=${FF_CORPORATE_EMAIL_TEST_RECIPIENTS:-qa-e2e-staging@example.com}
           EOF
-          E2E_PASSWORD="$E2E_PASSWORD" npm run test:e2e:prepare
+          # --ensure: reusa E2E_PASSWORD del secret; solo corrige logins rotos.
+          # Evita rotar la password compartida con QA manual en cada run.
+          E2E_PASSWORD="$E2E_PASSWORD" node scripts/e2e-prepare-credentials.mjs --ensure
 
       - name: Default corporate email test recipients
         run: |

@@ -3,6 +3,14 @@
  * Prepara credenciales E2E en staging (solo cuentas de laboratorio).
  * Escribe `.env.e2e.local` (gitignored). Usa service_role SOLO para set password.
  * No toca producción.
+ *
+ * Estabilidad QA / CI:
+ *  - Por defecto REUTILIZA E2E_PASSWORD (env o `.env.e2e.local`).
+ *  - NO genera password aleatoria salvo `--force-rotate`.
+ *  - `--ensure` solo escribe password si el login actual falla (CI seguro).
+ *  - `--only=KEY[,KEY]` limita el kit afectado.
+ *
+ * Futuro: separar usuarios CI (`ci.*@…`) de QA manual para rotaciones independientes.
  */
 import { createClient } from '@supabase/supabase-js';
 import { randomBytes } from 'node:crypto';
@@ -38,17 +46,16 @@ if (!url.includes('dazfdcjscnpfvhcyjddt')) {
   process.exit(2);
 }
 const service = staging.SUPABASE_SERVICE_ROLE_KEY;
+const anon = staging.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 if (!service) {
   console.error('Falta SUPABASE_SERVICE_ROLE_KEY en .env.staging.local');
   process.exit(2);
 }
+if (!anon) {
+  console.error('Falta NEXT_PUBLIC_SUPABASE_ANON_KEY en .env.staging.local');
+  process.exit(2);
+}
 
-/**
- * Modos:
- *  - (default)            resetea TODO el kit con una password compartida (E2E_PASSWORD o aleatoria).
- *  - --only=E2E_DUAL_EMAIL[,K2]  resetea solo esas claves del kit REUSANDO la password ya existente
- *                         en `.env.e2e.local` / env (no rota al resto). Aborta si no hay password previa.
- */
 const onlyArg = process.argv.find((a) => a.startsWith('--only='));
 const onlyKeys = onlyArg
   ? onlyArg
@@ -57,20 +64,39 @@ const onlyKeys = onlyArg
       .map((k) => k.trim())
       .filter(Boolean)
   : null;
+const forceRotate = process.argv.includes('--force-rotate');
+const ensureOnly = process.argv.includes('--ensure');
 
 const existingE2e = loadEnv(resolve(root, '.env.e2e.local'));
-// Solo en modo --only se reusa la password del archivo; el modo default conserva el comportamiento previo.
 const existingPassword =
-  process.env.E2E_PASSWORD || (onlyKeys ? existingE2e.E2E_PASSWORD : undefined);
-if (onlyKeys && !existingPassword) {
+  process.env.E2E_PASSWORD || existingE2e.E2E_PASSWORD || undefined;
+
+if (onlyKeys && !existingPassword && !forceRotate) {
   console.error(
-    'Abort: --only requiere E2E_PASSWORD previa (env o .env.e2e.local). Ejecuta sin --only una vez.'
+    'Abort: --only requiere E2E_PASSWORD previa (env o .env.e2e.local), o usa --force-rotate.'
   );
   process.exit(2);
 }
 
-const password =
-  existingPassword || `FfE2E_${randomBytes(9).toString('base64url')}!aA1`;
+let password;
+if (forceRotate) {
+  password = `FfE2E_${randomBytes(9).toString('base64url')}!aA1`;
+  console.log('Mode: --force-rotate (nueva password; no se imprime).');
+} else if (existingPassword) {
+  password = existingPassword;
+  console.log(
+    ensureOnly
+      ? 'Mode: --ensure (reusa password; solo corrige logins rotos).'
+      : 'Mode: sync (reusa password de env / .env.e2e.local).'
+  );
+} else {
+  console.error(
+    'Abort: falta E2E_PASSWORD (env o .env.e2e.local). ' +
+      'Para rotar a propósito: --force-rotate. ' +
+      'Evita regenerar en CI/QA sin autorización.'
+  );
+  process.exit(2);
+}
 
 const users = {
   E2E_SA_EMAIL: 'emails.sa.075-emails-stage@farmafacil.test',
@@ -99,6 +125,19 @@ const targetUsers = onlyKeys
 const admin = createClient(url, service, {
   auth: { persistSession: false, autoRefreshToken: false },
 });
+const anonClient = createClient(url, anon, {
+  auth: { persistSession: false, autoRefreshToken: false },
+});
+
+async function loginWorks(email) {
+  const { error } = await anonClient.auth.signInWithPassword({
+    email,
+    password,
+  });
+  // Cerrar sesión anónima del cliente compartido
+  await anonClient.auth.signOut().catch(() => {});
+  return !error;
+}
 
 async function setPassword(email) {
   const { data, error } = await admin.auth.admin.listUsers({ perPage: 1000 });
@@ -109,6 +148,13 @@ async function setPassword(email) {
   if (!u) {
     console.warn('SKIP missing user', email);
     return false;
+  }
+  if (ensureOnly) {
+    if (await loginWorks(email)) {
+      console.log('OK already valid', email);
+      return true;
+    }
+    console.log('FIX login broken, resetting', email);
   }
   const { error: upErr } = await admin.auth.admin.updateUserById(u.id, {
     password,
@@ -149,6 +195,7 @@ if (!onlyKeys) {
 
 const lines = [
   '# Generado por scripts/e2e-prepare-credentials.mjs — NO COMMIT',
+  `# sync=${new Date().toISOString()} ensure=${ensureOnly} force_rotate=${forceRotate}`,
   `E2E_BASE_URL=http://127.0.0.1:3070`,
   `E2E_PASSWORD=${password}`,
   ...Object.entries(users).map(([k, v]) => `${k}=${v}`),
