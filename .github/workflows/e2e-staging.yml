@@ -44,7 +44,9 @@ jobs:
       FF_APP_ENV: staging
       FF_CORPORATE_EMAIL_SEND_ENABLED: '1'
       FF_CORPORATE_EMAIL_DRY_RUN: '1'
-      EMAIL_FROM: staging-ci@farmafacil.local
+      # Dominio debe coincidir con remitentes corporativos (@farmafacil.solutions).
+      EMAIL_FROM: staging-ci@farmafacil.solutions
+      FF_CORPORATE_EMAIL_VERIFIED_DOMAIN: farmafacil.solutions
       RESEND_API_KEY: re_ci_dry_run_not_a_real_key
       FF_CORPORATE_EMAIL_TEST_RECIPIENTS: ${{ secrets.FF_CORPORATE_EMAIL_TEST_RECIPIENTS }}
     steps:

@@ -68,7 +68,7 @@
 | Smoke BD `:54532` import/RLS/perf | **OK** (57 ms / 500 filas) |
 | HTTP staging `/login` `/e/…/catalogo` `/k` | **200** |
 | Playwright CI | ubuntu-24.04 + Node22 OK (install/build/prepare) |
-| E2E full run `45492490568` | **66 passed / 6 failed** — 5 por falta `FF_CORPORATE_EMAIL_TEST_RECIPIENTS` + dry-run env; 1 PDF simulación sin RESEND/EMAIL_FROM en CI. Fix workflow dry-run pusheado; re-run pendiente |
+| E2E full | Run1 66/72 · Run2 **67/72** (PDF simulación OK). Quedan 5 emails: dominio EMAIL_FROM CI + prefijo [PRUEBA STAGING]. Fix dominio/prefijo aplicado; re-run `pending` |
 
 ## Rendimiento ENTREGA 1B (HTTP real staging)
 
