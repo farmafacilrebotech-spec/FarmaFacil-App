@@ -60,7 +60,8 @@ async function openVisualConfirm(
   await expect(
     page.getByRole('heading', { name: /confirmar env[ií]o de prueba/i })
   ).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByText(/\[PRUEBA\]/i).first()).toBeVisible();
+  // Prefijo staging canónico [PRUEBA STAGING]; acepta legado [PRUEBA].
+  await expect(page.getByText(/\[PRUEBA(?: STAGING)?\]/i).first()).toBeVisible();
   await expect(page.getByText(testRecipient(), { exact: false }).first()).toBeVisible();
   // Cerrar modal (el registro lo hace el smoke; evita colgar RSC)
   await page.getByRole('button', { name: /^cancelar$/i }).click();
