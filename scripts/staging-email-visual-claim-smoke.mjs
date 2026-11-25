@@ -32,6 +32,7 @@ function load(path) {
 }
 
 const env = {
+  ...process.env,
   ...load(resolve(root, '.env.staging.local')),
   ...load(resolve(root, '.env.local')),
   ...load(resolve(root, '.env.e2e.local')),
