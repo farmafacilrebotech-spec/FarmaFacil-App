@@ -42,16 +42,26 @@ test.describe('P0 circuito pedidos', () => {
     await page.goto(`/f/${PHARMACIES.fase7.id}/pedidos`);
     await expect(page.getByText(/pedidos|solicitudes/i).first()).toBeVisible();
 
-    // Localizar al menos el pedido vinculado
-    const linkedLocator = page.getByText(new RegExp(`#?${linkedRef}`)).first();
-    await expect(linkedLocator).toBeVisible({ timeout: 30_000 });
-    await linkedLocator.click();
+    // Abrir detalle: el nº puede ir con ceros (#0162 vs 162); click en el <button> de fila
+    const orderNum = String(linkedRef).replace(/^0+/, '') || '0';
+    const orderBtn = page.getByRole('button', {
+      name: new RegExp(`#0*${orderNum}\\b`),
+    });
+    await expect(orderBtn.first()).toBeVisible({ timeout: 30_000 });
+    await orderBtn.first().click();
+    // Detalle real (no el subtítulo de lista «Precio y disponibilidad…»)
     await expect(
-      page.getByText(/líneas|productos|cantidad|disponib|precio/i).first()
+      page.getByRole('button', { name: /volver a pedidos/i })
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.getByRole('button', { name: /confirmar valoración/i })
     ).toBeVisible({ timeout: 20_000 });
 
     // 12–14 valorar: select Disponibilidad → Disponible → precio → confirmar
-    const availSelect = page.locator('select').filter({ hasText: /Pendiente|Disponible/ }).first();
+    const availSelect = page
+      .locator('select')
+      .filter({ hasText: /Pendiente|Disponible/ })
+      .first();
     await expect(availSelect).toBeVisible({ timeout: 15_000 });
     await availSelect.selectOption('available');
     const priceInput = page.locator('input[inputmode="decimal"]:not([disabled])').first();

@@ -33,7 +33,7 @@ export type ContractLifecycleStatus =
 export type ContractEmailSendEntry = {
   at: string;
   to: string;
-  status: 'sent' | 'failed' | 'not_configured';
+  status: 'sent' | 'failed' | 'not_configured' | 'simulated';
   error?: string | null;
   providerId?: string | null;
   by?: string | null;

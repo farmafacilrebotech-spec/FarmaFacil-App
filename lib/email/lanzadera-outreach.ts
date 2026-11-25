@@ -702,9 +702,10 @@ export async function sendLanzaderaTestEmail(
   // Import dinámico: evita acoplar el módulo de plantilla a Resend en tests.
   // En Node ESM puro usar createRequire('./send.ts'); Next/bundler resuelve './send'.
   const { sendTransactionalEmail } = await import('./send');
+  // Prefijo [PRUEBA STAGING] aplicado en sendTransactionalEmail si entorno staging.
   const result = await sendTransactionalEmail({
     to,
-    subject: `[PRUEBA] ${payload.subject}`,
+    subject: payload.subject,
     html: payload.html,
     text: payload.text,
     from: LANZADERA_EMAIL_FROM,

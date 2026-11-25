@@ -46,6 +46,7 @@ import {
   PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE,
   PHARMACY_TENANT_MATERIALS_CONTACT_MESSAGE,
 } from '@/lib/pharmacies/pharmacy-materials-access';
+import { assertPharmacyMaterialsAccessAction } from '@/app/(app)/farmacias/materials-actions';
 import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import { ScannableQr } from '@/components/kiosk/scannable-qr';
 import { Button } from '@/components/ui/button';
@@ -117,6 +118,16 @@ export function QrTab({
     return true;
   }
 
+  async function assertMaterialsAllowedServer(): Promise<boolean> {
+    if (!assertMaterialsAllowed()) return false;
+    const gate = await assertPharmacyMaterialsAccessAction();
+    if (!gate.ok) {
+      toast.error(gate.error);
+      return false;
+    }
+    return true;
+  }
+
   function assertPrintSafe(): boolean {
     if (!isPrintSafePharmacyPublicUrl(publicUrl)) {
       toast.error(
@@ -178,8 +189,9 @@ export function QrTab({
   }
 
   async function buildAccessPdf(format: PosterPageFormat) {
-    if (!canGenerateMaterials) {
-      throw new Error(PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE);
+    const gate = await assertPharmacyMaterialsAccessAction();
+    if (!gate.ok) {
+      throw new Error(gate.error);
     }
     if (!entrypoint || !publicUrl) {
       throw new Error('Falta el acceso público de la farmacia');
@@ -204,8 +216,9 @@ export function QrTab({
   }
 
   async function buildAdPdf(format: PosterPageFormat) {
-    if (!canGenerateMaterials) {
-      throw new Error(PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE);
+    const gate = await assertPharmacyMaterialsAccessAction();
+    if (!gate.ok) {
+      throw new Error(gate.error);
     }
     if (!entrypoint || !publicUrl) {
       throw new Error('Falta el acceso público de la farmacia');
@@ -312,7 +325,7 @@ export function QrTab({
   }
 
   async function onWelcomePack() {
-    if (!assertMaterialsAllowed()) return;
+    if (!(await assertMaterialsAllowedServer())) return;
     if (!entrypoint || !publicUrl) return;
     if (!assertPrintSafe()) return;
     if (!isPharmacyQrPosterDownloadEnabled()) {

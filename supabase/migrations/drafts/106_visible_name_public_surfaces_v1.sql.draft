@@ -1,0 +1,25 @@
+-- DRAFT — NO APLICAR sin autorización expresa.
+-- Tentativa: 106_visible_name_public_surfaces_v1 (numeración sujeta a cola real).
+-- Objetivo: alinear RPC públicas/kiosko con COALESCE(visible_name, name)
+-- ya usado en 098 (entrypoint + mis farmacias).
+--
+-- Superficies a corregir (según auditoría documental):
+--   041 ff_kiosk_get_home_context_v1          → pharmacy_name
+--   055 ff_public_catalog_list_v1            → payloads con p.name
+--   057 / 072 create request                 → v_pharmacy_name
+--   067 / 071 save pharmacy                  → nombre mostrado
+--   062 public quote /q (si aplica)
+--
+-- Patrón:
+--   COALESCE(NULLIF(btrim(ps.visible_name), ''), p.name)
+--   (join pharmacy_settings / columna visible_name según esquema actual)
+--
+-- Restricciones:
+--   * No es migración 105.
+--   * No modificar producción.
+--   * No aplicar en staging hasta OK explícito.
+--   * Reescribir cuerpos CREATE OR REPLACE FUNCTION completos al autorizar.
+--
+-- Este archivo es solo preparación; no lo ejecuta ningún pipeline.
+
+SELECT 'draft_only_do_not_apply' AS status;
