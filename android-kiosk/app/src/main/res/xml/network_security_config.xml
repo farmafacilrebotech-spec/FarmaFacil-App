@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Solo HTTPS hacia orígenes de producción FarmaFácil. Sin cleartext. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">farmafacil.solutions</domain>
+        <domain includeSubdomains="true">vercel.app</domain>
+    </domain-config>
+</network-security-config>

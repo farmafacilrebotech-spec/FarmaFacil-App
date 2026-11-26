@@ -21,8 +21,8 @@ describe('kiosk catalog display (stock no bloqueante)', () => {
     };
     assert.equal(isGenericCatalogProduct(generic), true);
     assert.equal(canAddKioskProductToCart(generic), false);
-    assert.match(formatKioskProductPrice(generic), /farmacia/i);
-    assert.doesNotMatch(formatKioskProductPrice(generic), /0/);
+    assert.match(formatKioskProductPrice(generic), /Consultar precio/i);
+    assert.doesNotMatch(formatKioskProductPrice(generic), /0,00/);
     assert.match(formatKioskProductAvailability(generic), /Confirmar/i);
     assert.doesNotMatch(formatKioskProductAvailability(generic), /Sin stock/);
   });
@@ -37,7 +37,20 @@ describe('kiosk catalog display (stock no bloqueante)', () => {
     };
     assert.equal(isGenericCatalogProduct(weird), true);
     assert.equal(canAddKioskProductToCart(weird), false);
-    assert.match(formatKioskProductPrice(weird), /Confirmar PVP/i);
+    assert.match(formatKioskProductPrice(weird), /Consultar precio/i);
+  });
+
+  it('propio con precio 0 es solicitabile y muestra Consultar precio', () => {
+    const own = {
+      source: 'manual' as const,
+      price: 0,
+      stock: 5,
+      available: true,
+      availabilityStatus: 'available' as const,
+    };
+    assert.equal(canAddKioskProductToCart(own), true);
+    assert.match(formatKioskProductPrice(own), /Consultar precio/i);
+    assert.doesNotMatch(formatKioskProductPrice(own), /0,00/);
   });
 
   it('propio activo con stock 0 es solicitabile y sin cantidad al cliente', () => {

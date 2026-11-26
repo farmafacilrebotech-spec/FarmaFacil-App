@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string-array name="connect_type_string">
+        <item>USB</item>
+        <item>bluetooth</item>
+        <item>serial</item>
+        <item>wifi</item>
+    </string-array>
+    <string-array name="serial_port_list">
+        <item>NONE</item>
+    </string-array>
+    <string-array name="baud_rate_string">
+        <item>9600</item>
+        <item>19200</item>
+        <item>38400</item>
+        <item>57600</item>
+        <item>115200</item>
+    </string-array>
+    <integer-array name="baud_rate">
+        <item>9600</item>
+        <item>19200</item>
+        <item>38400</item>
+        <item>57600</item>
+        <item>115200</item>
+    </integer-array>
+    <string-array name="serial_flow">
+        <item>NONE 0</item>
+        <item>IXON 1</item>
+    </string-array>
+</resources>

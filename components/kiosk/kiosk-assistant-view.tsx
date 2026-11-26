@@ -11,6 +11,7 @@ import {
   Send,
   ShoppingCart,
   Stethoscope,
+  Store,
   X,
 } from 'lucide-react';
 
@@ -19,6 +20,7 @@ import {
   pollKioskPharmacistConsultAction,
 } from '@/app/k/asistente/consult-actions';
 import { sendKioskAssistantMessageAction } from '@/app/k/asistente/actions';
+import { CONSULT_PHARMACIST_QUICK_REPLY } from '@/lib/kiosk/assistant/safety';
 import { KioskAssistantProductCards } from '@/components/kiosk/kiosk-assistant-product-cards';
 import { useKioskCart } from '@/components/kiosk/kiosk-cart-provider';
 import {
@@ -390,7 +392,13 @@ export function KioskAssistantView({
     touchActivity();
     setError(null);
     if (!digitalConsultEnabled) {
-      void sendMessage('', 'consult_pharmacist');
+      // Sin consulta digital: orientar al mostrador (sin llamada al servidor).
+      setShowQuick(false);
+      setMessages((prev) => [
+        ...prev,
+        { role: 'user', content: 'Quiero hablar con el farmacéutico.' },
+        { role: 'assistant', content: CONSULT_PHARMACIST_QUICK_REPLY },
+      ]);
       return;
     }
     setComposeOpen(true);
@@ -563,8 +571,8 @@ export function KioskAssistantView({
   }
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-[#e8f7f7]">
-      <header className="sticky top-0 z-20 border-b border-[#2EC4C7]/25 bg-[#2EC4C7] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 lg:px-8 lg:pb-5 lg:pt-5">
+    <div className="flex min-h-[100dvh] flex-col bg-[#F7F9FA]">
+      <header className="sticky top-0 z-20 border-b border-[#1ABBB3]/25 bg-[#1ABBB3] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 lg:px-8 lg:pb-5 lg:pt-5">
         <div className="mx-auto flex w-full max-w-3xl items-center gap-3 lg:gap-4">
           <Link
             href="/k"
@@ -621,9 +629,9 @@ export function KioskAssistantView({
             >
               <div
                 className={cn(
-                  'max-w-[92%] whitespace-pre-wrap rounded-3xl px-4 py-3 text-base leading-relaxed shadow-sm sm:max-w-[85%] sm:px-5 sm:py-4 sm:text-lg lg:text-xl',
+                  'max-w-[94%] whitespace-pre-wrap rounded-3xl px-5 py-4 text-lg leading-relaxed shadow-sm sm:max-w-[88%] sm:px-6 sm:py-5 sm:text-xl lg:text-2xl',
                   m.role === 'user'
-                    ? 'rounded-br-lg bg-[#2EC4C7] text-white'
+                    ? 'rounded-br-lg bg-[#1ABBB3] text-white'
                     : 'rounded-bl-lg bg-white text-slate-800 ring-1 ring-slate-200/70'
                 )}
               >
@@ -642,8 +650,8 @@ export function KioskAssistantView({
           {sending ? (
             <li className="flex justify-start">
               <div className="flex items-center gap-2 rounded-3xl rounded-bl-lg bg-white px-4 py-3 text-slate-500 shadow-sm ring-1 ring-slate-200/70 sm:px-5 sm:py-4">
-                <Loader2 className="h-5 w-5 animate-spin text-[#2EC4C7]" />
-                <span className="text-base sm:text-lg">Preparando respuesta…</span>
+                <Loader2 className="h-5 w-5 animate-spin text-[#1ABBB3]" />
+                <span className="text-lg sm:text-xl">Preparando respuesta…</span>
               </div>
             </li>
           ) : null}
@@ -663,16 +671,18 @@ export function KioskAssistantView({
                   }
                   void sendMessage(q.userText ?? '', q.intent);
                 }}
-                className="rounded-2xl border border-[#2EC4C7]/35 bg-white px-4 py-4 text-left text-base font-semibold text-slate-800 shadow-sm active:scale-[0.99] disabled:opacity-60 sm:py-5 sm:text-lg"
+                className="rounded-2xl border border-[#1ABBB3]/35 bg-white px-4 py-4 text-left text-base font-semibold text-slate-800 shadow-sm active:scale-[0.99] disabled:opacity-60 sm:py-5 sm:text-lg"
               >
-                {q.label}
+                {q.intent === 'consult_pharmacist' && !digitalConsultEnabled
+                  ? 'Acércate al mostrador'
+                  : q.label}
               </button>
             ))}
           </div>
         ) : null}
 
         {composeOpen ? (
-          <div className="mt-5 rounded-3xl border border-[#2EC4C7]/35 bg-white p-4 shadow-sm sm:p-5">
+          <div className="mt-5 rounded-3xl border border-[#1ABBB3]/35 bg-white p-4 shadow-sm sm:p-5">
             <div className="mb-3 flex items-start justify-between gap-3">
               <div>
                 <h2 className="text-lg font-semibold text-slate-900">
@@ -702,14 +712,14 @@ export function KioskAssistantView({
                 setConsultDraft(e.target.value);
               }}
               placeholder="Ej.: Busco orientación sobre protectores solares infantiles…"
-              className="w-full resize-none rounded-2xl border-0 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none ring-1 ring-slate-200 focus:ring-4 focus:ring-[#2EC4C7]/35 disabled:opacity-60"
+              className="w-full resize-none rounded-2xl border-0 bg-slate-50 px-4 py-3 text-base text-slate-900 outline-none ring-1 ring-slate-200 focus:ring-4 focus:ring-[#1ABBB3]/35 disabled:opacity-60"
             />
             <div className="mt-3 flex flex-wrap gap-2">
               <button
                 type="button"
                 disabled={consultSending || !consultDraft.trim()}
                 onClick={() => void submitPharmacistConsult()}
-                className="inline-flex h-12 items-center gap-2 rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-60"
+                className="inline-flex h-12 items-center gap-2 rounded-2xl bg-[#0B0B0B] px-4 text-sm font-semibold text-white disabled:opacity-60"
               >
                 {consultSending ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
@@ -737,22 +747,28 @@ export function KioskAssistantView({
         ) : null}
       </div>
 
-      <div className="sticky bottom-0 border-t border-slate-200/80 bg-[#e8f7f7]/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6 lg:px-8">
+      <div className="sticky bottom-0 border-t border-slate-200/80 bg-[#F7F9FA]/95 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur sm:px-6 lg:px-8">
         <div className="mx-auto flex w-full max-w-3xl flex-col gap-3">
           <div className="flex flex-col gap-1.5">
             <button
               type="button"
               disabled={sending || consultSending}
               onClick={openConsultComposer}
-              className="inline-flex h-12 items-center gap-2 self-start rounded-2xl bg-slate-900 px-4 text-sm font-semibold text-white active:scale-[0.99] disabled:opacity-60 sm:h-14 sm:text-base"
+              className="inline-flex h-14 items-center gap-2 self-start rounded-2xl bg-[#0B0B0B] px-5 text-base font-semibold text-white active:scale-[0.99] disabled:opacity-60 sm:h-16 sm:text-lg"
             >
-              <Stethoscope className="h-5 w-5" />
-              Consultar al farmacéutico
+              {digitalConsultEnabled ? (
+                <Stethoscope className="h-5 w-5" />
+              ) : (
+                <Store className="h-5 w-5" />
+              )}
+              {digitalConsultEnabled
+                ? 'Consultar al farmacéutico'
+                : 'Acércate al mostrador'}
             </button>
             <p className="max-w-xl text-xs leading-snug text-slate-500 sm:text-sm">
               {digitalConsultEnabled
                 ? 'Envía una consulta breve al equipo de la farmacia. No se comparte el historial del chat.'
-                : 'Te orientaremos a acudir al mostrador para atención farmacéutica.'}
+                : 'La consulta digital no está disponible. Acércate al mostrador para atención farmacéutica.'}
             </p>
           </div>
 
@@ -778,18 +794,18 @@ export function KioskAssistantView({
                 }
               }}
               placeholder="Escribe tu consulta…"
-              className="min-h-[3.5rem] flex-1 resize-none rounded-2xl border-0 bg-white px-4 py-3 text-base text-slate-900 shadow-inner outline-none ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-4 focus:ring-[#2EC4C7]/35 disabled:opacity-60 sm:min-h-[4rem] sm:text-lg lg:text-xl"
+              className="min-h-[4rem] flex-1 resize-none rounded-2xl border-0 bg-white px-4 py-3 text-lg text-slate-900 shadow-inner outline-none ring-1 ring-slate-200 placeholder:text-slate-400 focus:ring-4 focus:ring-[#1ABBB3]/35 disabled:opacity-60 sm:min-h-[5rem] sm:text-xl lg:text-2xl"
             />
             <button
               type="submit"
               disabled={sending || !draft.trim()}
-              className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#2EC4C7] text-white shadow-md active:scale-95 disabled:opacity-50 sm:h-16 sm:w-16"
+              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#1ABBB3] text-white shadow-md active:scale-95 disabled:opacity-50 sm:h-20 sm:w-20"
               aria-label="Enviar"
             >
               {sending ? (
-                <Loader2 className="h-6 w-6 animate-spin" />
+                <Loader2 className="h-7 w-7 animate-spin" />
               ) : (
-                <Send className="h-6 w-6" />
+                <Send className="h-7 w-7" />
               )}
             </button>
           </form>

@@ -20,6 +20,7 @@ import { resolveProductIllustration } from '@/lib/catalog/product-illustration';
 import type { KioskCatalogProduct } from '@/lib/kiosk/catalog';
 import {
   canAddKioskProductToCart,
+  displayKioskBrand,
   formatKioskProductAvailability,
   formatKioskProductAvailabilityHint,
   formatKioskProductPrice,
@@ -152,8 +153,8 @@ export function KioskCatalogView({
   }
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-[#e8f7f7]">
-      <header className="sticky top-0 z-20 border-b border-[#2EC4C7]/25 bg-[#2EC4C7] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 sm:pt-5 lg:px-8 lg:pb-5 lg:pt-6">
+    <div className="flex min-h-[100dvh] flex-col bg-[#F7F9FA]">
+      <header className="sticky top-0 z-20 border-b border-[#1ABBB3]/25 bg-[#1ABBB3] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 sm:pt-5 lg:px-8 lg:pb-5 lg:pt-6">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-3 lg:gap-4">
           <Link
             href="/k"
@@ -239,7 +240,7 @@ export function KioskCatalogView({
                   className={cn(
                     'flex h-full flex-col rounded-2xl bg-white p-3 shadow-sm sm:rounded-3xl sm:p-4 lg:p-5',
                     selected
-                      ? 'ring-2 ring-[#2EC4C7] ring-offset-2 ring-offset-[#e8f7f7]'
+                      ? 'ring-2 ring-[#1ABBB3] ring-offset-2 ring-offset-[#F7F9FA]'
                       : 'ring-1 ring-transparent',
                     !product.available && !selected && 'opacity-70'
                   )}
@@ -263,7 +264,7 @@ export function KioskCatalogView({
                     {product.name}
                   </h2>
                   <p className="mt-1 line-clamp-1 text-center text-xs text-slate-500 lg:text-sm">
-                    {product.brand || '\u00A0'}
+                    {displayKioskBrand(product.brand) || '\u00A0'}
                   </p>
                   <p className="mt-2 text-center text-lg font-bold text-[#1a9a9d] sm:text-xl lg:text-2xl">
                     {formatKioskProductPrice(product)}
@@ -285,7 +286,7 @@ export function KioskCatalogView({
                   ) : null}
                   <div className="mt-3 sm:mt-auto sm:pt-3 lg:mt-4">
                     {selected ? (
-                      <div className="flex h-12 w-full items-center justify-between gap-2 rounded-xl bg-[#2EC4C7]/12 px-1.5 sm:h-14 sm:rounded-2xl lg:h-16">
+                      <div className="flex h-12 w-full items-center justify-between gap-2 rounded-xl bg-[#1ABBB3]/12 px-1.5 sm:h-14 sm:rounded-2xl lg:h-16">
                         <button
                           type="button"
                           aria-label={`Quitar uno de ${product.name}`}
@@ -305,7 +306,7 @@ export function KioskCatalogView({
                           aria-label={`Añadir uno de ${product.name}`}
                           disabled={!canAdd || atQtyLimit}
                           onClick={() => onIncrement(product)}
-                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#2EC4C7] text-white shadow-sm active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:h-11 sm:w-11 lg:h-12 lg:w-12"
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1ABBB3] text-white shadow-sm active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 sm:h-11 sm:w-11 lg:h-12 lg:w-12"
                         >
                           <Plus className="h-5 w-5 lg:h-6 lg:w-6" />
                         </button>
@@ -318,7 +319,7 @@ export function KioskCatalogView({
                         className={cn(
                           'flex h-12 w-full items-center justify-center gap-1.5 rounded-xl text-sm font-semibold shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:h-14 sm:rounded-2xl sm:text-base',
                           'lg:h-16 lg:gap-2 lg:rounded-2xl lg:text-lg',
-                          'bg-[#2EC4C7] text-white'
+                          'bg-[#1ABBB3] text-white'
                         )}
                       >
                         <ShoppingCart className="h-5 w-5 lg:h-6 lg:w-6" />{' '}

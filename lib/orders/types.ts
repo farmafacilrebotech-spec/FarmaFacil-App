@@ -124,6 +124,8 @@ export type CreateOrderOk = {
   paymentStatus: PaymentStatus;
   totalAmount: number;
   currency: string;
+  /** URL /o/{token} para QR del ticket (opaca). Ausente si mig 105 no aplica. */
+  accessUrl?: string | null;
 };
 
 export type CreateOrderErrorCode =

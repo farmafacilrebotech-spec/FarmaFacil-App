@@ -32,6 +32,8 @@ import {
   ensurePosterNameFont,
   POSTER_NAME_FONT_FAMILY,
 } from '@/lib/pharmacies/pharmacy-qr-poster-font';
+import { drawStagingWatermark } from '@/lib/pharmacies/pharmacy-poster-pdf-helpers';
+import { posterPdfTitle } from '@/lib/pharmacies/pharmacy-poster-meta';
 
 export {
   isPharmacyQrPosterDownloadEnabled,
@@ -264,6 +266,8 @@ export async function drawPharmacyQrPosterFromTemplate(
     logoHeight?: number;
     /** Solo revisión visual: dibuja zonas roja/verde. */
     showZoneGuides?: boolean;
+    /** Entorno staging: marca de agua «PRUEBA - STAGING» (debajo del QR). */
+    stagingWatermark?: boolean;
   }
 ): Promise<{
   nameWarning: string | null;
@@ -341,6 +345,10 @@ export async function drawPharmacyQrPosterFromTemplate(
     colorRes.color,
     fontFamily
   );
+  // Marca de agua staging ANTES del QR para no degradar su lectura.
+  if (input.stagingWatermark) {
+    drawStagingWatermark(doc, layout.page);
+  }
   drawQrInZone(doc, input.qrDataUrl, layout);
 
   if (input.showZoneGuides) {
@@ -368,6 +376,8 @@ export async function buildPharmacyQrPosterPdf(input: {
   logoHeight?: number;
   allowUnapprovedReview?: boolean;
   showZoneGuides?: boolean;
+  /** Staging: marca de agua + metadatos «PRUEBA-STAGING». */
+  staging?: boolean;
 }): Promise<PharmacyQrPosterBuildResult> {
   if (!isPrintSafePharmacyPublicUrl(input.publicUrl)) {
     throw new Error(
@@ -436,6 +446,14 @@ export async function buildPharmacyQrPosterPdf(input: {
     compress: true,
   });
 
+  doc.setProperties({
+    title: posterPdfTitle({
+      kind: 'acceso',
+      pharmacyName: input.pharmacyName,
+      staging: input.staging,
+    }),
+  });
+
   const drawn = await drawPharmacyQrPosterFromTemplate(doc, {
     pharmacyName: input.pharmacyName,
     backgroundDataUrl,
@@ -446,6 +464,7 @@ export async function buildPharmacyQrPosterPdf(input: {
     primaryColor: input.primaryColor,
     layout,
     showZoneGuides: input.showZoneGuides === true,
+    stagingWatermark: input.staging === true,
   });
 
   return {

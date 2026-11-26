@@ -9,6 +9,7 @@ import {
   buildOfficialQrPngDataUrl,
   buildOfficialQrSvgString,
   officialQrFilenames,
+  stagingQrFilenames,
 } from './qr-download.ts';
 
 const SAMPLE_URL = 'https://app.farmafacil.solutions/e/abcdefghijklmnop';
@@ -36,5 +37,14 @@ describe('generación QR real', () => {
     const svg = await buildOfficialQrSvgString(SAMPLE_URL);
     assert.match(svg, /<svg[\s>]/i);
     assert.ok(svg.length > 200);
+  });
+});
+
+describe('stagingQrFilenames', () => {
+  it('incluye staging en el nombre', () => {
+    assert.deepEqual(stagingQrFilenames('AbC-1'), {
+      png: 'farmafacil-qr-staging-abc-1.png',
+      svg: 'farmafacil-qr-staging-abc-1.svg',
+    });
   });
 });

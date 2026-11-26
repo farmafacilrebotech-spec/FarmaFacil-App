@@ -1,3 +1,4 @@
+import { headers } from 'next/headers';
 import { notFound } from 'next/navigation';
 
 import {
@@ -25,6 +26,7 @@ import { getPharmacyKioskEntitlement } from '@/lib/kiosk/entitlement';
 import { getPharmacyAssistantEntitlement } from '@/lib/kiosk/assistant/entitlement';
 import { getPharmacyAssistantUsageCurrentMonth } from '@/lib/kiosk/assistant/settings';
 import { loadOrEnsurePharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
+import { isStagingQrEnvironment } from '@/lib/pharmacies/print-entrypoint-url';
 import { canGeneratePharmacyMaterials } from '@/lib/pharmacies/pharmacy-materials-access';
 import { PharmacyDetailClient } from '@/components/pharmacies/pharmacy-detail-client';
 import { buildPharmacyUsersCapabilities } from '@/lib/pharmacies/membership-capabilities';
@@ -137,9 +139,15 @@ export default async function PharmacyDetailPage({
     ? await hasPlatformSuperAdminRole(actorProfileId)
     : { ok: false };
 
+  const isStagingEnv = isStagingQrEnvironment({
+    appEnv: process.env.FF_APP_ENV,
+    host: headers().get('x-forwarded-host') ?? headers().get('host'),
+  });
+
   return (
     <PharmacyDetailClient
       initialTab={initialTab}
+      isStagingEnv={isStagingEnv}
       pharmacy={pharmacy}
       plans={plans}
       launchSeats={launchSeats}

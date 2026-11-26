@@ -162,7 +162,8 @@ export function resolveCartForPharmacy(input: {
     });
   }
 
-  if (total <= 0) {
+  // Total 0 permitido si todas las líneas tienen PVP pendiente (0).
+  if (total < 0) {
     return {
       ok: false,
       code: 'invalid_cart',

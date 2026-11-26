@@ -13,6 +13,11 @@ import {
 import { drawPharmacyAdPoster } from '@/lib/pharmacies/pharmacy-ad-poster';
 import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import {
+  posterDownloadFilename,
+  posterPdfTitle,
+} from '@/lib/pharmacies/pharmacy-poster-meta';
+import { drawStagingWatermark } from '@/lib/pharmacies/pharmacy-poster-pdf-helpers';
+import {
   drawPharmacyQrPosterFromTemplate,
   downloadBlob,
 } from '@/lib/pharmacies/pharmacy-qr-poster';
@@ -34,6 +39,8 @@ export type WelcomePackInput = {
   primaryColor?: string | null;
   contract?: WelcomePackContractSlot | null;
   formats?: PosterPageFormat[];
+  /** Staging: marca de agua + sufijo PRUEBA-STAGING en nombre y metadatos. */
+  staging?: boolean;
 };
 
 export type WelcomePackResult = {
@@ -136,6 +143,14 @@ export async function buildPharmacyWelcomePackPdf(
     compress: true,
   });
 
+  doc.setProperties({
+    title: posterPdfTitle({
+      kind: 'pack',
+      pharmacyName: input.pharmacyName,
+      staging: input.staging,
+    }),
+  });
+
   // Portada
   doc.setFillColor(11, 11, 11);
   doc.rect(0, 0, 210, 297, 'F');
@@ -167,6 +182,12 @@ export async function buildPharmacyWelcomePackPdf(
     y += 7;
   }
   y += 6;
+  if (input.staging) {
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(214, 40, 40);
+    doc.text('PRUEBA - STAGING · no usar como material real', 24, y);
+    y += 10;
+  }
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(26, 187, 179);
   doc.text('Contrato', 24, y);
@@ -202,6 +223,7 @@ export async function buildPharmacyWelcomePackPdf(
       logoHeight,
       primaryColor: input.primaryColor,
       layout,
+      stagingWatermark: input.staging === true,
     });
 
     doc.addPage([page.widthMm, page.heightMm], 'portrait');
@@ -212,16 +234,20 @@ export async function buildPharmacyWelcomePackPdf(
       markDataUrl,
       phoneScreenDataUrl,
       pharmacyLogoDataUrl: logoDataUrl,
+      pharmacyLogoWidth: logoWidth,
+      pharmacyLogoHeight: logoHeight,
       format,
+      stagingWatermark: input.staging === true,
     });
   }
 
-  const safe =
-    input.publicId.replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'farmacia';
-
   return {
     blob: doc.output('blob'),
-    filename: `farmafacil-pack-bienvenida-${safe}.pdf`,
+    filename: posterDownloadFilename({
+      kind: 'pack',
+      publicId: input.publicId,
+      staging: input.staging,
+    }),
     pages,
     contractIncluded: contract.available,
     contractNote: contract.available ? null : contract.reason,
@@ -236,15 +262,79 @@ export async function downloadWelcomePack(
   return result;
 }
 
-export function openPdfBlob(blob: Blob): Window | null {
-  const url = URL.createObjectURL(blob);
-  const win = window.open(url, '_blank', 'noopener,noreferrer');
-  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  return win;
+/**
+ * Abre una pestaña en blanco de forma SÍNCRONA (dentro del gesto del usuario).
+ * Hay que llamarla ANTES de cualquier `await` (acción de servidor, generación
+ * del PDF…): si no, el bloqueador de ventanas emergentes la descarta.
+ */
+export function reservePdfWindow(): Window | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const win = window.open('about:blank', '_blank');
+    if (win) {
+      try {
+        win.document.title = 'FarmaFácil · generando cartel…';
+        win.document.body.style.cssText =
+          'margin:0;display:grid;place-items:center;height:100vh;font:14px system-ui;color:#555;background:#fafafa';
+        win.document.body.textContent = 'Generando cartel PDF…';
+      } catch {
+        /* about:blank siempre es del mismo origen; ignorar si falla */
+      }
+    }
+    return win;
+  } catch {
+    return null;
+  }
 }
 
-export function printPdfBlob(blob: Blob): void {
-  const win = openPdfBlob(blob);
+/** Cierra la pestaña reservada si la generación falla. */
+export function discardReservedPdfWindow(win: Window | null): void {
+  try {
+    if (win && !win.closed) win.close();
+  } catch {
+    /* noop */
+  }
+}
+
+/**
+ * Abre el PDF completo en una pestaña nueva (blob URL).
+ * Con `reserved` navega esa pestaña; si no hay, intenta `window.open` y, como
+ * último recurso, un enlace `target="_blank"`. Devuelve false si el navegador
+ * bloquea todo (el llamante debe avisar al usuario).
+ */
+export function openPdfBlob(blob: Blob, reserved?: Window | null): boolean {
+  const url = URL.createObjectURL(blob);
+  // El PDF vive mientras la pestaña pueda recargarlo / «Guardar como».
+  window.setTimeout(() => URL.revokeObjectURL(url), 10 * 60_000);
+
+  if (reserved && !reserved.closed) {
+    try {
+      reserved.location.href = url;
+      return true;
+    } catch {
+      /* continuar con fallbacks */
+    }
+  }
+
+  const win = window.open(url, '_blank');
+  if (win) return true;
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.target = '_blank';
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  return false;
+}
+
+export function printPdfBlob(blob: Blob, reserved?: Window | null): void {
+  const ok = openPdfBlob(blob, reserved);
+  if (!ok) return;
+  // Sin referencia a la ventana (blob en pestaña nueva): el usuario imprime
+  // desde el visor PDF. Con ventana reservada intentamos print() tras cargar.
+  const win = reserved && !reserved.closed ? reserved : null;
   if (!win) return;
   window.setTimeout(() => {
     try {
@@ -253,5 +343,5 @@ export function printPdfBlob(blob: Blob): void {
     } catch {
       /* impresión manual desde la pestaña */
     }
-  }, 800);
+  }, 1200);
 }

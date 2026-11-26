@@ -6,7 +6,9 @@ import { describe, it } from 'node:test';
 
 import {
   isPrintSafePharmacyPublicUrl,
+  isStagingQrEnvironment,
   pharmacyPrintPublicUrl,
+  pharmacyStagingPublicUrl,
 } from './print-entrypoint-url.ts';
 
 describe('pharmacyPrintPublicUrl', () => {
@@ -32,6 +34,26 @@ describe('isPrintSafePharmacyPublicUrl', () => {
     );
     assert.equal(
       isPrintSafePharmacyPublicUrl('http://localhost:3000/e/abc'),
+      false
+    );
+  });
+});
+
+describe('pharmacyStagingPublicUrl / isStagingQrEnvironment', () => {
+  it('construye URL de staging y no es apta para impresión', () => {
+    const url = pharmacyStagingPublicUrl('AbC123');
+    assert.equal(url, 'https://farmafacil-staging.vercel.app/e/abc123');
+    assert.equal(isPrintSafePharmacyPublicUrl(url), false);
+  });
+
+  it('detecta staging por env o por host', () => {
+    assert.equal(isStagingQrEnvironment({ appEnv: 'staging' }), true);
+    assert.equal(
+      isStagingQrEnvironment({ host: 'farmafacil-staging.vercel.app' }),
+      true
+    );
+    assert.equal(
+      isStagingQrEnvironment({ appEnv: 'production', host: 'app.farmafacil.solutions' }),
       false
     );
   });

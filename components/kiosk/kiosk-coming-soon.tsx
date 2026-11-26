@@ -14,7 +14,7 @@ export function KioskComingSoon({
   description: string;
 }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-[#2EC4C7] px-6">
+    <div className="flex min-h-screen flex-col items-center justify-center bg-[#1ABBB3] px-6">
       <BrandLogo size={96} />
       <div className="mt-8 w-full max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
         <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
@@ -23,7 +23,7 @@ export function KioskComingSoon({
         </p>
         <Link
           href="/k"
-          className="mt-8 inline-flex w-full items-center justify-center rounded-2xl bg-[#2EC4C7] px-6 py-4 text-base font-semibold text-white shadow-md active:scale-[0.99]"
+          className="mt-8 inline-flex w-full items-center justify-center rounded-2xl bg-[#1ABBB3] px-6 py-4 text-base font-semibold text-white shadow-md active:scale-[0.99]"
         >
           Volver al inicio
         </Link>

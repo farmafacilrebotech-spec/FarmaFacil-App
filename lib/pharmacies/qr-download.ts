@@ -57,6 +57,18 @@ export function downloadTextFile(
   URL.revokeObjectURL(url);
 }
 
+/** Nombres de archivo para QR de pruebas (staging). Siempre incluyen «staging». */
+export function stagingQrFilenames(publicId: string): {
+  png: string;
+  svg: string;
+} {
+  const safe = publicId.replace(/[^a-z0-9-]/gi, '').toLowerCase() || 'farmacia';
+  return {
+    png: `farmafacil-qr-staging-${safe}.png`,
+    svg: `farmafacil-qr-staging-${safe}.svg`,
+  };
+}
+
 export function officialQrFilenames(publicId: string): {
   png: string;
   svg: string;

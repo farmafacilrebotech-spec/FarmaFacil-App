@@ -81,7 +81,7 @@ export function KioskWelcomeScreen({ home }: { home: KioskHomeContext }) {
   return (
     <div
       className={cn(
-        'relative flex min-h-[100dvh] flex-col justify-center bg-[#2EC4C7]',
+        'relative flex min-h-[100dvh] flex-col justify-center bg-[#1ABBB3]',
         // Padding superior suficiente para no recortar el logo (safe area + aire).
         'px-5 pb-6 pt-[max(1.5rem,env(safe-area-inset-top,0px))] sm:px-8 sm:pb-8 sm:pt-8',
         // Kiosko portrait grande: un poco más de aire, sin forzar recorte.
@@ -316,7 +316,7 @@ function PharmacyAccountQrModal({
         </button>
 
         <div className="flex flex-col items-center text-center">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#2EC4C7]/15 text-[#1a9a9d] lg:h-16 lg:w-16">
+          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#1ABBB3]/15 text-[#1a9a9d] lg:h-16 lg:w-16">
             <QrCode className="h-6 w-6 lg:h-8 lg:w-8" aria-hidden />
           </span>
           <h2
@@ -365,7 +365,7 @@ function PharmacyAccountQrModal({
           <button
             type="button"
             onClick={onClose}
-            className="mt-6 w-full rounded-2xl bg-[#2EC4C7] px-6 py-4 text-base font-semibold text-white shadow-md active:scale-[0.99] lg:py-5 lg:text-lg"
+            className="mt-6 w-full rounded-2xl bg-[#1ABBB3] px-6 py-4 text-base font-semibold text-white shadow-md active:scale-[0.99] lg:py-5 lg:text-lg"
           >
             Volver al inicio
           </button>

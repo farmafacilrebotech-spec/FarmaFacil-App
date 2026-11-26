@@ -1,4 +1,10 @@
-import type { KioskCatalogProduct } from '@/lib/kiosk/catalog';
+import {
+  PRICE_COPY,
+  formatCatalogPriceLabel,
+  isPriceInformed,
+  isPricePending,
+} from '../catalog/price-display.ts';
+import type { KioskCatalogProduct } from './catalog.ts';
 
 /** Copy comercial aprobado (stock no bloqueante). */
 export const KIOSK_CLIENT_AVAILABILITY = {
@@ -8,16 +14,7 @@ export const KIOSK_CLIENT_AVAILABILITY = {
   genericUnavailable: 'No disponible como solicitud genérica',
 } as const;
 
-function formatEuroLocal(amount: number): string {
-  try {
-    return new Intl.NumberFormat('es-ES', {
-      style: 'currency',
-      currency: 'EUR',
-    }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} €`;
-  }
-}
+export { PRICE_COPY };
 
 /** True si el ítem es proyección genérica (sin PVP comercial inventado). */
 export function isGenericCatalogProduct(
@@ -28,18 +25,22 @@ export function isGenericCatalogProduct(
 
 /**
  * Precio para UI kiosko/asistente.
- * Genéricos: nunca "0,00 €".
+ * Genéricos y precio 0/null → «Consultar precio» (nunca «0,00 €»).
  */
 export function formatKioskProductPrice(
   product: Pick<KioskCatalogProduct, 'price' | 'source'>
 ): string {
-  if (product.source === 'generic' || product.source === 'demo') {
-    return 'Confirmar PVP en farmacia';
-  }
-  if (product.price == null) {
-    return 'Confirmar PVP en farmacia';
-  }
-  return formatEuroLocal(product.price);
+  return formatCatalogPriceLabel(product.price, {
+    generic: isGenericCatalogProduct(product),
+  });
+}
+
+/** True si el producto no tiene PVP informado (propios con 0/null). */
+export function kioskProductPricePending(
+  product: Pick<KioskCatalogProduct, 'price' | 'source'>
+): boolean {
+  if (isGenericCatalogProduct(product)) return true;
+  return isPricePending(product.price);
 }
 
 /**
@@ -74,8 +75,8 @@ export function formatKioskProductAvailabilityHint(
 }
 
 /**
- * Productos propios con PVP pueden ir al carrito.
- * Stock 0 / null no bloquea.
+ * Productos propios pueden ir al carrito aunque el PVP esté pendiente.
+ * Stock 0 / null no bloquea. Genéricos no.
  */
 export function canAddKioskProductToCart(
   product: Pick<
@@ -85,6 +86,30 @@ export function canAddKioskProductToCart(
 ): boolean {
   if (isGenericCatalogProduct(product)) return false;
   if (product.availabilityStatus === 'unavailable') return false;
-  if (product.price == null || product.price < 0) return false;
+  // Precio pendiente (0/null) permitido; solo rechaza negativos.
+  if (product.price != null && product.price < 0) return false;
   return true;
+}
+
+export function isKioskPriceInformed(
+  product: Pick<KioskCatalogProduct, 'price' | 'source'>
+): boolean {
+  if (isGenericCatalogProduct(product)) return false;
+  return isPriceInformed(product.price);
+}
+
+/**
+ * Marca apta para mostrar en kiosko. Oculta valores basura de importación
+ * ("0", vacío, "null", "-", caracteres de reemplazo / mojibake típico).
+ */
+export function displayKioskBrand(
+  brand: string | null | undefined
+): string | null {
+  if (brand == null) return null;
+  const trimmed = String(brand).replace(/\s+/g, ' ').trim();
+  if (!trimmed) return null;
+  if (/^(0+|null|undefined|n\/a|-+|\?+)$/i.test(trimmed)) return null;
+  // U+FFFD o secuencias UTF-8 mal decodificadas (Ã©, Â, etc.).
+  if (/\uFFFD|Ã[\u0080-\u00BF]|Â[\u0080-\u00BF]/.test(trimmed)) return null;
+  return trimmed;
 }

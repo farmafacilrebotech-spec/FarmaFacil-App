@@ -4,7 +4,11 @@ import {
   parseKioskSessionCookie,
   readKioskSessionCookie,
 } from '@/lib/kiosk/session-cookie';
-import type { AssistantFaqItem } from '@/lib/kiosk/assistant/settings-input';
+import {
+  DEFAULT_ASSISTANT_NAME,
+  resolveAssistantWelcomeMessage,
+  type AssistantFaqItem,
+} from '@/lib/kiosk/assistant/settings-input';
 
 export type AssistantRuntimeMode = 'demo' | 'contracted';
 
@@ -63,8 +67,10 @@ function parseFaqs(raw: unknown): AssistantFaqItem[] {
 function parseSettings(raw: unknown): AssistantRuntimeSettings {
   const s = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   return {
-    assistantName: String(s.assistant_name ?? 'Asistente FarmaFácil'),
-    welcomeMessage: String(s.welcome_message ?? ''),
+    assistantName: String(s.assistant_name ?? DEFAULT_ASSISTANT_NAME),
+    welcomeMessage: resolveAssistantWelcomeMessage(
+      s.welcome_message as string | null | undefined
+    ),
     customInstructions: String(s.custom_instructions ?? ''),
     faqs: parseFaqs(s.faqs),
     servicesInfo: String(s.services_info ?? ''),

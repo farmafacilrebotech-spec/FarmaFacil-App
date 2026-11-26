@@ -1,3 +1,4 @@
+import { headers } from 'next/headers';
 import { QrCode } from 'lucide-react';
 
 import { QrTab } from '@/components/pharmacies/tabs/qr-tab';
@@ -5,7 +6,10 @@ import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
 import { getPharmacyHomeEntrypoint } from '@/lib/pharmacies/pharmacy-home-entrypoint';
 import { requirePharmacyQrAccess } from '@/lib/pharmacies/pharmacy-clients-access';
-import { pharmacyPrintPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
+import {
+  isStagingQrEnvironment,
+  pharmacyPrintPublicUrl,
+} from '@/lib/pharmacies/print-entrypoint-url';
 import { loadPharmacyTenantContext } from '@/lib/pharmacies/tenant';
 
 export const dynamic = 'force-dynamic';
@@ -55,6 +59,11 @@ export default async function PharmacyQrPage({
       ? pharmacyPrintPublicUrl(entrypoint.publicId)
       : null;
 
+  const isStagingEnv = isStagingQrEnvironment({
+    appEnv: process.env.FF_APP_ENV,
+    host: headers().get('x-forwarded-host') ?? headers().get('host'),
+  });
+
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <PageHeader
@@ -73,6 +82,7 @@ export default async function PharmacyQrPage({
         entrypoint={entrypoint}
         loadError={loadError}
         publicUrlOverride={printUrl}
+        isStagingEnv={isStagingEnv}
         showTenantMaterialsContact
       />
     </div>
