@@ -1,3 +1,16 @@
+export const DEFAULT_ASSISTANT_NAME = 'Asistente FarmaFácil';
+
+/** Mensaje de bienvenida por defecto cuando la farmacia no ha configurado uno. */
+export const DEFAULT_ASSISTANT_WELCOME_MESSAGE =
+  '¡Hola! Soy el asistente de tu farmacia. ¿En qué puedo ayudarte hoy?';
+
+export function resolveAssistantWelcomeMessage(
+  raw: string | null | undefined
+): string {
+  const trimmed = String(raw ?? '').trim();
+  return trimmed || DEFAULT_ASSISTANT_WELCOME_MESSAGE;
+}
+
 export type AssistantFaqItem = {
   question: string;
   answer: string;

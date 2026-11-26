@@ -23,6 +23,7 @@ import {
   downloadDataUrl,
   downloadTextFile,
   officialQrFilenames,
+  stagingQrFilenames,
 } from '@/lib/pharmacies/qr-download';
 import {
   buildPharmacyQrPosterPdf,
@@ -39,15 +40,21 @@ import { buildPharmacyAdPosterPdf } from '@/lib/pharmacies/pharmacy-ad-poster';
 import {
   defaultWelcomePackContractSlot,
   downloadWelcomePack,
+  discardReservedPdfWindow,
   openPdfBlob,
   printPdfBlob,
+  reservePdfWindow,
 } from '@/lib/pharmacies/pharmacy-welcome-pack';
+import { posterDownloadFilename } from '@/lib/pharmacies/pharmacy-poster-meta';
 import {
   PHARMACY_MATERIALS_SUPERADMIN_ONLY_MESSAGE,
   PHARMACY_TENANT_MATERIALS_CONTACT_MESSAGE,
 } from '@/lib/pharmacies/pharmacy-materials-access';
 import { assertPharmacyMaterialsAccessAction } from '@/app/(app)/farmacias/materials-actions';
-import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
+import {
+  isPrintSafePharmacyPublicUrl,
+  pharmacyStagingPublicUrl,
+} from '@/lib/pharmacies/print-entrypoint-url';
 import { ScannableQr } from '@/components/kiosk/scannable-qr';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -63,6 +70,8 @@ import {
 type BusyKind =
   | 'png'
   | 'svg'
+  | 'png-staging'
+  | 'svg-staging'
   | 'access-preview'
   | 'access-pdf'
   | 'access-print'
@@ -92,6 +101,8 @@ export function QrTab({
   canGenerateMaterials = false,
   /** Panel tenant: mensaje para solicitar material personalizado a FarmaFácil. */
   showTenantMaterialsContact = false,
+  /** Servidor: FF_APP_ENV=staging o host farmafacil-staging → QR de pruebas + producción. */
+  isStagingEnv = false,
 }: {
   pharmacyName: string;
   pharmacyLogoUrl?: string | null;
@@ -101,14 +112,19 @@ export function QrTab({
   publicUrlOverride?: string | null;
   canGenerateMaterials?: boolean;
   showTenantMaterialsContact?: boolean;
+  isStagingEnv?: boolean;
 }) {
-  const [copied, setCopied] = React.useState(false);
   const [busy, setBusy] = React.useState<BusyKind>(null);
   const [accessFormat, setAccessFormat] =
     React.useState<PosterPageFormat>('a4');
   const [adFormat, setAdFormat] = React.useState<PosterPageFormat>('a4');
 
+  /** URL de producción (materiales impresos, siempre print-safe). */
   const publicUrl = publicUrlOverride?.trim() || entrypoint?.publicUrl || '';
+  const stagingUrl =
+    isStagingEnv && entrypoint?.publicId
+      ? pharmacyStagingPublicUrl(entrypoint.publicId)
+      : null;
 
   function assertMaterialsAllowed(): boolean {
     if (!canGenerateMaterials) {
@@ -138,56 +154,6 @@ export function QrTab({
     return true;
   }
 
-  function safePublicId(): string {
-    return (
-      (entrypoint?.publicId || '')
-        .replace(/[^a-z0-9-]/gi, '')
-        .toLowerCase() || 'farmacia'
-    );
-  }
-
-  async function copyUrl() {
-    if (!publicUrl) return;
-    try {
-      await navigator.clipboard?.writeText(publicUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-      toast.success('URL copiada');
-    } catch {
-      toast.error('No se ha podido copiar la URL');
-    }
-  }
-
-  async function downloadPng() {
-    if (!entrypoint || !publicUrl) return;
-    setBusy('png');
-    try {
-      const dataUrl = await buildOfficialQrPngDataUrl(publicUrl);
-      const { png } = officialQrFilenames(entrypoint.publicId);
-      downloadDataUrl(png, dataUrl);
-      toast.success('PNG descargado');
-    } catch {
-      toast.error('No se ha podido generar el PNG');
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  async function downloadSvg() {
-    if (!entrypoint || !publicUrl) return;
-    setBusy('svg');
-    try {
-      const svg = await buildOfficialQrSvgString(publicUrl);
-      const { svg: filename } = officialQrFilenames(entrypoint.publicId);
-      downloadTextFile(filename, svg);
-      toast.success('SVG descargado');
-    } catch {
-      toast.error('No se ha podido generar el SVG');
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function buildAccessPdf(format: PosterPageFormat) {
     const gate = await assertPharmacyMaterialsAccessAction();
     if (!gate.ok) {
@@ -212,6 +178,7 @@ export function QrTab({
       logoUrl: pharmacyLogoUrl,
       primaryColor: pharmacyPrimaryColor,
       layout: pharmacyQrPosterLayoutForFormat(format),
+      staging: isStagingEnv,
     });
   }
 
@@ -232,17 +199,31 @@ export function QrTab({
       publicId: entrypoint.publicId,
       format,
       pharmacyLogoUrl,
+      staging: isStagingEnv,
     });
+  }
+
+  /** Resultado de abrir el PDF en pestaña nueva (aviso si el navegador la bloquea). */
+  function notifyPopupBlocked(opened: boolean) {
+    if (!opened) {
+      toast.warning(
+        'El navegador ha bloqueado la pestaña nueva. Permite ventanas emergentes para este sitio o usa «Descargar PDF».'
+      );
+    }
   }
 
   async function onAccessPreview() {
     setBusy('access-preview');
+    // Pestaña reservada ANTES de cualquier await (si no, el navegador la bloquea).
+    const reserved = reservePdfWindow();
     try {
       const { blob, nameWarning } = await buildAccessPdf(accessFormat);
-      openPdfBlob(blob);
+      const opened = openPdfBlob(blob, reserved);
+      notifyPopupBlocked(opened);
       if (nameWarning) toast.warning(nameWarning);
-      else toast.success('Vista previa del cartel de acceso');
+      else if (opened) toast.success('Vista previa del cartel de acceso');
     } catch (err) {
+      discardReservedPdfWindow(reserved);
       toast.error(err instanceof Error ? err.message : 'No se pudo previsualizar');
     } finally {
       setBusy(null);
@@ -254,7 +235,12 @@ export function QrTab({
     try {
       const { blob, nameWarning } = await buildAccessPdf(accessFormat);
       downloadBlob(
-        `farmafacil-cartel-acceso-${accessFormat}-${safePublicId()}.pdf`,
+        posterDownloadFilename({
+          kind: 'acceso',
+          format: accessFormat,
+          publicId: entrypoint?.publicId,
+          staging: isStagingEnv,
+        }),
         blob
       );
       if (nameWarning) toast.warning(nameWarning);
@@ -268,12 +254,14 @@ export function QrTab({
 
   async function onAccessPrint() {
     setBusy('access-print');
+    const reserved = reservePdfWindow();
     try {
       const { blob, nameWarning } = await buildAccessPdf(accessFormat);
-      printPdfBlob(blob);
+      printPdfBlob(blob, reserved);
       if (nameWarning) toast.warning(nameWarning);
       else toast.success('Abriendo impresión del cartel de acceso');
     } catch (err) {
+      discardReservedPdfWindow(reserved);
       toast.error(err instanceof Error ? err.message : 'No se pudo imprimir');
     } finally {
       setBusy(null);
@@ -282,11 +270,14 @@ export function QrTab({
 
   async function onAdPreview() {
     setBusy('ad-preview');
+    const reserved = reservePdfWindow();
     try {
       const { blob } = await buildAdPdf(adFormat);
-      openPdfBlob(blob);
-      toast.success('Vista previa del cartel publicitario');
+      const opened = openPdfBlob(blob, reserved);
+      notifyPopupBlocked(opened);
+      if (opened) toast.success('Vista previa del cartel publicitario');
     } catch (err) {
+      discardReservedPdfWindow(reserved);
       toast.error(err instanceof Error ? err.message : 'No se pudo previsualizar');
     } finally {
       setBusy(null);
@@ -298,7 +289,12 @@ export function QrTab({
     try {
       const { blob } = await buildAdPdf(adFormat);
       downloadBlob(
-        `farmafacil-cartel-publicitario-${adFormat}-${safePublicId()}.pdf`,
+        posterDownloadFilename({
+          kind: 'publicitario',
+          format: adFormat,
+          publicId: entrypoint?.publicId,
+          staging: isStagingEnv,
+        }),
         blob
       );
       toast.success(
@@ -313,11 +309,13 @@ export function QrTab({
 
   async function onAdPrint() {
     setBusy('ad-print');
+    const reserved = reservePdfWindow();
     try {
       const { blob } = await buildAdPdf(adFormat);
-      printPdfBlob(blob);
+      printPdfBlob(blob, reserved);
       toast.success('Abriendo impresión del cartel publicitario');
     } catch (err) {
+      discardReservedPdfWindow(reserved);
       toast.error(err instanceof Error ? err.message : 'No se pudo imprimir');
     } finally {
       setBusy(null);
@@ -341,6 +339,7 @@ export function QrTab({
         logoUrl: pharmacyLogoUrl,
         primaryColor: pharmacyPrimaryColor,
         contract: defaultWelcomePackContractSlot(),
+        staging: isStagingEnv,
       });
       if (result.contractNote) {
         toast.message('Pack descargado', {
@@ -380,102 +379,30 @@ export function QrTab({
 
   return (
     <div className="space-y-10">
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-8">
-          <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
-            <ScannableQr
-              value={publicUrl}
-              size={220}
-              label={`QR oficial de ${pharmacyName}`}
-            />
-          </div>
-          <p className="mt-5 text-sm font-medium text-foreground">
-            {pharmacyName}
-          </p>
-          <p className="mt-1 font-mono text-xs text-muted-foreground">
-            {entrypoint.publicId}
-          </p>
-          <p className="mt-3 max-w-sm text-center text-xs text-muted-foreground">
-            Código permanente. Identifica la farmacia; no inicia sesión de
-            clientes ni abre el panel de gestión.
-          </p>
-        </div>
+      {stagingUrl && entrypoint ? (
+        <QrBlock
+          variant="staging"
+          pharmacyName={pharmacyName}
+          publicId={entrypoint.publicId}
+          url={stagingUrl}
+          busy={busy}
+          setBusy={setBusy}
+          canGenerateMaterials={canGenerateMaterials}
+          showTenantMaterialsContact={showTenantMaterialsContact}
+        />
+      ) : null}
 
-        <div className="space-y-5">
-          <div>
-            <h4 className="text-sm font-semibold text-foreground">
-              URL pública oficial
-            </h4>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {canGenerateMaterials || showTenantMaterialsContact
-                ? 'Enlace de producción para escaparate, pegatinas y material impreso.'
-                : 'Misma URL en kiosko, escaparate, tarjetas y SuperAdmin.'}
-            </p>
-            <div className="mt-3 flex items-center gap-2">
-              <div className="relative flex-1">
-                <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  readOnly
-                  value={publicUrl}
-                  className="pl-9 font-mono text-xs"
-                />
-              </div>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-10 w-10"
-                onClick={() => void copyUrl()}
-                aria-label="Copiar URL"
-              >
-                {copied ? (
-                  <Check className="h-4 w-4 text-success" />
-                ) : (
-                  <Copy className="h-4 w-4" />
-                )}
-              </Button>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <h4 className="text-sm font-semibold text-foreground">
-              Descargas del código QR
-            </h4>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <Button
-                variant="outline"
-                className="gap-2"
-                disabled={busy !== null}
-                onClick={() => void downloadPng()}
-              >
-                {busy === 'png' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileImage className="h-4 w-4" />
-                )}
-                PNG (alta res.)
-              </Button>
-              <Button
-                variant="outline"
-                className="gap-2"
-                disabled={busy !== null}
-                onClick={() => void downloadSvg()}
-              >
-                {busy === 'svg' ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileCode className="h-4 w-4" />
-                )}
-                SVG vectorial
-              </Button>
-            </div>
-            <p className="flex items-start gap-2 text-xs text-muted-foreground">
-              <Download className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              Ideal para pegatinas y escaparate. El contenido del QR no cambia al
-              renombrar la farmacia.
-            </p>
-          </div>
-        </div>
-      </div>
+      <QrBlock
+        variant="production"
+        showHeading={Boolean(stagingUrl)}
+        pharmacyName={pharmacyName}
+        publicId={entrypoint.publicId}
+        url={publicUrl}
+        busy={busy}
+        setBusy={setBusy}
+        canGenerateMaterials={canGenerateMaterials}
+        showTenantMaterialsContact={showTenantMaterialsContact}
+      />
 
       {showTenantMaterialsContact && !canGenerateMaterials ? (
         <p
@@ -494,7 +421,8 @@ export function QrTab({
             </h3>
             <p className="mt-1 text-sm text-muted-foreground">
               Carteles personalizados con el nombre, el logotipo (si existe) y el
-              QR de acceso público de esta farmacia. Se regeneran al descargarlos
+              QR de acceso público de esta farmacia (siempre con la URL de
+              producción, incluso desde staging). Se regeneran al descargarlos
               con los datos actuales; no requieren Canva ni crean accesos nuevos.
             </p>
           </div>
@@ -568,6 +496,198 @@ export function QrTab({
   );
 }
 
+function QrBlock({
+  variant,
+  showHeading = true,
+  pharmacyName,
+  publicId,
+  url,
+  busy,
+  setBusy,
+  canGenerateMaterials,
+  showTenantMaterialsContact,
+}: {
+  variant: 'staging' | 'production';
+  showHeading?: boolean;
+  pharmacyName: string;
+  publicId: string;
+  url: string;
+  busy: BusyKind;
+  setBusy: (b: BusyKind) => void;
+  canGenerateMaterials: boolean;
+  showTenantMaterialsContact: boolean;
+}) {
+  const [copied, setCopied] = React.useState(false);
+  const isStaging = variant === 'staging';
+  const filenames = isStaging
+    ? stagingQrFilenames(publicId)
+    : officialQrFilenames(publicId);
+  const pngKind: BusyKind = isStaging ? 'png-staging' : 'png';
+  const svgKind: BusyKind = isStaging ? 'svg-staging' : 'svg';
+
+  async function copyUrl() {
+    if (!url) return;
+    try {
+      await navigator.clipboard?.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success('URL copiada');
+    } catch {
+      toast.error('No se ha podido copiar la URL');
+    }
+  }
+
+  async function downloadPng() {
+    if (!url) return;
+    setBusy(pngKind);
+    try {
+      const dataUrl = await buildOfficialQrPngDataUrl(url);
+      downloadDataUrl(filenames.png, dataUrl);
+      toast.success(isStaging ? 'PNG de pruebas descargado' : 'PNG descargado');
+    } catch {
+      toast.error('No se ha podido generar el PNG');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function downloadSvg() {
+    if (!url) return;
+    setBusy(svgKind);
+    try {
+      const svg = await buildOfficialQrSvgString(url);
+      downloadTextFile(filenames.svg, svg);
+      toast.success(isStaging ? 'SVG de pruebas descargado' : 'SVG descargado');
+    } catch {
+      toast.error('No se ha podido generar el SVG');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <section
+      className={
+        isStaging
+          ? 'space-y-4 rounded-xl border-2 border-amber-500/60 bg-amber-50/60 p-4 sm:p-5'
+          : 'space-y-4'
+      }
+      data-testid={isStaging ? 'pharmacy-qr-staging' : 'pharmacy-qr-production'}
+    >
+      {showHeading ? (
+        <div>
+          <h3 className="text-base font-semibold text-foreground">
+            {isStaging ? 'QR de pruebas STAGING' : 'QR oficial de producción'}
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {isStaging
+              ? 'Solo para pruebas en el entorno de staging (farmafacil-staging.vercel.app). No imprimir ni colocar en farmacias reales.'
+              : 'Enlace canónico app.farmafacil.solutions para escaparate, pegatinas y material impreso. El public_id no cambia.'}
+          </p>
+        </div>
+      ) : null}
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <div className="flex flex-col items-center justify-center rounded-xl border border-border bg-card p-8">
+          <div className="rounded-2xl border border-border bg-card p-5 shadow-soft">
+            <ScannableQr
+              value={url}
+              size={220}
+              label={`${isStaging ? 'QR de pruebas' : 'QR oficial'} de ${pharmacyName}`}
+            />
+          </div>
+          <p className="mt-5 text-sm font-medium text-foreground">
+            {pharmacyName}
+          </p>
+          <p className="mt-1 font-mono text-xs text-muted-foreground">
+            {publicId}
+          </p>
+          <p className="mt-3 max-w-sm text-center text-xs text-muted-foreground">
+            {isStaging
+              ? 'Código de pruebas (staging). Mismo public_id que producción, dominio distinto.'
+              : 'Código permanente. Identifica la farmacia; no inicia sesión de clientes ni abre el panel de gestión.'}
+          </p>
+        </div>
+
+        <div className="space-y-5">
+          <div>
+            <h4 className="text-sm font-semibold text-foreground">
+              {isStaging ? 'URL pública de pruebas' : 'URL pública oficial'}
+            </h4>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {isStaging
+                ? 'Enlace del entorno de staging para pruebas de QA.'
+                : canGenerateMaterials || showTenantMaterialsContact
+                  ? 'Enlace de producción para escaparate, pegatinas y material impreso.'
+                  : 'Misma URL en kiosko, escaparate, tarjetas y SuperAdmin.'}
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <div className="relative flex-1">
+                <LinkIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input readOnly value={url} className="pl-9 font-mono text-xs" />
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-10 w-10"
+                onClick={() => void copyUrl()}
+                aria-label="Copiar URL"
+              >
+                {copied ? (
+                  <Check className="h-4 w-4 text-success" />
+                ) : (
+                  <Copy className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <h4 className="text-sm font-semibold text-foreground">
+              {isStaging
+                ? 'Descargas del QR de pruebas'
+                : 'Descargas del código QR'}
+            </h4>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Button
+                variant="outline"
+                className="gap-2"
+                disabled={busy !== null}
+                onClick={() => void downloadPng()}
+              >
+                {busy === pngKind ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileImage className="h-4 w-4" />
+                )}
+                PNG (alta res.)
+              </Button>
+              <Button
+                variant="outline"
+                className="gap-2"
+                disabled={busy !== null}
+                onClick={() => void downloadSvg()}
+              >
+                {busy === svgKind ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <FileCode className="h-4 w-4" />
+                )}
+                SVG vectorial
+              </Button>
+            </div>
+            <p className="flex items-start gap-2 text-xs text-muted-foreground">
+              <Download className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              {isStaging
+                ? `Archivos: ${filenames.png} / ${filenames.svg}`
+                : 'Ideal para pegatinas y escaparate. El contenido del QR no cambia al renombrar la farmacia.'}
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MaterialCard({
   title,
   description,
@@ -611,6 +731,7 @@ function MaterialCard({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value="a5">A5 (148 × 210 mm)</SelectItem>
             <SelectItem value="a4">A4 (210 × 297 mm)</SelectItem>
             <SelectItem value="a3">A3 (297 × 420 mm)</SelectItem>
           </SelectContent>

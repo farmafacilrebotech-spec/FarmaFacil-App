@@ -140,6 +140,7 @@ export function PharmacyAssistantSettingsPanel({
             <Textarea
               id="asst-welcome"
               value={welcomeMessage}
+              placeholder="¡Hola! Soy el asistente de tu farmacia. ¿En qué puedo ayudarte hoy?"
               onChange={(e) => setWelcomeMessage(e.target.value)}
               rows={3}
               maxLength={800}

@@ -1,0 +1,36 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name">Printer</string>
+<!--    <string name="app_name">L60C 标签测试打印</string>-->
+
+    <!--Layout-->
+    <string name="btn_Connect_Str">连接设备</string>
+    <string name="btn_disConnect_Str">断开连接</string>
+    <string name="btn_Look_USBDevice_Str"><u>查看USB设备列表</u></string>
+    <string name="btn_print_text_Str">打印文本</string>
+    <string name="btn_print_barcode_Str">打印一维码</string>
+    <string name="btn_print_qrcode_Str">打印二维码</string>
+    <string name="btn_print_image_Str">打印图片</string>
+    <string name="btn_print_state_Str">查询状态</string>
+    <string name="btn_print_cashbox_Str">钱箱</string>
+    <string name="btn_upgrade_firmware_Str">升级固件</string>
+    <string name="btn_selftest_Str">自检页</string>
+    <string name="btn_testdata_Str">测试数据</string>
+    <string name="btn_Send_Hex_Str">发送HEX</string>
+    <string name="btn_Search_Bluetooth_start">开始蓝牙</string>
+    <string name="btn_Search_Bluetooth_ing">搜索蓝牙中...</string>
+    <string name="btn_Search_Bluetooth_end">搜索结束</string>
+
+    <!--Activity-->
+    <string name="str_In_Operation">正在操作</string>
+    <string name="str_Please_Waiting">请稍后…</string>
+    <string name="str_Connect_Succeed">连接成功</string>
+    <string name="str_Connect_Cancel">断开连接</string>
+    <string name="str_Connect_Fail">连接失败</string>
+    <string name="str_No_Connect">未连接打印机</string>
+    <string name="str_Error">错误：</string>
+    <string name="str_IpPort_Null">Ip和port不可为空</string>
+    <string name="str_Status">状态：</string>
+    <string name="str_Func_Success">操作成功</string>
+    <string name="str_Func_Failed">操作失败</string>
+
+</resources>

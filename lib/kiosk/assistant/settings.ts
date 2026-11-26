@@ -1,9 +1,19 @@
 import { createClient } from '@/lib/supabase/server';
 import type { AssistantFaqItem } from '@/lib/kiosk/assistant/settings-input';
-import { sanitizeAssistantSettingsInput } from '@/lib/kiosk/assistant/settings-input';
+import {
+  DEFAULT_ASSISTANT_NAME,
+  DEFAULT_ASSISTANT_WELCOME_MESSAGE,
+  resolveAssistantWelcomeMessage,
+  sanitizeAssistantSettingsInput,
+} from '@/lib/kiosk/assistant/settings-input';
 
 export type { AssistantFaqItem };
-export { sanitizeAssistantSettingsInput };
+export {
+  DEFAULT_ASSISTANT_NAME,
+  DEFAULT_ASSISTANT_WELCOME_MESSAGE,
+  resolveAssistantWelcomeMessage,
+  sanitizeAssistantSettingsInput,
+};
 
 export type PharmacyAssistantSettings = {
   pharmacyId: string;
@@ -60,8 +70,8 @@ export async function getPharmacyAssistantSettings(
   if (!data) {
     return {
       pharmacyId,
-      assistantName: 'Asistente FarmaFácil',
-      welcomeMessage: '',
+      assistantName: DEFAULT_ASSISTANT_NAME,
+      welcomeMessage: DEFAULT_ASSISTANT_WELCOME_MESSAGE,
       customInstructions: '',
       faqs: [],
       servicesInfo: '',
@@ -72,8 +82,10 @@ export async function getPharmacyAssistantSettings(
 
   return {
     pharmacyId: String(data.pharmacy_id),
-    assistantName: String(data.assistant_name ?? 'Asistente FarmaFácil'),
-    welcomeMessage: String(data.welcome_message ?? ''),
+    assistantName: String(data.assistant_name ?? DEFAULT_ASSISTANT_NAME),
+    welcomeMessage: resolveAssistantWelcomeMessage(
+      data.welcome_message as string | null | undefined
+    ),
     customInstructions: String(data.custom_instructions ?? ''),
     faqs: parseFaqs(data.faqs),
     servicesInfo: String(data.services_info ?? ''),

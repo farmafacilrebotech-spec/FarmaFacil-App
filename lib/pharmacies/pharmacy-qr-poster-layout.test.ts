@@ -28,8 +28,25 @@ describe('pharmacyQrPosterLayoutForFormat', () => {
     assert.equal(isPharmacyQrPosterTemplateReady(a3), true);
   });
 
+  it('A5 conserva zonas normalizadas y reduce tipografía (sin rediseño)', () => {
+    const a5 = pharmacyQrPosterLayoutForFormat('a5');
+    assert.equal(a5.page.widthMm, 148);
+    assert.equal(a5.page.heightMm, 210);
+    assert.deepEqual(a5.logo.rect, PHARMACY_QR_POSTER_LAYOUT.logo.rect);
+    assert.deepEqual(a5.name.rect, PHARMACY_QR_POSTER_LAYOUT.name.rect);
+    assert.deepEqual(a5.qr.rect, PHARMACY_QR_POSTER_LAYOUT.qr.rect);
+    assert.ok(a5.name.maxFontSizePt < PHARMACY_QR_POSTER_LAYOUT.name.maxFontSizePt);
+    assert.ok(a5.name.minFontSizePt >= 8);
+    assert.equal(isPharmacyQrPosterTemplateReady(a5), true);
+    // Misma proporción ISO que A4 (diferencia < 0,5 %).
+    const ratioA4 = POSTER_PAGE_MM.a4.heightMm / POSTER_PAGE_MM.a4.widthMm;
+    const ratioA5 = a5.page.heightMm / a5.page.widthMm;
+    assert.ok(Math.abs(ratioA5 / ratioA4 - 1) < 0.005);
+  });
+
   it('etiqueta de formato', () => {
     assert.equal(posterPageFormatLabel('a4'), 'A4');
     assert.equal(posterPageFormatLabel('a3'), 'A3');
+    assert.equal(posterPageFormatLabel('a5'), 'A5');
   });
 });

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Políticas declaradas para Device Owner / Lock Task (preparación).
+  Declarar aquí NO activa Device Owner ni aplica restricciones.
+  Solo permite aprovisionar en una prueba controlada posterior.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Políticas mínimas del admin. Lock Task se configura vía
+         DevicePolicyManager.setLockTaskPackages tras Device Owner (prueba futura). -->
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>

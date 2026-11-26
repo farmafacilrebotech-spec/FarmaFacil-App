@@ -135,8 +135,12 @@ function px(
  *   VERDE ann (161,29)–(681,130) → HD (983,177,3180×623)
  * Entre líneas turquesa HD ≈ y 122 y 861. QR sin cambios.
  */
-/** Formatos de impresión soportados (misma proporción √2). */
-export type PosterPageFormat = 'a4' | 'a3';
+/**
+ * Formatos de impresión soportados (misma proporción ISO ≈ √2).
+ * Todas las zonas están normalizadas (0..1): A3/A5 escalan la plantilla A4
+ * sin rediseñar la composición. A5 (148×210) difiere de A4/√2 en ≈0,3 %.
+ */
+export type PosterPageFormat = 'a4' | 'a3' | 'a5';
 
 export const POSTER_PAGE_MM: Record<
   PosterPageFormat,
@@ -144,7 +148,15 @@ export const POSTER_PAGE_MM: Record<
 > = {
   a4: { widthMm: 210, heightMm: 297 },
   a3: { widthMm: 297, heightMm: 420 },
+  a5: { widthMm: 148, heightMm: 210 },
 };
+
+/** Factor lineal respecto a A4 (tipografía/márgenes). A3 = √2 exacto. */
+export function posterFormatScale(format: PosterPageFormat): number {
+  if (format === 'a3') return Math.SQRT2;
+  if (format === 'a5') return POSTER_PAGE_MM.a5.widthMm / POSTER_PAGE_MM.a4.widthMm;
+  return 1;
+}
 
 export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
   backgroundSrc: '/images/posters/pharmacy-qr-a4.png',
@@ -177,17 +189,17 @@ export const PHARMACY_QR_POSTER_LAYOUT: PharmacyQrPosterLayout = {
 
 /**
  * Misma plantilla Canva (zonas normalizadas) en A4 o A3.
- * A3 escala tipografía ≈ √2 para mantener proporción visual.
+ * A3 escala tipografía ≈ √2 y A5 ≈ 0,705 para mantener proporción visual.
  */
 export function pharmacyQrPosterLayoutForFormat(
   format: PosterPageFormat = 'a4'
 ): PharmacyQrPosterLayout {
   if (format === 'a4') return PHARMACY_QR_POSTER_LAYOUT;
-  const scale = Math.SQRT2;
+  const scale = posterFormatScale(format);
   const base = PHARMACY_QR_POSTER_LAYOUT;
   return {
     ...base,
-    page: { ...POSTER_PAGE_MM.a3 },
+    page: { ...POSTER_PAGE_MM[format] },
     name: {
       ...base.name,
       maxFontSizePt: Math.round(base.name.maxFontSizePt * scale),
@@ -197,7 +209,9 @@ export function pharmacyQrPosterLayoutForFormat(
 }
 
 export function posterPageFormatLabel(format: PosterPageFormat): string {
-  return format === 'a3' ? 'A3' : 'A4';
+  if (format === 'a3') return 'A3';
+  if (format === 'a5') return 'A5';
+  return 'A4';
 }
 
 export function isPharmacyQrPosterTemplateReady(

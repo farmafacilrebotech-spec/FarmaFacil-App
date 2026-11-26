@@ -14,6 +14,7 @@ import {
 import { toast } from 'sonner';
 
 import type { PharmacyProduct } from '@/lib/pharmacies/products-types';
+import { formatCatalogPriceLabel } from '@/lib/catalog/price-display';
 import { formatCurrency, formatNumber } from '@/lib/format';
 import { PageHeader } from '@/components/shared/page-header';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -556,7 +557,9 @@ export function PharmacyCatalogView({
                         {!isGeneric ? (
                           <>
                             <TableCell className="text-right font-medium">
-                              {formatCurrency(p.price)}
+                              {p.price === 0
+                                ? formatCatalogPriceLabel(0)
+                                : formatCurrency(p.price)}
                             </TableCell>
                             {showStockColumn ? (
                               <TableCell className="text-right">

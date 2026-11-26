@@ -22,4 +22,10 @@ describe('pharmacy-ad-poster', () => {
     assert.equal(adPosterScale('a4'), 1);
     assert.ok(Math.abs(adPosterScale('a3') - Math.SQRT2) < 1e-9);
   });
+
+  it('escala A5 = 148/210 y la composición A4 escalada cabe en 210 mm', () => {
+    const s = adPosterScale('a5');
+    assert.ok(Math.abs(s - 148 / 210) < 1e-9);
+    assert.ok(297 * s <= 210 + 1e-9);
+  });
 });

@@ -16,6 +16,12 @@ import {
   ensurePosterNameFont,
   POSTER_NAME_FONT_FAMILY,
 } from '@/lib/pharmacies/pharmacy-qr-poster-font';
+import { containRect } from '@/lib/pharmacies/pharmacy-qr-poster-compose';
+import {
+  addImageClippedToCircle,
+  drawStagingWatermark,
+} from '@/lib/pharmacies/pharmacy-poster-pdf-helpers';
+import { posterPdfTitle } from '@/lib/pharmacies/pharmacy-poster-meta';
 import {
   AD_POSTER_BRAND,
   AD_POSTER_COPY,
@@ -100,7 +106,12 @@ export async function drawPharmacyAdPoster(
     markDataUrl: string;
     phoneScreenDataUrl: string;
     pharmacyLogoDataUrl?: string | null;
+    /** Dimensiones reales del logo (evita deformarlo; contain en el cuadro). */
+    pharmacyLogoWidth?: number;
+    pharmacyLogoHeight?: number;
     format: PosterPageFormat;
+    /** Entorno staging: marca de agua «PRUEBA - STAGING» (debajo del QR). */
+    stagingWatermark?: boolean;
   }
 ): Promise<{ usedPharmacyLogo: boolean }> {
   const page = POSTER_PAGE_MM[input.format];
@@ -132,16 +143,9 @@ export async function drawPharmacyAdPoster(
   const markY = 14 * s;
   doc.setFillColor(white.r, white.g, white.b);
   doc.circle(W / 2, markY + markSize / 2, markSize / 2 + 1.2 * s, 'F');
-  doc.addImage(
-    input.markDataUrl,
-    'PNG',
-    markX,
-    markY,
-    markSize,
-    markSize,
-    undefined,
-    'NONE'
-  );
+  // Recorte circular: el PNG oficial es cuadrado con esquinas negras opacas
+  // (mismo criterio que BrandLogo en la UI).
+  addImageClippedToCircle(doc, input.markDataUrl, 'PNG', markX, markY, markSize);
 
   // Headline
   doc.setFont(fontFamily, 'bold');
@@ -226,13 +230,24 @@ export async function drawPharmacyAdPoster(
   if (input.pharmacyLogoDataUrl) {
     const logoBox = 14 * s;
     try {
+      const lw = input.pharmacyLogoWidth ?? 0;
+      const lh = input.pharmacyLogoHeight ?? 0;
+      // Sin dimensiones conocidas se mantiene el cuadro (comportamiento previo);
+      // con dimensiones se ajusta en contain para no deformar el logo.
+      const box = {
+        x: W / 2 - logoBox / 2,
+        y: nameY - logoBox - 2 * s,
+        w: logoBox,
+        h: logoBox,
+      };
+      const fitted = lw > 0 && lh > 0 ? containRect(lw, lh, box) : box;
       doc.addImage(
         input.pharmacyLogoDataUrl,
-        'PNG',
-        W / 2 - logoBox / 2,
-        nameY - logoBox - 2 * s,
-        logoBox,
-        logoBox,
+        input.pharmacyLogoDataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG',
+        fitted.x,
+        fitted.y,
+        fitted.w,
+        fitted.h,
         undefined,
         'NONE'
       );
@@ -252,6 +267,11 @@ export async function drawPharmacyAdPoster(
     align: 'center',
     maxWidth: nameMaxW,
   });
+
+  // Marca de agua staging ANTES del QR para no degradar su lectura.
+  if (input.stagingWatermark) {
+    drawStagingWatermark(doc, page);
+  }
 
   // QR con quiet zone blanca (legibilidad impresión)
   const qrOuter = 42 * s;
@@ -293,6 +313,8 @@ export async function buildPharmacyAdPosterPdf(input: {
   format?: PosterPageFormat;
   /** Logo farmacia opcional (no sustituye al mark FarmaFácil). */
   pharmacyLogoUrl?: string | null;
+  /** Staging: marca de agua + metadatos «PRUEBA-STAGING». */
+  staging?: boolean;
 }): Promise<PharmacyAdPosterBuildResult> {
   if (!isPrintSafePharmacyPublicUrl(input.publicUrl)) {
     throw new Error(
@@ -334,13 +356,38 @@ export async function buildPharmacyAdPosterPdf(input: {
     compress: true,
   });
 
+  // Logo ausente o ilegible → variante sin logo (misma composición).
+  let logoW = 0;
+  let logoH = 0;
+  let logoForDraw = pharmacyLogoDataUrl;
+  if (logoForDraw) {
+    try {
+      const img = await loadHtmlImage(logoForDraw);
+      logoW = img.naturalWidth;
+      logoH = img.naturalHeight;
+    } catch {
+      logoForDraw = null;
+    }
+  }
+
+  doc.setProperties({
+    title: posterPdfTitle({
+      kind: 'publicitario',
+      pharmacyName: input.pharmacyName,
+      staging: input.staging,
+    }),
+  });
+
   const drawn = await drawPharmacyAdPoster(doc, {
     pharmacyName: input.pharmacyName,
     qrDataUrl,
     markDataUrl,
     phoneScreenDataUrl,
-    pharmacyLogoDataUrl,
+    pharmacyLogoDataUrl: logoForDraw,
+    pharmacyLogoWidth: logoW,
+    pharmacyLogoHeight: logoH,
     format,
+    stagingWatermark: input.staging === true,
   });
 
   return {

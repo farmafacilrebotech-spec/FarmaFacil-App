@@ -20,7 +20,7 @@ export default async function KioskHomePage() {
     const isRevoked = session.reason === 'revoked';
 
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#2EC4C7] px-4">
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#1ABBB3] px-4">
         <BrandLogo size={96} />
         <div className="mt-8 max-w-md rounded-3xl bg-white p-8 text-center shadow-xl">
           <h1 className="text-xl font-semibold text-slate-900">

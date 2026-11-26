@@ -7,6 +7,7 @@ import {
   DEMO_ASSISTANT_NAME,
   DEMO_WELCOME_MESSAGE,
 } from '@/lib/kiosk/assistant/demo-content';
+import { resolveAssistantWelcomeMessage } from '@/lib/kiosk/assistant/settings-input';
 import { loadAssistantRuntimeStatus } from '@/lib/kiosk/assistant/runtime';
 import {
   kioskSessionFailureRedirectPath,
@@ -66,8 +67,7 @@ export default async function KioskAssistantPage() {
   const welcomeText =
     context.mode === 'demo'
       ? DEMO_WELCOME_MESSAGE
-      : context.settings.welcomeMessage.trim() ||
-        `Hola, soy ${assistantName}. Puedo orientarte sobre consultas habituales y categorías de parafarmacia. No sustituyo al farmacéutico: si tu duda es clínica o personalizada, pídele ayuda en el mostrador.`;
+      : resolveAssistantWelcomeMessage(context.settings.welcomeMessage);
 
   return (
     <KioskCartProvider pharmacyId={session.session.pharmacyId}>

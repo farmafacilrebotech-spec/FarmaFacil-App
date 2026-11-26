@@ -6,6 +6,7 @@ import {
   readKioskSessionCookie,
 } from '@/lib/kiosk/session-cookie';
 import { createOrderErrorMessage } from '@/lib/orders/cart-validation';
+import { issueKioskOrderAccessUrl } from '@/lib/orders/order-access-token';
 import type {
   CartLineInput,
   CreateOrderErrorCode,
@@ -132,10 +133,20 @@ export async function createKioskOrderFromCart(input: {
     };
   }
 
+  const orderId = String(payload!.order_id);
+  let accessUrl: string | null = null;
+  const issued = await issueKioskOrderAccessUrl(orderId);
+  if (issued.ok) {
+    accessUrl = issued.url;
+  } else {
+    // Pedido creado; el ticket puede imprimirse sin QR si 105 no está aplicada.
+    console.warn('[orders] access token skip', issued.error.slice(0, 120));
+  }
+
   return {
     ok: true,
     idempotent: payload!.idempotent === true,
-    orderId: String(payload!.order_id),
+    orderId,
     pharmacyId: String(payload!.pharmacy_id),
     orderNumber: Number(payload!.order_number),
     displayNumber: String(payload!.display_number),
@@ -143,5 +154,6 @@ export async function createKioskOrderFromCart(input: {
     paymentStatus: String(payload!.payment_status) as PaymentStatus,
     totalAmount: Number(payload!.total_amount),
     currency: String(payload!.currency ?? 'EUR'),
+    accessUrl,
   };
 }

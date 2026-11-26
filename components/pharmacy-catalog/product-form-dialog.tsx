@@ -56,7 +56,8 @@ function fromProduct(product: PharmacyProduct | null): FormState {
       brand: '',
       category: '',
       description: '',
-      price: '0',
+      // Vacío = PVP no informado (se guardará como 0 técnico / pendiente).
+      price: '',
       stock: '0',
       minStock: '0',
       isActive: true,
@@ -114,7 +115,13 @@ export function ProductFormDialog({
       brand: form.brand || null,
       category: form.category || null,
       description: form.description || null,
-      price: Number(form.price.replace(',', '.')),
+      // Vacío o no numérico → 0 técnico = pendiente de valoración (no «gratis»).
+      price: (() => {
+        const raw = form.price.replace(',', '.').trim();
+        if (!raw) return 0;
+        const n = Number(raw);
+        return Number.isFinite(n) && n >= 0 ? n : 0;
+      })(),
       stock: Number(form.stock),
       minStock: Number(form.minStock),
       isActive: form.isActive,
@@ -245,8 +252,11 @@ export function ProductFormDialog({
                   inputMode="decimal"
                   value={form.price}
                   onChange={(e) => setField('price', e.target.value)}
-                  required
+                  placeholder="Vacío = pendiente de valoración"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Déjalo vacío si aún no hay precio. El 0 no significa gratis.
+                </p>
               </div>
             ) : null}
             <div className="space-y-1.5">

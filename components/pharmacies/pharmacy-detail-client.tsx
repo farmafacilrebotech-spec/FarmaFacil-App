@@ -213,6 +213,7 @@ export function PharmacyDetailClient({
   launchSeatEvents = [],
   canManageLaunchSeats = false,
   canGenerateMaterials = false,
+  isStagingEnv = false,
   members,
   roles,
   usersCapabilities,
@@ -247,6 +248,8 @@ export function PharmacyDetailClient({
   canManageLaunchSeats?: boolean;
   /** SuperAdmin total (servidor): carteles y pack de bienvenida en la pestaña QR. */
   canGenerateMaterials?: boolean;
+  /** Servidor: despliegue staging → pestaña QR muestra QR de pruebas + producción. */
+  isStagingEnv?: boolean;
   members: PharmacyMember[];
   roles: PharmacyRoleOption[];
   usersCapabilities: PharmacyUsersCapabilities;
@@ -1269,6 +1272,7 @@ export function PharmacyDetailClient({
                 : null
             }
             canGenerateMaterials={canGenerateMaterials}
+            isStagingEnv={isStagingEnv}
           />
         )}
 

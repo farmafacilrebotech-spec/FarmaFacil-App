@@ -20,7 +20,13 @@ import {
   KioskOrderTicket,
   type KioskTicketData,
 } from '@/components/kiosk/kiosk-order-ticket';
+import { displayKioskBrand } from '@/lib/kiosk/catalog-display';
 import { endKioskClientPurchaseSession } from '@/lib/kiosk/end-client-purchase-session';
+import {
+  PRICE_COPY,
+  formatLinePriceLabel,
+  isPricePending,
+} from '@/lib/catalog/price-display';
 import { formatEuro } from '@/lib/orders/labels';
 import { cn } from '@/lib/utils';
 
@@ -73,6 +79,8 @@ function ticketPayloadForBridge(ticket: KioskTicketData): string {
       unitPrice: item.unitPrice,
       lineTotal: item.lineTotal,
     })),
+    // Solo URL opaca /o/{token}; nunca displayNumber ni teléfono.
+    qrPayload: ticket.accessUrl?.trim() || '',
   });
 }
 
@@ -104,6 +112,13 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
   const router = useRouter();
   const { cart, displayTotal, setQuantity, removeLine, clear, itemCount } =
     useKioskCart();
+  const hasPendingPrice = cart.lines.some((l) => isPricePending(l.unitPrice));
+  const valuedSubtotal = cart.lines
+    .filter((l) => !isPricePending(l.unitPrice))
+    .reduce(
+      (sum, l) => sum + Math.round(l.unitPrice * l.quantity * 100) / 100,
+      0
+    );
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [ticket, setTicket] = React.useState<KioskTicketData | null>(null);
@@ -167,6 +182,7 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
         totalAmount: created.totalAmount,
         currency: created.currency,
         paymentStatus: created.paymentStatus,
+        accessUrl: created.accessUrl ?? null,
         items: cart.lines.map((l) => ({
           productName: l.name,
           quantity: l.quantity,
@@ -181,6 +197,7 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
         totalAmount: detail.order.totalAmount,
         currency: detail.order.currency,
         paymentStatus: detail.order.paymentStatus,
+        accessUrl: created.accessUrl ?? null,
         items: detail.order.items,
       });
     }
@@ -260,7 +277,7 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
 
   if (ticket) {
     return (
-      <div className="flex min-h-[100dvh] items-center justify-center bg-[#e8f7f7] print:block print:bg-white">
+      <div className="flex min-h-[100dvh] items-center justify-center bg-[#F7F9FA] print:block print:bg-white">
         <div className="mx-auto flex w-full max-w-lg flex-col px-4 py-8 sm:px-6 lg:max-w-xl print:max-w-none print:px-0 print:py-0">
           <div className="mb-5 text-center print:hidden">
             <p className="text-sm font-medium text-[#1a9a9d] lg:text-base">
@@ -294,13 +311,13 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
             </button>
             <Link
               href="/k"
-              className="flex h-16 items-center justify-center rounded-2xl bg-[#2EC4C7] text-lg font-semibold text-white active:scale-[0.99] lg:h-20 lg:text-xl"
+              className="flex h-16 items-center justify-center rounded-2xl bg-[#1ABBB3] text-lg font-semibold text-white active:scale-[0.99] lg:h-20 lg:text-xl"
             >
               Volver al inicio
             </Link>
             <Link
               href="/k/catalogo"
-              className="flex h-14 items-center justify-center rounded-2xl border-2 border-[#2EC4C7] text-base font-semibold text-[#1a9a9d] lg:h-16 lg:text-lg"
+              className="flex h-14 items-center justify-center rounded-2xl border-2 border-[#1ABBB3] text-base font-semibold text-[#1a9a9d] lg:h-16 lg:text-lg"
             >
               Seguir comprando
             </Link>
@@ -311,8 +328,8 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
   }
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-[#e8f7f7]">
-      <header className="sticky top-0 z-20 border-b border-[#2EC4C7]/25 bg-[#2EC4C7] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 sm:pb-5 sm:pt-5 lg:px-8 lg:pb-6 lg:pt-6">
+    <div className="flex min-h-[100dvh] flex-col bg-[#F7F9FA]">
+      <header className="sticky top-0 z-20 border-b border-[#1ABBB3]/25 bg-[#1ABBB3] px-4 pb-4 pt-4 text-white shadow-md sm:px-6 sm:pb-5 sm:pt-5 lg:px-8 lg:pb-6 lg:pt-6">
         <div className="mx-auto flex w-full max-w-xl items-center gap-3 lg:max-w-2xl lg:gap-4">
           <Link
             href="/k/catalogo"
@@ -342,7 +359,7 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
               </p>
               <Link
                 href="/k/catalogo"
-                className="mt-8 inline-flex h-14 w-full items-center justify-center rounded-2xl bg-[#2EC4C7] px-8 text-base font-semibold text-white lg:h-16 lg:text-lg"
+                className="mt-8 inline-flex h-14 w-full items-center justify-center rounded-2xl bg-[#1ABBB3] px-8 text-base font-semibold text-white lg:h-16 lg:text-lg"
               >
                 Buscar producto
               </Link>
@@ -361,13 +378,15 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
                       <p className="text-lg font-semibold text-slate-900 lg:text-xl">
                         {line.name}
                       </p>
-                      {line.brand ? (
+                      {displayKioskBrand(line.brand) ? (
                         <p className="text-sm text-slate-500 lg:text-base">
-                          {line.brand}
+                          {displayKioskBrand(line.brand)}
                         </p>
                       ) : null}
-                      <p className="mt-1 text-base font-medium text-[#1a9a9d] lg:text-lg">
-                        {formatEuro(line.unitPrice)} / ud.
+                      <p className="mt-1 text-base font-medium text-[#1ABBB3] lg:text-lg">
+                        {isPricePending(line.unitPrice)
+                          ? PRICE_COPY.pendingValuation
+                          : `${formatEuro(line.unitPrice)} / ud.`}
                       </p>
                     </div>
                     <button
@@ -408,9 +427,7 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
                       </button>
                     </div>
                     <p className="text-xl font-bold text-slate-900 lg:text-2xl">
-                      {formatEuro(
-                        Math.round(line.unitPrice * line.quantity * 100) / 100
-                      )}
+                      {formatLinePriceLabel(line.unitPrice)}
                     </p>
                   </div>
                 </li>
@@ -423,18 +440,34 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
               </p>
             ) : null}
 
-            <div className="sticky bottom-0 mt-auto border-t border-slate-200/80 bg-[#e8f7f7]/95 pb-4 pt-4 backdrop-blur lg:pb-5 lg:pt-5">
+            <div className="sticky bottom-0 mt-auto border-t border-slate-200/80 bg-[#F7F9FA]/95 pb-4 pt-4 backdrop-blur lg:pb-5 lg:pt-5">
               <div className="mb-3 flex items-end justify-between px-1 lg:mb-4">
                 <div>
                   <p className="text-sm text-slate-500 lg:text-base">
                     {itemCount} {itemCount === 1 ? 'artículo' : 'artículos'}
                   </p>
-                  <p className="text-3xl font-black text-slate-900 lg:text-4xl">
-                    {formatEuro(displayTotal)}
-                  </p>
-                  <p className="text-xs text-slate-500 lg:text-sm">
-                    Precio orientativo · se confirma en servidor
-                  </p>
+                  {hasPendingPrice ? (
+                    <>
+                      <p className="text-sm font-medium text-slate-600 lg:text-base">
+                        {PRICE_COPY.valuedSubtotal}
+                      </p>
+                      <p className="text-3xl font-black text-slate-900 lg:text-4xl">
+                        {formatEuro(valuedSubtotal)}
+                      </p>
+                      <p className="text-sm font-medium text-amber-800 lg:text-base">
+                        {PRICE_COPY.definitivePending}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-3xl font-black text-slate-900 lg:text-4xl">
+                        {formatEuro(displayTotal)}
+                      </p>
+                      <p className="text-xs text-slate-500 lg:text-sm">
+                        Precio orientativo · se confirma en servidor
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
               <button
@@ -443,13 +476,13 @@ export function KioskCartView({ pharmacyName }: { pharmacyName: string }) {
                 onClick={() => void confirmOrder()}
                 className={cn(
                   'flex h-16 w-full items-center justify-center rounded-2xl text-lg font-bold text-white shadow-md active:scale-[0.99] disabled:opacity-60 lg:h-20 lg:text-xl',
-                  'bg-[#2EC4C7]'
+                  'bg-[#1ABBB3]'
                 )}
               >
                 {submitting ? 'Confirmando…' : 'Confirmar pedido'}
               </button>
               <p className="mt-2 text-center text-sm text-amber-800 lg:text-base">
-                Pagarás en el mostrador · sin cobro en el kiosko
+                Pago pendiente en mostrador
               </p>
             </div>
           </>

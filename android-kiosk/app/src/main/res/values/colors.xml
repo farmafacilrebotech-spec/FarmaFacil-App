@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ff_green">#1B7A4E</color>
+    <color name="ff_green_dark">#0F4D32</color>
+    <color name="ff_bg">#F5F7F6</color>
+    <color name="ff_text">#1A1A1A</color>
+    <color name="ff_muted">#5C6B63</color>
+    <color name="ff_error">#B42318</color>
+    <color name="ff_white">#FFFFFF</color>
+    <!-- Fondo adaptive: turquesa corporativo FarmaFácil (#2EC4C7). -->
+    <color name="ic_launcher_background">#2EC4C7</color>
+    <!-- Banda STAGING (APK TEST). -->
+    <color name="ff_staging_banner">#E67E22</color>
+    <color name="ff_staging_banner_dark">#C45F0C</color>
+</resources>

@@ -1,0 +1,35 @@
+<resources>
+    <string name="app_name">Printer</string>
+<!--    <string name="app_name">L60C Label test</string>-->
+
+    <!--Layout-->
+    <string name="btn_Connect_Str">Connect</string>
+    <string name="btn_disConnect_Str">disConnect</string>
+    <string name="btn_Look_USBDevice_Str"><u>USB Device List</u></string>
+    <string name="btn_print_text_Str">Printer text</string>
+    <string name="btn_print_barcode_Str">Printer barcode</string>
+    <string name="btn_print_qrcode_Str">printer qrcode</string>
+    <string name="btn_print_image_Str">printer image</string>
+    <string name="btn_print_state_Str">Query status</string>
+    <string name="btn_print_cashbox_Str">Cashbox</string>
+    <string name="btn_upgrade_firmware_Str">Upgrade firmware</string>
+    <string name="btn_selftest_Str">Self test</string>
+    <string name="btn_testdata_Str">Test Data</string>
+    <string name="btn_Send_Hex_Str">Send HEX</string>
+    <string name="btn_Search_Bluetooth_start">Start the bluetooth</string>
+    <string name="btn_Search_Bluetooth_ing">Search bluetooth...</string>
+    <string name="btn_Search_Bluetooth_end">Search end</string>
+
+    <!--Activity-->
+    <string name="str_In_Operation">In operation</string>
+    <string name="str_Please_Waiting">Please wait...</string>
+    <string name="str_Connect_Succeed">Successfully connect</string>
+    <string name="str_Connect_Cancel">Disconnect</string>
+    <string name="str_Connect_Fail">Connection fail</string>
+    <string name="str_No_Connect">Unconnected printer</string>
+    <string name="str_Error">Error：</string>
+    <string name="str_IpPort_Null">Ip and port cannot be empty</string>
+    <string name="str_Status">State：</string>
+    <string name="str_Func_Success">Successfully</string>
+    <string name="str_Func_Failed">Defeated</string>
+</resources>

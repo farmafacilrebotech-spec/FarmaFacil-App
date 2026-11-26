@@ -94,7 +94,7 @@ export function KioskTileArrow({ className }: { className?: string }) {
       className={cn(
         // Siempre círculo: w===h, aspect-square, sin grow, sin width 100%.
         'inline-flex aspect-square h-12 w-12 shrink-0 grow-0 items-center justify-center rounded-full',
-        'bg-[#2EC4C7] text-white shadow-md shadow-[#1a9a9d]/35',
+        'bg-[#1ABBB3] text-white shadow-md shadow-[#1a9a9d]/35',
         className
       )}
       aria-hidden

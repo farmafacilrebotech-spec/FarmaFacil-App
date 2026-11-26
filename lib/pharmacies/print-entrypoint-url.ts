@@ -7,6 +7,7 @@
  */
 
 const CANONICAL_PRODUCTION_APP_URL = 'https://app.farmafacil.solutions';
+const STAGING_PUBLIC_APP_URL = 'https://farmafacil-staging.vercel.app';
 
 function pharmacyEntrypointPath(publicId: string): string {
   const id = publicId.trim().toLowerCase();
@@ -19,6 +20,30 @@ export function pharmacyPrintPublicUrl(publicId: string): string {
     throw new Error('publicId vacío');
   }
   return `${CANONICAL_PRODUCTION_APP_URL.replace(/\/$/, '')}${pharmacyEntrypointPath(id)}`;
+}
+
+/**
+ * URL pública del entorno STAGING (solo pruebas; nunca para material impreso).
+ * Mismo public_id que producción: no se regenera ni se cambia.
+ */
+export function pharmacyStagingPublicUrl(publicId: string): string {
+  const id = publicId.trim();
+  if (!id) {
+    throw new Error('publicId vacío');
+  }
+  return `${STAGING_PUBLIC_APP_URL.replace(/\/$/, '')}${pharmacyEntrypointPath(id)}`;
+}
+
+/**
+ * True si el panel se sirve desde staging (FF_APP_ENV=staging o host de staging).
+ * Pensado para llamarse en servidor y pasar el resultado como prop.
+ */
+export function isStagingQrEnvironment(input: {
+  appEnv?: string | null;
+  host?: string | null;
+}): boolean {
+  if ((input.appEnv ?? '').trim().toLowerCase() === 'staging') return true;
+  return /farmafacil-staging/i.test(input.host ?? '');
 }
 
 /** True si la URL es apta para cartel/impreso (canónica de producción). */

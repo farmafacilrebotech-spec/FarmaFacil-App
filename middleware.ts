@@ -38,6 +38,11 @@ function isPublicQuoteRoute(pathname: string): boolean {
   return pathname === '/q' || pathname.startsWith('/q/');
 }
 
+/** Estado de pedido por token opaco E2: /o/[token] — sin sesión. */
+function isPublicOrderAccessRoute(pathname: string): boolean {
+  return pathname === '/o' || pathname.startsWith('/o/');
+}
+
 export async function middleware(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
@@ -49,7 +54,8 @@ export async function middleware(request: NextRequest) {
     isPublicKioskRoute(pathname) ||
     isPublicEntrypointRoute(pathname) ||
     isPublicCustomerAccountRoute(pathname) ||
-    isPublicQuoteRoute(pathname);
+    isPublicQuoteRoute(pathname) ||
+    isPublicOrderAccessRoute(pathname);
 
   // Sin sesión en ruta protegida → login del panel (farmacia/plataforma).
   // /cuenta y /e/* son públicos: no usar /login ahí.
@@ -63,9 +69,11 @@ export async function middleware(request: NextRequest) {
     // Tampoco devolver al área cliente vía ?next= del login de farmacia.
     const safeNext = pathname.startsWith('/q/')
       ? '/q'
-      : pathname.startsWith('/cuenta')
-        ? '/'
-        : pathname;
+      : pathname.startsWith('/o/')
+        ? '/o'
+        : pathname.startsWith('/cuenta')
+          ? '/'
+          : pathname;
     params.set('next', safeNext);
     const response = middlewareRedirect(
       request,
@@ -78,8 +86,8 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
-  // Presupuesto público: sin caché CDN/navegador (el token va en la URL).
-  if (isPublicQuoteRoute(pathname)) {
+  // Presupuesto / pedido público: sin caché (el token va en la URL).
+  if (isPublicQuoteRoute(pathname) || isPublicOrderAccessRoute(pathname)) {
     supabaseResponse.headers.set(
       'Cache-Control',
       'private, no-store, no-cache, max-age=0, must-revalidate'

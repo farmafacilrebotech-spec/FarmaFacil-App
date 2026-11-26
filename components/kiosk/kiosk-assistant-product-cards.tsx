@@ -8,6 +8,7 @@ import { useKioskCart } from '@/components/kiosk/kiosk-cart-provider';
 import type { AssistantProductCard } from '@/lib/kiosk/assistant/types';
 import {
   canAddKioskProductToCart,
+  displayKioskBrand,
   formatKioskProductAvailability,
   formatKioskProductPrice,
 } from '@/lib/kiosk/catalog-display';
@@ -92,9 +93,9 @@ export function KioskAssistantProductCards({
                   <h3 className="line-clamp-2 text-sm font-semibold text-slate-900 sm:text-base">
                     {product.name}
                   </h3>
-                  {product.brand ? (
+                  {displayKioskBrand(product.brand) ? (
                     <p className="truncate text-xs text-slate-500">
-                      {product.brand}
+                      {displayKioskBrand(product.brand)}
                     </p>
                   ) : null}
                   <p className="mt-1 text-base font-bold text-[#1a9a9d]">
@@ -128,7 +129,7 @@ export function KioskAssistantProductCards({
                         onClick={() => onAdd(product)}
                         className={cn(
                           'inline-flex h-10 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-white shadow-sm active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 sm:text-sm',
-                          justAdded ? 'bg-emerald-600' : 'bg-[#2EC4C7]'
+                          justAdded ? 'bg-emerald-600' : 'bg-[#1ABBB3]'
                         )}
                       >
                         {justAdded ? (

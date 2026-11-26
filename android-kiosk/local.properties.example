@@ -1,0 +1,4 @@
+## Copia este archivo a local.properties (ignorado por git) y ajusta la ruta.
+## No incluir secretos: solo ruta local del SDK.
+
+sdk.dir=/Users/TU_USUARIO/Library/Android/sdk
