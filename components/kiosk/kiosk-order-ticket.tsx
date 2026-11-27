@@ -109,7 +109,12 @@ export function KioskOrderTicket({ ticket }: { ticket: KioskTicketData }) {
             Consulta el estado de tu pedido
           </p>
         </div>
-      ) : null}
+      ) : (
+        <p className="mt-6 text-center text-sm text-amber-800">
+          El enlace seguro de seguimiento no está disponible en este momento.
+          El ticket se imprimirá sin QR.
+        </p>
+      )}
 
       <p className="mt-5 text-center text-sm italic text-slate-500">
         Tu farmacia, más cerca de tus clientes

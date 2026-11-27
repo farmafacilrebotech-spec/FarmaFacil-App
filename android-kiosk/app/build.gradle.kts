@@ -97,6 +97,7 @@ android {
 
     testOptions {
         unitTests.isReturnDefaultValues = true
+        unitTests.isIncludeAndroidResources = true
     }
 }
 
@@ -117,4 +118,6 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     // org.json real en JVM (el stub de android.jar no parsea en unit tests).
     testImplementation("org.json:json:20240303")
+    // Previews PNG del ticket con el mismo KioskTicketBitmap (Canvas real).
+    testImplementation("org.robolectric:robolectric:4.12.2")
 }

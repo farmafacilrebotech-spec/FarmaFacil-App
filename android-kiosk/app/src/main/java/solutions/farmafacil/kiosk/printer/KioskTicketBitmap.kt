@@ -13,22 +13,22 @@ import kotlin.math.roundToInt
 
 /**
  * Renderer de ticket kiosko (producción, papel 80 mm).
- * Tipografía V2 + logo oficial térmico (cruz/letras/anillo negros sobre blanco).
- * Usado por [IcodUsbPrinter.printKioskTicket] y por la prueba debug.
  *
- * Orden del ticket:
- * 1) logo circular centrado (sin texto «FARMAFÁCIL» debajo)
- * 2) nombre comercial de la farmacia
- * 3) «Pedido {displayNumber}» grande (o marcador debug)
- * 4) productos / cantidades / importes («Pendiente de valoración» si importe 0)
- * 5) total
- * 6) mensaje único de pago (p. ej. «Pago pendiente en mostrador»)
- * 7) QR grande centrado (solo si hay `qrPayload`) + «Consulta el estado de tu pedido»
- * 8) eslogan
+ * Composición restaurada del diseño físico aceptado (ticket ~0186):
+ * márgenes estrechos, pedido moderado, TOTAL destacado.
+ *
+ * Diferencias funcionales K02 sobre ese diseño (sin rediseñar):
+ * - logo monocromo corporativo (sin texto «FARMAFÁCIL» debajo)
+ * - «Pendiente de valoración» si importe 0
+ * - un único mensaje «Pago pendiente en mostrador» cuando corresponde
+ * - QR seguro de seguimiento + CTA
+ * - eslogan corporativo al final
+ *
+ * Usado por [IcodUsbPrinter.printKioskTicket] y por la prueba debug.
  */
 object KioskTicketBitmap {
 
-    /** Marca de texto: ya NO se imprime en tickets (el logo la incluye). Solo referencia debug. */
+    /** Marca de texto: ya NO se imprime (el logo la incluye). Solo referencia debug. */
     const val BRAND = "FARMAFÁCIL"
 
     const val PENDING_VALUATION = "Pendiente de valoración"
@@ -36,11 +36,8 @@ object KioskTicketBitmap {
     const val QR_CAPTION = "Consulta el estado de tu pedido"
     const val SLOGAN = "Tu farmacia, más cerca de tus clientes"
 
-    /** Diámetro del logo ≈ 48 % del ancho imprimible (márgenes laterales ≥ edge). */
+    /** Diámetro del logo ≈ 48 % del ancho imprimible (mismo ratio 0186). */
     private const val LOGO_WIDTH_RATIO = 0.48f
-
-    /** Margen lateral/vertical del ticket (fracción del ancho). */
-    private const val MARGIN_RATIO = 0.05f
 
     data class ItemLine(
         val left: String,
@@ -198,25 +195,25 @@ object KioskTicketBitmap {
      */
     fun render(widthDots: Int, content: Content, logo: Bitmap? = null): Bitmap {
         val w = widthDots.coerceIn(192, 832)
-        val margin = max(12, (w * MARGIN_RATIO).roundToInt())
-        val contentWidth = (w - 2 * margin).toFloat()
+        // Márgenes del diseño 0186 (estrechos; no el 5 % de la regresión 0187).
+        val edge = max(2, (w * 0.015f).roundToInt())
+        val contentWidth = (w - 2 * edge).toFloat()
 
+        // Tipografía 0186: pedido moderado; TOTAL el elemento más grande.
         val brandPaint = paint(Typeface.BOLD, sizeFor(w, 0.07f, 22f, 34f))
-        val pharmacyPaint = paint(Typeface.BOLD, sizeFor(w, 0.065f, 20f, 32f))
-        // Pedido: lo más prominente del ticket.
-        val headlinePaint = paint(Typeface.BOLD, sizeFor(w, 0.15f, 46f, 84f))
+        val pharmacyPaint = paint(Typeface.NORMAL, sizeFor(w, 0.055f, 18f, 28f))
+        val headlinePaint = paint(Typeface.BOLD, sizeFor(w, 0.10f, 32f, 48f))
         val productPaint = paint(Typeface.NORMAL, sizeFor(w, 0.052f, 17f, 26f))
-        val totalPaint = paint(Typeface.BOLD, sizeFor(w, 0.09f, 28f, 46f))
+        val totalPaint = paint(Typeface.BOLD, sizeFor(w, 0.13f, 40f, 64f))
         val smallPaint = paint(Typeface.NORMAL, sizeFor(w, 0.045f, 15f, 22f))
-        val payPaint = paint(Typeface.BOLD, sizeFor(w, 0.052f, 17f, 26f))
-        val sloganPaint = paint(Typeface.BOLD, sizeFor(w, 0.045f, 15f, 24f))
+        val sloganPaint = paint(Typeface.BOLD, sizeFor(w, 0.042f, 14f, 22f))
         val rulePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.BLACK
             strokeWidth = max(3f, w / 120f)
             style = Paint.Style.STROKE
         }
 
-        val gap = (pharmacyPaint.textSize * 0.7f).roundToInt().coerceAtLeast(10)
+        val gap = (headlinePaint.textSize * 0.55f).roundToInt().coerceAtLeast(10)
         val logoSize = if (logo != null && !logo.isRecycled) logoTargetSize(w) else 0
         val logoTopPad = if (logoSize > 0) gap else 0
         val logoBottomPad = if (logoSize > 0) (gap * 0.6f).roundToInt().coerceAtLeast(8) else 0
@@ -241,7 +238,7 @@ object KioskTicketBitmap {
             return rowH
         }
 
-        var measured = margin
+        var measured = edge
         measured += logoTopPad
         measured += logoSize
         measured += logoBottomPad
@@ -264,11 +261,11 @@ object KioskTicketBitmap {
         measured += h(totalPaint)
         if (content.paymentLine != null) {
             measured += gap / 2
-            measured += h(payPaint)
+            measured += h(smallPaint)
         }
         if (content.footerLines.isNotEmpty()) {
             measured += gap / 2
-            measured += h(payPaint) * content.footerLines.size
+            measured += h(smallPaint) * content.footerLines.size
         }
         if (qrMatrix != null) {
             measured += gap
@@ -280,16 +277,17 @@ object KioskTicketBitmap {
             measured += gap
             measured += h(sloganPaint)
         }
-        measured += margin
+        measured += gap
+        measured += edge
 
         val bitmap = Bitmap.createBitmap(w, measured.coerceAtLeast(1), Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
         canvas.drawColor(Color.WHITE)
 
-        val x0 = margin.toFloat()
-        val x1 = (w - margin).toFloat()
+        val x0 = edge.toFloat()
+        val x1 = (w - edge).toFloat()
 
-        var y = margin.toFloat()
+        var y = edge.toFloat()
         if (logoSize > 0 && logo != null && !logo.isRecycled) {
             y += logoTopPad.toFloat()
             y = drawCenteredLogo(canvas, logo, w, y, logoSize)
@@ -299,12 +297,12 @@ object KioskTicketBitmap {
         }
 
         if (drawBrand) {
-            y = drawCenteredFit(canvas, content.brand, w, y, brandPaint, contentWidth)
+            y = drawCentered(canvas, content.brand, w, y, brandPaint)
             y += gap / 3f
         }
-        y = drawCenteredFit(canvas, content.pharmacyName, w, y, pharmacyPaint, contentWidth)
+        y = drawCentered(canvas, content.pharmacyName, w, y, pharmacyPaint)
         y += gap / 3f
-        y = drawCenteredFit(canvas, content.headline, w, y, headlinePaint, contentWidth)
+        y = drawCentered(canvas, content.headline, w, y, headlinePaint)
         y += gap.toFloat()
 
         canvas.drawLine(x0, y, x1, y, rulePaint)
@@ -320,17 +318,17 @@ object KioskTicketBitmap {
             y += gap.toFloat()
         }
 
-        y = drawCenteredFit(canvas, content.totalLabel, w, y, totalPaint, contentWidth)
+        y = drawCentered(canvas, content.totalLabel, w, y, totalPaint)
 
         content.paymentLine?.let { line ->
             y += gap / 2f
-            y = drawCenteredFit(canvas, line, w, y, payPaint, contentWidth)
+            y = drawCentered(canvas, line, w, y, smallPaint)
         }
 
         if (content.footerLines.isNotEmpty()) {
             y += gap / 2f
             for (footer in content.footerLines) {
-                y = drawCenteredFit(canvas, footer, w, y, payPaint, contentWidth)
+                y = drawCentered(canvas, footer, w, y, smallPaint)
             }
         }
 
@@ -346,12 +344,12 @@ object KioskTicketBitmap {
             y += qrBitmap.height.toFloat()
             if (!qrBitmap.isRecycled) qrBitmap.recycle()
             y += gap / 2f
-            y = drawCenteredFit(canvas, content.qrCaption, w, y, smallPaint, contentWidth)
+            y = drawCentered(canvas, content.qrCaption, w, y, smallPaint)
         }
 
         if (content.slogan.isNotBlank()) {
             y += gap.toFloat()
-            drawCenteredFit(canvas, content.slogan, w, y, sloganPaint, contentWidth)
+            drawCentered(canvas, content.slogan, w, y, sloganPaint)
         }
 
         return bitmap
@@ -392,23 +390,26 @@ object KioskTicketBitmap {
             .coerceAtLeast(paint.textSize.roundToInt() + 4)
     }
 
-    /** Centra el texto; si no cabe en [maxWidth] reduce el tamaño (altura de línea = la del paint base). */
-    private fun drawCenteredFit(
+    /**
+     * Centrado al estilo 0186. Solo reduce tamaño si el texto no cabe
+     * (p. ej. «TOTAL: Pendiente de valoración»), sin cambiar la jerarquía
+     * tipográfica cuando sí cabe.
+     */
+    private fun drawCentered(
         canvas: Canvas,
         text: String,
         width: Int,
         top: Float,
         paint: Paint,
-        maxWidth: Float,
     ): Float {
+        val maxWidth = (width - 2 * max(2, (width * 0.015f).roundToInt())).toFloat()
         val baseHeight = lineHeight(paint)
         val fit = Paint(paint)
-        val minSize = max(10f, paint.textSize * 0.5f)
+        val minSize = max(10f, paint.textSize * 0.55f)
         while (fit.measureText(text) > maxWidth && fit.textSize > minSize) {
             fit.textSize = fit.textSize - 1f
         }
         val fm = fit.fontMetrics
-        // Alinea por la parte superior del paint base para no desplazar líneas reducidas.
         val baseline = top - fm.ascent
         val textWidth = fit.measureText(text)
         val x = ((width - textWidth) / 2f).coerceAtLeast(0f)

@@ -1,12 +1,20 @@
 import { createHash, randomBytes } from 'node:crypto';
 
-import { getAppBaseUrl, CANONICAL_PRODUCTION_APP_URL } from '@/lib/auth/app-url';
 import { sha256Hex } from '@/lib/kiosk/crypto';
 import {
   parseKioskSessionCookie,
   readKioskSessionCookie,
 } from '@/lib/kiosk/session-cookie';
+import {
+  orderAccessPublicBaseUrl,
+  orderAccessPublicUrl,
+} from '@/lib/orders/order-access-public-url';
 import { createClient } from '@/lib/supabase/server';
+
+export {
+  orderAccessPublicBaseUrl,
+  orderAccessPublicUrl,
+} from '@/lib/orders/order-access-public-url';
 
 export function generateOrderAccessTokenPlaintext(): string {
   return randomBytes(32).toString('base64url');
@@ -14,21 +22,6 @@ export function generateOrderAccessTokenPlaintext(): string {
 
 export function hashOrderAccessTokenLocal(token: string): string {
   return createHash('sha256').update(token, 'utf8').digest('hex');
-}
-
-/** Base URL para QR de ticket: staging usa su host; prod el canónico. */
-export function orderAccessPublicBaseUrl(): string {
-  const base = getAppBaseUrl();
-  if (base) return base.replace(/\/$/, '');
-  const env = (process.env.FF_APP_ENV ?? '').trim().toLowerCase();
-  if (env === 'staging') {
-    return 'https://farmafacil-staging.vercel.app';
-  }
-  return CANONICAL_PRODUCTION_APP_URL.replace(/\/$/, '');
-}
-
-export function orderAccessPublicUrl(token: string): string {
-  return `${orderAccessPublicBaseUrl()}/o/${encodeURIComponent(token)}`;
 }
 
 /**
