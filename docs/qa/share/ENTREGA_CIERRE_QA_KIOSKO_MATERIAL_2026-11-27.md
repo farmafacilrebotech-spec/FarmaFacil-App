@@ -1,15 +1,16 @@
 # Entrega consolidada — Cierre QA kiosko y material publicitario
 
 **Fecha:** 2026-11-27  
-**Rama de trabajo:** `fix/qa-material-pack-cierre-2026-11-27`  
-**Integración STAGING:** `integration/farmafacil-staging-2026-11-24` (merge pendiente/incluido según push)  
+**Rama de trabajo:** `fix/qa-material-pack-cierre-2026-11-27` (`8f4a8d4`)  
+**Integración STAGING:** `integration/farmafacil-staging-2026-11-24` (`9ce8eb1`)  
 **URL STAGING:** https://farmafacil-staging.vercel.app  
 
 ---
 
 ## 1. Rama y commit
 
-Tras el commit de esta entrega, el hash final aparece en `git log -1` de la rama de integración.
+- Fix: `8f4a8d4` — `fix/qa-material-pack-cierre-2026-11-27`  
+- Integración: `9ce8eb1` — merge en `integration/farmafacil-staging-2026-11-24`
 
 Incluye: pack publicitario con originales, logo ticket monocromo, APK 0.2.15-staging, K02–K07 consolidados.
 
