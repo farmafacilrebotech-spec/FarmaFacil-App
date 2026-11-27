@@ -62,3 +62,27 @@ export function isPrintSafePharmacyPublicUrl(url: string): boolean {
     return false;
   }
 }
+
+/**
+ * URL apta para MATERIAL (cartel / flyer / pliego / pack).
+ * - Producción canónica: siempre válida.
+ * - Staging (`farmafacil-staging.vercel.app`): solo con `allowStaging === true`
+ *   (material de PRUEBA con marca de agua; nunca para imprimir en farmacia real).
+ * - localhost, supabase y otros previews: nunca.
+ */
+export function isMaterialSafePharmacyPublicUrl(
+  url: string,
+  options: { allowStaging?: boolean } = {}
+): boolean {
+  if (isPrintSafePharmacyPublicUrl(url)) return true;
+  if (options.allowStaging !== true) return false;
+  try {
+    const u = new URL(url);
+    return (
+      u.origin.replace(/\/$/, '') ===
+      STAGING_PUBLIC_APP_URL.replace(/\/$/, '')
+    );
+  } catch {
+    return false;
+  }
+}

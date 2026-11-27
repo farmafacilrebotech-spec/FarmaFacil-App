@@ -11,8 +11,8 @@ android {
         applicationId = "solutions.farmafacil.kiosk"
         minSdk = 30 // Android 11
         targetSdk = 34
-        versionCode = 15
-        versionName = "0.2.14"
+        versionCode = 16
+        versionName = "0.2.15"
 
         // 0 = auto (getPrinterType / prefs / demo SDK). Override dots si se calibra en POS.
         buildConfigField("int", "ICOD_PRINTABLE_WIDTH_DOTS", "0")

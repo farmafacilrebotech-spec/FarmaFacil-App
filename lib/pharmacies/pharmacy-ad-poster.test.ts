@@ -6,6 +6,7 @@ import {
   AD_POSTER_COPY,
   adPosterScale,
 } from './pharmacy-ad-poster-brand.ts';
+import { pharmacyAdPosterLayout } from './pharmacy-qr-poster-layout.ts';
 
 describe('pharmacy-ad-poster', () => {
   it('identidad corporativa de campaña', () => {
@@ -27,5 +28,15 @@ describe('pharmacy-ad-poster', () => {
     const s = adPosterScale('a5');
     assert.ok(Math.abs(s - 148 / 210) < 1e-9);
     assert.ok(297 * s <= 210 + 1e-9);
+  });
+
+  it('el cartel usa el arte corporativo (no composición programática)', () => {
+    const l = pharmacyAdPosterLayout('a4');
+    assert.equal(l.backgroundSrc, '/images/posters/cartel-publicitario-a3-print.jpg');
+    assert.ok((l.placeholderCovers?.length ?? 0) >= 2);
+    // Cada zona de logo/nombre/QR cabe en la página.
+    for (const r of [l.logo.rect, l.name.rect, l.qr.rect]) {
+      assert.ok(r.x >= 0 && r.y >= 0 && r.x + r.w <= 1 && r.y + r.h <= 1);
+    }
   });
 });

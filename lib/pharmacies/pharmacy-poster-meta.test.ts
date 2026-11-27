@@ -43,6 +43,17 @@ describe('posterDownloadFilename', () => {
     );
   });
 
+  it('flyer y pliego: nombres descriptivos', () => {
+    assert.equal(
+      posterDownloadFilename({ kind: 'flyer', format: 'a6', publicId: 'abc123' }),
+      'farmafacil-flyer-a6-abc123.pdf'
+    );
+    assert.equal(
+      posterDownloadFilename({ kind: 'pliego-flyers', format: 'a4', publicId: 'abc123', staging: true }),
+      'farmafacil-pliego-flyers-a4-abc123-PRUEBA-STAGING.pdf'
+    );
+  });
+
   it('A5 incluido en el nombre', () => {
     assert.equal(
       posterDownloadFilename({ kind: 'acceso', format: 'a5', publicId: 'abc123' }),

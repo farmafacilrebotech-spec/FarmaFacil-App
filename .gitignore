@@ -67,3 +67,13 @@ public/_review_clients_qr/
 
 # Evidencias locales de validación (no publicar)
 evidence/
+
+# Entrega muestras PDF headless (muy pesados; previews PNG sí se versionan)
+docs/qa/share/ENTREGA_MUESTRAS_MATERIAL_2026-11-27/*.pdf
+# Fondos master HD (se usan *-print.jpg en runtime)
+public/images/posters/flyer-acceso-qr-a6.png
+public/images/posters/cartel-publicitario-a3.png
+public/images/posters/cartel-acceso-qr-a5.png
+# APK binarios
+docs/qa/share/ENTREGA_APK_TEST/*.apk
+android-kiosk/app/build/

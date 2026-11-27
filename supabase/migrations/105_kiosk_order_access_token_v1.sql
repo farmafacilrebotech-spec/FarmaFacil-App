@@ -1,5 +1,8 @@
 -- =============================================================================
 -- 105_kiosk_order_access_token_v1.sql
+-- Numeración: este 105 es el token de acceso de pedido kiosko (E2).
+-- No existe en el repo otra migración 105 de ciclo de vida / unlink de kioskos.
+-- Verificada en staging dazfdcj (tabla pharmacy_order_access_tokens + RPCs).
 -- E2 (mínimo): token opaco de consulta de pedido kiosko → /o/{token}
 -- + pedidos kiosko con líneas a PVP 0 (pendiente de valoración).
 --

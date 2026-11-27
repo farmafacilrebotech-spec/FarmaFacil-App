@@ -1,45 +1,56 @@
 /**
- * Pack de bienvenida: PDF multipágina con material publicitario.
- * Datos siempre en vivo (nombre, logo, acceso público). Sin contratos inventados.
+ * Pack de bienvenida: PDF multipágina con el material definitivo.
+ *   1× Cartel de acceso mostrador A5 (solo QR personalizado)
+ *   10× Flyer A6 → pliego A4 (2×2 por página a tamaño real; 10 flyers = 3 páginas)
+ *   1× Cartel publicitario (A4 o A3 según selección)
+ * Sin portada pesada. Datos siempre en vivo (nombre, logo, acceso público).
+ * Sin contratos inventados.
  */
 
 import { jsPDF } from 'jspdf';
-import QRCode from 'qrcode';
 
 import {
-  AD_POSTER_FF_MARK_SRC,
-  AD_POSTER_PHONE_SCREEN_SRC,
-} from '@/lib/pharmacies/pharmacy-ad-poster-brand';
+  drawPharmacyFlyerSheetPages,
+  FLYER_SHEET_DEFAULT_COUNT,
+} from '@/lib/pharmacies/pharmacy-flyer-sheet';
 import { drawPharmacyAdPoster } from '@/lib/pharmacies/pharmacy-ad-poster';
-import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
+import { isMaterialSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import {
   posterDownloadFilename,
   posterPdfTitle,
 } from '@/lib/pharmacies/pharmacy-poster-meta';
-import { drawStagingWatermark } from '@/lib/pharmacies/pharmacy-poster-pdf-helpers';
 import {
+  buildPosterQrDataUrl,
   drawPharmacyQrPosterFromTemplate,
   downloadBlob,
+  loadPosterBackground,
+  loadPosterLogoAsset,
 } from '@/lib/pharmacies/pharmacy-qr-poster';
 import {
-  POSTER_PAGE_MM,
-  pharmacyQrPosterLayoutForFormat,
-  type PosterPageFormat,
+  pharmacyAccessCartelLayout,
+  pharmacyAdPosterLayout,
+  pharmacyFlyerLayout,
 } from '@/lib/pharmacies/pharmacy-qr-poster-layout';
 
 export type WelcomePackContractSlot =
   | { available: true; note?: string }
   | { available: false; reason: string };
 
+export type WelcomePackAdFormat = 'a4' | 'a3';
+
 export type WelcomePackInput = {
   pharmacyName: string;
+  /** Producción canónica; en staging también la URL de staging (con `staging`). */
   publicUrl: string;
   publicId: string;
   logoUrl?: string | null;
   primaryColor?: string | null;
   contract?: WelcomePackContractSlot | null;
-  formats?: PosterPageFormat[];
-  /** Staging: marca de agua + sufijo PRUEBA-STAGING en nombre y metadatos. */
+  /** Formato del cartel publicitario (default A4). */
+  adFormat?: WelcomePackAdFormat;
+  /** Nº de flyers A6 del pliego (default 10). */
+  flyerCount?: number;
+  /** Staging: QR de staging + marca de agua + sufijo PRUEBA-STAGING. */
   staging?: boolean;
 };
 
@@ -59,194 +70,99 @@ export function defaultWelcomePackContractSlot(): WelcomePackContractSlot {
   };
 }
 
-async function loadImageAsDataUrl(src: string): Promise<string> {
-  const absolute =
-    src.startsWith('http://') ||
-    src.startsWith('https://') ||
-    src.startsWith('data:')
-      ? src
-      : typeof window !== 'undefined'
-        ? `${window.location.origin}${src.startsWith('/') ? src : `/${src}`}`
-        : src;
-  const res = await fetch(absolute);
-  if (!res.ok) throw new Error(`No se ha podido cargar ${src}`);
-  const blob = await res.blob();
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error('Imagen ilegible'));
-    reader.readAsDataURL(blob);
-  });
-}
-
-function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('Imagen no decodificable'));
-    img.src = dataUrl;
-  });
-}
-
 export async function buildPharmacyWelcomePackPdf(
   input: WelcomePackInput
 ): Promise<WelcomePackResult> {
-  if (!isPrintSafePharmacyPublicUrl(input.publicUrl)) {
+  const staging = input.staging === true;
+  if (!isMaterialSafePharmacyPublicUrl(input.publicUrl, { allowStaging: staging })) {
     throw new Error(
-      'La URL del QR no es la de producción. No se genera el pack.'
+      'La URL del QR no es válida para material. No se genera el pack.'
     );
   }
 
-  const formats = input.formats?.length
-    ? input.formats
-    : (['a4', 'a3'] as PosterPageFormat[]);
+  const adFormat: WelcomePackAdFormat = input.adFormat === 'a3' ? 'a3' : 'a4';
   const contract = input.contract ?? defaultWelcomePackContractSlot();
 
-  const layoutA4 = pharmacyQrPosterLayoutForFormat('a4');
-  const backgroundSrc = layoutA4.backgroundSrc!;
-  const wantsLogo = Boolean(input.logoUrl?.trim());
+  const accessLayout = pharmacyAccessCartelLayout();
+  const flyerLayout = pharmacyFlyerLayout();
+  const adLayout = pharmacyAdPosterLayout(adFormat);
 
-  const [backgroundDataUrl, markDataUrl, phoneScreenDataUrl, qrDataUrl] =
-    await Promise.all([
-      loadImageAsDataUrl(backgroundSrc),
-      loadImageAsDataUrl(AD_POSTER_FF_MARK_SRC),
-      loadImageAsDataUrl(AD_POSTER_PHONE_SCREEN_SRC),
-      QRCode.toDataURL(input.publicUrl, {
-        width: 1400,
-        margin: 2,
-        errorCorrectionLevel: 'M',
-        color: { dark: '#0B0B0B', light: '#ffffff' },
-      }),
-    ]);
+  const [
+    accessBg,
+    flyerBg,
+    adBg,
+    qrShared,
+    qrAd,
+    logo,
+  ] = await Promise.all([
+    loadPosterBackground(accessLayout),
+    loadPosterBackground(flyerLayout),
+    loadPosterBackground(adLayout),
+    buildPosterQrDataUrl(input.publicUrl, 1400),
+    buildPosterQrDataUrl(input.publicUrl, adFormat === 'a3' ? 1600 : 1200),
+    loadPosterLogoAsset(input.logoUrl),
+  ]);
 
-  let logoDataUrl: string | null = null;
-  let logoWidth = 0;
-  let logoHeight = 0;
-  if (wantsLogo) {
-    try {
-      logoDataUrl = await loadImageAsDataUrl(input.logoUrl!);
-      const img = await loadHtmlImage(logoDataUrl);
-      logoWidth = img.naturalWidth;
-      logoHeight = img.naturalHeight;
-    } catch {
-      throw new Error(
-        'No se ha podido cargar el logo de la farmacia. Revisa Personalización.'
-      );
-    }
-  }
-
+  // Página 1: cartel de acceso A5 (solo QR personalizado).
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
-    format: 'a4',
+    format: [accessLayout.page.widthMm, accessLayout.page.heightMm],
     compress: true,
   });
-
   doc.setProperties({
     title: posterPdfTitle({
       kind: 'pack',
       pharmacyName: input.pharmacyName,
-      staging: input.staging,
+      staging,
     }),
   });
 
-  // Portada
-  doc.setFillColor(11, 11, 11);
-  doc.rect(0, 0, 210, 297, 'F');
-  doc.setTextColor(26, 187, 179);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(22);
-  doc.text('Pack de bienvenida FarmaFácil', 105, 42, { align: 'center' });
-  doc.setTextColor(247, 249, 250);
-  doc.setFontSize(14);
-  doc.text(input.pharmacyName, 105, 58, { align: 'center' });
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(11);
-  doc.setTextColor(197, 204, 211);
-  const intro = [
-    'Material generado automáticamente con los datos actuales',
-    'de la farmacia. Si cambias el nombre, el logotipo o el acceso',
-    'público, vuelve a descargar el pack para obtener la versión',
-    'actualizada. No se crean accesos públicos nuevos.',
-    '',
-    'Contenido de este PDF:',
-    ...formats.flatMap((f) => [
-      `· Cartel de acceso QR (${f.toUpperCase()})`,
-      `· Cartel publicitario «farmacia en el bolsillo» (${f.toUpperCase()})`,
-    ]),
-  ];
-  let y = 80;
-  for (const line of intro) {
-    doc.text(line, 24, y);
-    y += 7;
-  }
-  y += 6;
-  if (input.staging) {
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(214, 40, 40);
-    doc.text('PRUEBA - STAGING · no usar como material real', 24, y);
-    y += 10;
-  }
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(26, 187, 179);
-  doc.text('Contrato', 24, y);
-  y += 8;
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(247, 249, 250);
-  if (contract.available) {
-    doc.text(
-      contract.note ||
-        'La documentación contractual autorizada se gestiona aparte.',
-      24,
-      y,
-      { maxWidth: 162 }
-    );
-  } else {
-    const reasonLines = doc.splitTextToSize(contract.reason, 162);
-    doc.text(reasonLines, 24, y);
-  }
-
+  await drawPharmacyQrPosterFromTemplate(doc, {
+    pharmacyName: input.pharmacyName,
+    backgroundDataUrl: accessBg,
+    qrDataUrl: qrShared,
+    primaryColor: input.primaryColor,
+    layout: accessLayout,
+    stagingWatermark: staging,
+  });
   let pages = 1;
 
-  for (const format of formats) {
-    const layout = pharmacyQrPosterLayoutForFormat(format);
-    const page = POSTER_PAGE_MM[format];
-    doc.addPage([page.widthMm, page.heightMm], 'portrait');
-    pages += 1;
-    await drawPharmacyQrPosterFromTemplate(doc, {
-      pharmacyName: input.pharmacyName,
-      backgroundDataUrl,
-      qrDataUrl,
-      logoDataUrl,
-      logoWidth,
-      logoHeight,
-      primaryColor: input.primaryColor,
-      layout,
-      stagingWatermark: input.staging === true,
-    });
+  // Pliego de flyers A6 (páginas A4).
+  doc.addPage([210, 297], 'portrait');
+  const sheet = await drawPharmacyFlyerSheetPages(doc, {
+    pharmacyName: input.pharmacyName,
+    primaryColor: input.primaryColor,
+    assets: { backgroundDataUrl: flyerBg, qrDataUrl: qrShared, logo },
+    count: input.flyerCount ?? FLYER_SHEET_DEFAULT_COUNT,
+    staging,
+  });
+  pages += sheet.pages;
 
-    doc.addPage([page.widthMm, page.heightMm], 'portrait');
-    pages += 1;
-    await drawPharmacyAdPoster(doc, {
-      pharmacyName: input.pharmacyName,
-      qrDataUrl,
-      markDataUrl,
-      phoneScreenDataUrl,
-      pharmacyLogoDataUrl: logoDataUrl,
-      pharmacyLogoWidth: logoWidth,
-      pharmacyLogoHeight: logoHeight,
-      format,
-      stagingWatermark: input.staging === true,
-    });
-  }
+  // Cartel publicitario (A4 / A3).
+  doc.addPage([adLayout.page.widthMm, adLayout.page.heightMm], 'portrait');
+  await drawPharmacyAdPoster(doc, {
+    pharmacyName: input.pharmacyName,
+    qrDataUrl: qrAd,
+    backgroundDataUrl: adBg,
+    pharmacyLogoDataUrl: logo?.dataUrl ?? null,
+    pharmacyLogoWidth: logo?.width,
+    pharmacyLogoHeight: logo?.height,
+    logoPreTrimmed: true,
+    primaryColor: input.primaryColor,
+    format: adFormat,
+    layout: adLayout,
+    stagingWatermark: staging,
+  });
+  pages += 1;
 
   return {
     blob: doc.output('blob'),
     filename: posterDownloadFilename({
       kind: 'pack',
       publicId: input.publicId,
-      staging: input.staging,
+      format: adFormat,
+      staging,
     }),
     pages,
     contractIncluded: contract.available,
