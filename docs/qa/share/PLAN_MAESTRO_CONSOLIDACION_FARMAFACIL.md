@@ -1,9 +1,9 @@
 # Plan maestro de consolidación funcional y documental — FarmaFácil
 
-**Fecha:** 2026-11-24 · **Actualizado:** 2026-11-25 (aceptación manual STAGING)  
-**Estado:** plan de diseño y ejecución aprobado funcionalmente · **no autoriza** migraciones, merge, deploy ni implementación de la reorganización SuperAdmin  
+**Fecha:** 2026-11-24 · **Actualizado:** 2026-11-27 (auditoría asistente multicanal + dictado)  
+**Estado:** plan de diseño y ejecución aprobado funcionalmente · **no autoriza** migraciones, merge, deploy, consumo de IA de pago ni implementación de la reorganización SuperAdmin  
 **Fuentes aprobadas (con ajustes):**  
-`AUDITORIA_SISTEMA_DOCUMENTAL_FARMAFACIL.md` · `PROPUESTA_ASISTENTE_AREA_CLIENTE_2026-11-23.md` · `PROPUESTA_CARTERA_VS_FARMACIAS_2026-11-23.md` · decisiones funcionales SuperAdmin (aceptación 2026-11-25) · `REQUISITOS_FUNCIONALES_SUPERADMIN_REORG_CATALOGOS_RENTABILIDAD_2026-11-25.md`
+`AUDITORIA_SISTEMA_DOCUMENTAL_FARMAFACIL.md` · `PROPUESTA_ASISTENTE_AREA_CLIENTE_2026-11-23.md` · `PROPUESTA_CARTERA_VS_FARMACIAS_2026-11-23.md` · decisiones funcionales SuperAdmin (aceptación 2026-11-25) · `REQUISITOS_FUNCIONALES_SUPERADMIN_REORG_CATALOGOS_RENTABILIDAD_2026-11-25.md` · `AUDITORIA_ASISTENTE_MULTICANAL_DICTADO_2026-11-27.md`
 
 ---
 
@@ -65,13 +65,16 @@ Objetivo: consolidar trabajo existente y preparar **pilotos de diciembre** sin d
 - Fiscal/condiciones definitivas pendientes de asesoría.
 - No modificar presupuestos aceptados existentes; no justificante sin cobro verificado.
 
-### 1.6 Asistente IA cliente
+### 1.6 Asistente IA multicanal (kiosko + cliente)
 
-- Solo con `assistant_ai` vigente y autorizado para canal cliente; anónimo con límites; cuenta obligatoria para consulta a farmacéutico.
-- Mismo motor/seguridad que kiosko; UX móvil; sin voz, sin pedidos desde chat, sin memoria persistente del chat ordinario, sin cross-farmacia, sin precios/stock inventados, sin Rx en catálogo comercial.
+- Solo con `assistant_ai` vigente; canal kiosko ya operativo; canal cliente `/e` según propuesta 4.1 (diseño OK; código pendiente de autorización).
+- Anónimo con límites estrictos; cuenta obligatoria para consulta a farmacéutico (D1–D6 en propuesta).
+- Mismo motor/seguridad (`lib/kiosk/assistant/*`); UX propia por superficie; sin pedidos desde chat; sin memoria persistente del chat ordinario; sin cross-farmacia; sin precios/stock inventados; sin Rx en catálogo comercial.
 - Derivación farmacéutico/emergencias; config Owner/Admin; consultas sanitarias solo profesionales autorizados; STAFF sin clínicas.
-- Costes conjuntos kiosko/móvil con desglose y alertas SA; auth en servidor cada turno; mínimo privilegio.
+- Costes **conjuntos** kiosko + cliente con desglose por canal, modelo, tokens y (cuando exista) STT; alertas y márgenes internos **solo SuperAdmin Total**; auth en servidor cada turno.
+- **Dictado por voz:** diferido a Fase 4b (ver §1.9). Primera versión de canal cliente = **solo texto**. Sin TTS.
 - Sin consultas sanitarias reales antes de revisión de privacidad / anexo encargo.
+- Sin consumo de OpenAI/STT en staging o prod **sin autorización explícita** de Pilar.
 
 ### 1.7 Emails y staging
 
@@ -128,11 +131,27 @@ Detalle normativo:
 
 Tras cerrar QA manual STAGING: (1) IA menú SA + permisos por bloque · (2) modelo catálogos A/B/C + UI categorías · (3) rentabilidad SA Total. Encaja como **Fase 7+** respecto a Fases 0–6 actuales; no desplaza Cartera/expediente/pilotos diciembre salvo re-priorización explícita.
 
-#### Avance E2 ticket / token (2026-11-26)
+#### Avance E2 ticket / token (2026-11-26 → 2026-11-27)
 
-- Entrega `ENTREGA_QA_KIOSKO_K02_K07_2026-11-26.md`: ticket térmico + `/o/{token}` + mig **105** en staging.
-- **Hecho (mínimo):** emisión token opaco en create kiosko, landing estado, QR en ticket (APK pendiente compilar).
-- **Pendiente E2 completo:** claim atómico autenticado (`ff_claim_order_by_access_token_v1`), avisos recogida, push. P0 claim-por-teléfono permanece **off**.
+- Entrega `ENTREGA_QA_KIOSKO_K02_K07_2026-11-26.md` + cierre material `ENTREGA_CIERRE_QA_KIOSKO_MATERIAL_2026-11-27.md`.
+- **Hecho (código):** token opaco, landing `/o/{token}`, material A5/A6/A3–A4, APK TEST **0.2.15-staging** compilado.
+- **Pendiente usuaria:** redeploy staging Vercel, instalación USB APK 0.2.15, aceptación física.
+- **Pendiente E2 completo:** claim atómico autenticado, avisos recogida, push. P0 claim-por-teléfono permanece **off**.
+
+### 1.9 Asistente multicanal + dictado (auditoría 2026-11-27)
+
+**Estado:** auditoría cerrada · **no implementado** · **no retrasa** K02–K07 ni el APK 0.2.15.
+
+Detalle: `AUDITORIA_ASISTENTE_MULTICANAL_DICTADO_2026-11-27.md`.
+
+| Entrega | Alcance | APK | Consumo de pago |
+|---------|---------|-----|-----------------|
+| **A** (Fase 4) | Canal `/e` texto + gates + metering `channel` | No | Solo tras OK + `OPENAI_API_KEY` staging |
+| **B** (Fase 4b) | Dictado MediaRecorder → STT servidor en web/PWA | No | STT requiere OK aparte |
+| **C** (Fase 4b) | Mic en K2101 WebView | **Sí** ≥ 0.2.16-staging; 0.2.15 = respaldo | Igual B |
+
+- Menú SuperAdmin reorganizado (§1.8): **sigue sin integrar** en código.
+- Estrategia voz: **no** Web Speech como única vía; MediaRecorder + Whisper (u homólogo) + texto editable; sin escucha permanente; sin retención de audio.
 
 ---
 
@@ -301,7 +320,8 @@ Sin tablas de chat ordinario. Reutilizar consults + cost counters con dimensión
 | N+3 | `document_artifacts` + links + storage policies | 2 |
 | N+4 | plantilla contrato v4 versionada en código (sin unlock firma) | 3 |
 | N+5 | fianza / movements (tras OK fiscal) | 5 |
-| N+6 | assistant cost channel + flags cliente (si hace falta) | 4 |
+| N+6 | assistant cost channel + flags cliente | 4 |
+| N+6b | metering STT / modelo (si Entrega B) | 4b |
 | ≠ 105 | **prohibida** en esta autorización | — |
 
 Numeración exacta se asigna al autorizar cada entrega.
@@ -316,10 +336,12 @@ flowchart TD
   F1 --> F2[Quotes↔Cartera + Expediente]
   F2 --> F3[Generador canónico + MARCO-v4 borrador]
   F3 --> F5[Fianza + satélites doc]
-  F1 -.->|paralelo aislado| F4[Asistente /e sandbox]
+  F1 -.->|paralelo aislado| F4[Asistente /e texto]
+  F4 -.->|tras OK gasto STT| F4b[Dictado + APK 0.2.16]
   F2 --> F6[Pruebas integrales]
   F3 --> F6
   F4 --> F6
+  F4b -.-> F6
   F5 --> F6
   Legal[OK jurídico/fiscal] -.-> F5
   Legal -.->|firma| F3
@@ -371,16 +393,27 @@ Estimaciones en **días-persona** (orden de magnitud; 1 dev familiarizado con el
 
 **Paralelo:** matriz discrepancias v1↔v4 para jurídico (doc).
 
-### Fase 4 — Asistente cliente aislado · ~4–6 d
+### Fase 4 — Asistente cliente aislado (texto) · ~4–6 d · Entrega A
 
 | Entrega | Esfuerzo | Aceptación |
 |---------|----------|------------|
 | 4.1 Gate entitlement + canal + turn API `/e` | 1.5 | Sin entitlement → no UI; auth servidor cada turno |
 | 4.2 UX móvil + límites anónimo / consulta con cuenta | 1.5–2 | Sin voz/pedidos/memoria BD chat |
-| 4.3 Coste conjunto + alertas SA | 1 | Desglose canal |
+| 4.3 Coste conjunto + alertas SA Total | 1 | Desglose canal kiosk / customer_portal |
 | 4.4 Flag entorno aislado / staging only | 0.5 | Off en prod; sin consultas sanitarias reales |
 
-**Paralelo con Fase 3** si no toca PDF/quotes schema.
+**Paralelo con Fase 3** si no toca PDF/quotes schema.  
+**No bloquea** aceptación física K02–K07 / APK 0.2.15.
+
+### Fase 4b — Dictado por voz · ~3–5 d · Entregas B+C · **separada**
+
+| Entrega | Esfuerzo | Aceptación |
+|---------|----------|------------|
+| 4b.1 Componente mic + endpoint STT + metering | 1.5–2 | Texto editable; cancelar; sin persistir audio |
+| 4b.2 QA Safari / PWA iOS / Chrome Android | 1 | Degradación clara si no hay mic |
+| 4b.3 APK ≥ 0.2.16 (`RECORD_AUDIO` + PermissionRequest) | 1–1.5 | Solo tras OK físico de 0.2.15; sin tocar prod |
+
+Bloqueos: autorización de gasto STT; hardware mic K2101 verificado en físico.
 
 ### Fase 5 — Satélites + fianza (jurídico/fiscal) · ~6–10 d · **bloqueada**
 
@@ -491,7 +524,8 @@ Hasta resolver 3+: **no** Fase 5 completa ni cobros.
 |------------|------------|-----------|
 | QA manual / matriz | Spike generador PDF | No redeploy conflictivo |
 | Doc jurídico discrepancias v4 | Fase 1.1 schema Cartera (cuando se autorice código) | Sin tocar quotes |
-| Fase 4 asistente sandbox | Fase 3 brand kit | Schemas distintos |
+| Fase 4 asistente `/e` texto | Fase 3 brand kit | Schemas distintos |
+| Fase 4b dictado | Aceptación física APK 0.2.15 | No mezclar con K02–K07 |
 | Diseño UI Documentación | Implementación import Cartera | Tras modelo links acordado |
 | Revisión fiscal fianza | Fases 1–3 | Fase 5 bloqueada |
 
