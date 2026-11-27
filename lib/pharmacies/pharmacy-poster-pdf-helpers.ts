@@ -41,9 +41,12 @@ export function addImageClippedToCircle(
  */
 export function drawStagingWatermark(
   doc: jsPDF,
-  page: { widthMm: number; heightMm: number }
+  page: { widthMm: number; heightMm: number },
+  origin?: { xMm: number; yMm: number }
 ): void {
   const { widthMm: W, heightMm: H } = page;
+  const ox = origin?.xMm ?? 0;
+  const oy = origin?.yMm ?? 0;
   doc.saveGraphicsState();
   try {
     const gs = new (doc as unknown as {
@@ -61,8 +64,8 @@ export function drawStagingWatermark(
     const textW = doc.getTextWidth(STAGING_POSTER_WATERMARK_TEXT);
     const fontMm = (doc.getFontSize() * 25.4) / 72;
     // Dirección del texto (y del PDF hacia abajo) y normal para centrar en vertical.
-    const startX = W / 2 - (textW / 2) * Math.cos(rad) + (fontMm * 0.35) * Math.sin(rad);
-    const startY = H / 2 + (textW / 2) * Math.sin(rad) + (fontMm * 0.35) * Math.cos(rad);
+    const startX = ox + W / 2 - (textW / 2) * Math.cos(rad) + (fontMm * 0.35) * Math.sin(rad);
+    const startY = oy + H / 2 + (textW / 2) * Math.sin(rad) + (fontMm * 0.35) * Math.cos(rad);
     doc.text(STAGING_POSTER_WATERMARK_TEXT, startX, startY, {
       angle: angleDeg,
     });

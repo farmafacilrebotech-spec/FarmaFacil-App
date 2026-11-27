@@ -1,12 +1,16 @@
 /**
- * Cartel PDF A4: plantilla Canva HD + logo (zona roja) + nombre (zona verde) + QR.
- * Rectángulos independientes medidos sobre la referencia marcada.
+ * Motor común de carteles PDF con fondo corporativo + overlays:
+ * tapas de placeholder (opcional) → logo → nombre → [marca de agua] → QR.
+ * Lo usan cartel de acceso A5 (solo QR), flyer A6, cartel publicitario y pliego.
+ *
+ * Cartel de acceso A5 (`cartel-acceso-qr-a5.png`): el original NO tiene huecos
+ * de logo ni nombre de farmacia; solo se personaliza el QR.
  */
 
 import { jsPDF } from 'jspdf';
 import QRCode from 'qrcode';
 
-import { isPrintSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
+import { isMaterialSafePharmacyPublicUrl } from '@/lib/pharmacies/print-entrypoint-url';
 import {
   fitPharmacyNameInZone,
   ptToMm,
@@ -27,6 +31,7 @@ import {
   rectNormToMm,
   type PharmacyQrPosterLayout,
   type PosterRectMm,
+  type PosterRectNorm,
 } from '@/lib/pharmacies/pharmacy-qr-poster-layout';
 import {
   ensurePosterNameFont,
@@ -38,6 +43,9 @@ import { posterPdfTitle } from '@/lib/pharmacies/pharmacy-poster-meta';
 export {
   isPharmacyQrPosterDownloadEnabled,
   isPharmacyQrPosterTemplateReady,
+  pharmacyAccessCartelLayout,
+  pharmacyAdPosterLayout,
+  pharmacyFlyerLayout,
   pharmacyQrPosterLayoutForFormat,
   posterPageFormatLabel,
   PHARMACY_QR_POSTER_AWAITING_APPROVAL_MESSAGE,
@@ -56,7 +64,7 @@ export type PharmacyQrPosterBuildResult = {
   nameColorFallback: boolean;
 };
 
-async function loadImageAsDataUrl(src: string): Promise<string> {
+export async function loadImageAsDataUrl(src: string): Promise<string> {
   const absolute =
     src.startsWith('http://') ||
     src.startsWith('https://') ||
@@ -79,7 +87,7 @@ async function loadImageAsDataUrl(src: string): Promise<string> {
   });
 }
 
-function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
+export function loadHtmlImage(dataUrl: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -180,6 +188,25 @@ export async function trimTransparentMargins(
   };
 }
 
+export type PosterOrigin = { xMm: number; yMm: number };
+
+function shiftRect(r: PosterRectMm, o?: PosterOrigin): PosterRectMm {
+  if (!o) return r;
+  return { ...r, x: r.x + o.xMm, y: r.y + o.yMm };
+}
+
+function intersectNormRect(
+  a: PosterRectNorm,
+  b: PosterRectNorm | undefined
+): PosterRectNorm {
+  if (!b) return a;
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w);
+  const y2 = Math.min(a.y + a.h, b.y + b.h);
+  return { x, y, w: Math.max(x2 - x, 0), h: Math.max(y2 - y, 0) };
+}
+
 function drawName(
   doc: jsPDF,
   pharmacyName: string,
@@ -220,13 +247,106 @@ function drawName(
   return fit.warning;
 }
 
-function drawQrInZone(
+/** Resolución objetivo de los fondos en el PDF (suficiente para impresión). */
+const POSTER_BACKGROUND_DPI = 300;
+
+/**
+ * Reduce el fondo a ~300 dpi para el tamaño de página y lo recomprime en JPEG
+ * (los artes originales miden 1000+ dpi y darían PDFs de 80–160 MB).
+ * Solo en navegador; sin DOM (tests/node) devuelve el original.
+ */
+export async function downscaleBackgroundForPdf(
+  dataUrl: string,
+  pageWidthMm: number,
+  dpi: number = POSTER_BACKGROUND_DPI
+): Promise<string> {
+  if (typeof document === 'undefined') return dataUrl;
+  try {
+    const img = await loadHtmlImage(dataUrl);
+    const targetW = Math.round((pageWidthMm / 25.4) * dpi);
+    if (!img.naturalWidth || img.naturalWidth <= targetW) return dataUrl;
+    const scale = targetW / img.naturalWidth;
+    const w = targetW;
+    const h = Math.round(img.naturalHeight * scale);
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return dataUrl;
+    // Fondo blanco: los PNG con alpha no deben quedar negros en JPEG.
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.92);
+  } catch {
+    return dataUrl;
+  }
+}
+
+/** Carga el fondo corporativo del layout, ya optimizado para el PDF. */
+export async function loadPosterBackground(
+  layout: PharmacyQrPosterLayout
+): Promise<string> {
+  const raw = await loadImageAsDataUrl(layout.backgroundSrc!);
+  return downscaleBackgroundForPdf(raw, layout.page.widthMm);
+}
+
+/** PNG del QR para materiales (misma calidad que el cartel de acceso). */
+export function buildPosterQrDataUrl(
+  publicUrl: string,
+  widthPx = 1400,
+  darkColor = '#0B0B0B'
+): Promise<string> {
+  return QRCode.toDataURL(publicUrl, {
+    width: widthPx,
+    margin: 2,
+    errorCorrectionLevel: 'M',
+    color: { dark: darkColor, light: '#ffffff' },
+  });
+}
+
+export type PosterLogoAsset = {
+  dataUrl: string;
+  width: number;
+  height: number;
+};
+
+/**
+ * Carga el logo de la farmacia (si hay URL) y lo deja recortado y medido.
+ * Lanza PHARMACY_QR_POSTER_LOGO_LOAD_ERROR si hay URL pero no se puede leer.
+ */
+export async function loadPosterLogoAsset(
+  logoUrl: string | null | undefined
+): Promise<PosterLogoAsset | null> {
+  if (!logoUrl?.trim()) return null;
+  try {
+    const dataUrl = await loadImageAsDataUrl(logoUrl);
+    if (typeof document !== 'undefined') {
+      const trimmed = await trimTransparentMargins(dataUrl);
+      return {
+        dataUrl: trimmed.dataUrl,
+        width: trimmed.width,
+        height: trimmed.height,
+      };
+    }
+    const img = await loadHtmlImage(dataUrl);
+    return { dataUrl, width: img.naturalWidth, height: img.naturalHeight };
+  } catch {
+    throw new Error(PHARMACY_QR_POSTER_LOGO_LOAD_ERROR);
+  }
+}
+
+/** Dibuja el QR en su zona (con origen opcional para pliegos). */
+export function drawPosterQr(
   doc: jsPDF,
   qrDataUrl: string,
-  layout: PharmacyQrPosterLayout
+  layout: PharmacyQrPosterLayout,
+  origin?: PosterOrigin
 ): void {
-  const zone = rectNormToMm(layout.qr.rect, layout.page);
+  const zone = shiftRect(rectNormToMm(layout.qr.rect, layout.page), origin);
   const inner = qrInnerRectMm(zone, layout.qr.quietZoneRatio);
+  // El PNG del QR ya lleva quiet zone blanca (margin) → legible sobre el arte.
   doc.addImage(
     qrDataUrl,
     'PNG',
@@ -268,6 +388,12 @@ export async function drawPharmacyQrPosterFromTemplate(
     showZoneGuides?: boolean;
     /** Entorno staging: marca de agua «PRUEBA - STAGING» (debajo del QR). */
     stagingWatermark?: boolean;
+    /** Esquina superior izquierda de la página (mm). Default 0,0. Para pliegos. */
+    origin?: PosterOrigin;
+    /** No dibuja el QR (el pliego lo dibuja tras la marca de agua única). */
+    skipQr?: boolean;
+    /** El logo ya viene recortado (evita repetir el trim en cada flyer). */
+    logoPreTrimmed?: boolean;
   }
 ): Promise<{
   nameWarning: string | null;
@@ -277,49 +403,66 @@ export async function drawPharmacyQrPosterFromTemplate(
 }> {
   const layout = input.layout ?? PHARMACY_QR_POSTER_LAYOUT;
   const { widthMm, heightMm } = layout.page;
+  const origin = input.origin;
 
   doc.addImage(
     input.backgroundDataUrl,
-    'PNG',
-    0,
-    0,
+    input.backgroundDataUrl.startsWith('data:image/jpeg') ? 'JPEG' : 'PNG',
+    origin?.xMm ?? 0,
+    origin?.yMm ?? 0,
     widthMm,
     heightMm,
     undefined,
     'NONE'
   );
 
-  let logoDataUrl = input.logoDataUrl?.trim() || null;
-  let logoW = input.logoWidth ?? 0;
-  let logoH = input.logoHeight ?? 0;
-
-  if (logoDataUrl && typeof document !== 'undefined') {
-    const trimmed = await trimTransparentMargins(logoDataUrl);
-    logoDataUrl = trimmed.dataUrl;
-    logoW = trimmed.width;
-    logoH = trimmed.height;
+  const hasLogoInput = Boolean(input.logoDataUrl?.trim());
+  // Tapas opacas de placeholders del arte original (antes de logo/nombre/QR).
+  for (const cover of layout.placeholderCovers ?? []) {
+    const box = shiftRect(rectNormToMm(cover.rect, layout.page), origin);
+    // Sin logo: la caja del logo se funde con el fondo en vez de quedar gris vacía.
+    const rgb = hexToRgb(
+      cover.target === 'logo' && !hasLogoInput && cover.emptyColor
+        ? cover.emptyColor
+        : cover.color
+    );
+    doc.setFillColor(rgb.r, rgb.g, rgb.b);
+    doc.rect(box.x, box.y, box.w, box.h, 'F');
   }
 
   let usedLogo = false;
-  if (logoDataUrl && logoW > 0 && logoH > 0) {
-    const logoBox = insetRectMm(
-      rectNormToMm(layout.logo.rect, layout.page),
-      layout.logo.insetRatio
-    );
-    const fitted = containRect(logoW, logoH, logoBox);
-    if (fitted.w > 0 && fitted.h > 0) {
-      const format = logoDataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG';
-      doc.addImage(
-        logoDataUrl,
-        format,
-        fitted.x,
-        fitted.y,
-        fitted.w,
-        fitted.h,
-        undefined,
-        'NONE'
+  if (layout.logo.configured) {
+    let logoDataUrl = input.logoDataUrl?.trim() || null;
+    let logoW = input.logoWidth ?? 0;
+    let logoH = input.logoHeight ?? 0;
+
+    if (logoDataUrl && !input.logoPreTrimmed && typeof document !== 'undefined') {
+      const trimmed = await trimTransparentMargins(logoDataUrl);
+      logoDataUrl = trimmed.dataUrl;
+      logoW = trimmed.width;
+      logoH = trimmed.height;
+    }
+
+    if (logoDataUrl && logoW > 0 && logoH > 0) {
+      const logoBox = insetRectMm(
+        shiftRect(rectNormToMm(layout.logo.rect, layout.page), origin),
+        layout.logo.insetRatio
       );
-      usedLogo = true;
+      const fitted = containRect(logoW, logoH, logoBox);
+      if (fitted.w > 0 && fitted.h > 0) {
+        const format = logoDataUrl.includes('image/jpeg') ? 'JPEG' : 'PNG';
+        doc.addImage(
+          logoDataUrl,
+          format,
+          fitted.x,
+          fitted.y,
+          fitted.w,
+          fitted.h,
+          undefined,
+          'NONE'
+        );
+        usedLogo = true;
+      }
     }
   }
 
@@ -327,29 +470,38 @@ export async function drawPharmacyQrPosterFromTemplate(
     input.primaryColor,
     layout.name.fallbackColor
   );
-  const nameBox = insetRectMm(
-    rectNormToMm(layout.name.rect, layout.page),
-    layout.name.insetRatio
-  );
-  let fontFamily = POSTER_NAME_FONT_FAMILY;
-  try {
-    fontFamily = await ensurePosterNameFont(doc);
-  } catch {
-    fontFamily = 'helvetica';
+  let nameWarning: string | null = null;
+  if (layout.name.configured) {
+    const nameNorm = intersectNormRect(
+      layout.name.rect,
+      layout.name.visibleRect
+    );
+    const nameBox = insetRectMm(
+      shiftRect(rectNormToMm(nameNorm, layout.page), origin),
+      layout.name.insetRatio
+    );
+    let fontFamily = POSTER_NAME_FONT_FAMILY;
+    try {
+      fontFamily = await ensurePosterNameFont(doc);
+    } catch {
+      fontFamily = 'helvetica';
+    }
+    nameWarning = drawName(
+      doc,
+      input.pharmacyName,
+      nameBox,
+      layout,
+      colorRes.color,
+      fontFamily
+    );
   }
-  const nameWarning = drawName(
-    doc,
-    input.pharmacyName,
-    nameBox,
-    layout,
-    colorRes.color,
-    fontFamily
-  );
   // Marca de agua staging ANTES del QR para no degradar su lectura.
   if (input.stagingWatermark) {
-    drawStagingWatermark(doc, layout.page);
+    drawStagingWatermark(doc, layout.page, origin);
   }
-  drawQrInZone(doc, input.qrDataUrl, layout);
+  if (!input.skipQr) {
+    drawPosterQr(doc, input.qrDataUrl, layout, origin);
+  }
 
   if (input.showZoneGuides) {
     drawPosterZoneGuides(doc, layout);
@@ -376,10 +528,16 @@ export async function buildPharmacyQrPosterPdf(input: {
   logoHeight?: number;
   allowUnapprovedReview?: boolean;
   showZoneGuides?: boolean;
-  /** Staging: marca de agua + metadatos «PRUEBA-STAGING». */
+  /** Staging: marca de agua + metadatos «PRUEBA-STAGING» (permite QR de staging). */
   staging?: boolean;
+  /** Tipo de material para metadatos del PDF (default: acceso). */
+  kind?: 'acceso' | 'flyer';
 }): Promise<PharmacyQrPosterBuildResult> {
-  if (!isPrintSafePharmacyPublicUrl(input.publicUrl)) {
+  if (
+    !isMaterialSafePharmacyPublicUrl(input.publicUrl, {
+      allowStaging: input.staging === true,
+    })
+  ) {
     throw new Error(
       'La URL del QR no es la de producción. No se genera el cartel.'
     );
@@ -397,9 +555,10 @@ export async function buildPharmacyQrPosterPdf(input: {
   }
 
   const backgroundSrc = layout.backgroundSrc!;
-  const wantsLogo = Boolean(
-    (input.logoDataUrl ?? input.logoUrl ?? '').toString().trim()
-  );
+  // Layout sin hueco de logo (cartel acceso A5): se ignora el logo.
+  const wantsLogo =
+    layout.logo.configured &&
+    Boolean((input.logoDataUrl ?? input.logoUrl ?? '').toString().trim());
 
   let logoDataUrl: string | null = input.logoDataUrl ?? null;
   let logoWidth = input.logoWidth;
@@ -408,7 +567,7 @@ export async function buildPharmacyQrPosterPdf(input: {
   const [backgroundDataUrl, qrDataUrl] = await Promise.all([
     input.backgroundDataUrl
       ? Promise.resolve(input.backgroundDataUrl)
-      : loadImageAsDataUrl(backgroundSrc),
+      : loadPosterBackground(layout),
     QRCode.toDataURL(input.publicUrl, {
       width: 1400,
       margin: 2,
@@ -448,7 +607,7 @@ export async function buildPharmacyQrPosterPdf(input: {
 
   doc.setProperties({
     title: posterPdfTitle({
-      kind: 'acceso',
+      kind: input.kind ?? 'acceso',
       pharmacyName: input.pharmacyName,
       staging: input.staging,
     }),

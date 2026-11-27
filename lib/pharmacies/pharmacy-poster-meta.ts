@@ -9,7 +9,12 @@ export const STAGING_POSTER_FILENAME_TAG = 'PRUEBA-STAGING';
 /** Texto de la marca de agua diagonal (solo ASCII: fuente base del PDF). */
 export const STAGING_POSTER_WATERMARK_TEXT = 'PRUEBA - STAGING';
 
-export type PosterMaterialKind = 'acceso' | 'publicitario' | 'pack';
+export type PosterMaterialKind =
+  | 'acceso'
+  | 'flyer'
+  | 'pliego-flyers'
+  | 'publicitario'
+  | 'pack';
 
 const UUID_RE =
   /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
@@ -28,7 +33,7 @@ export function posterFilenameSafeId(publicId: string | null | undefined): strin
  * Nombre de descarga descriptivo.
  *   producción: farmafacil-cartel-acceso-a4-<id>.pdf
  *   staging:    farmafacil-cartel-acceso-a4-<id>-PRUEBA-STAGING.pdf
- * Pack: farmafacil-pack-bienvenida-<id>[-PRUEBA-STAGING].pdf
+ * Pack: farmafacil-pack-bienvenida[-<formatoCartel>]-<id>[-PRUEBA-STAGING].pdf
  */
 export function posterDownloadFilename(input: {
   kind: PosterMaterialKind;
@@ -40,8 +45,12 @@ export function posterDownloadFilename(input: {
   const fmt = input.format ? `-${input.format.toLowerCase()}` : '';
   const base =
     input.kind === 'pack'
-      ? `farmafacil-pack-bienvenida-${id}`
-      : `farmafacil-cartel-${input.kind}${fmt}-${id}`;
+      ? `farmafacil-pack-bienvenida${fmt}-${id}`
+      : input.kind === 'flyer'
+        ? `farmafacil-flyer${fmt}-${id}`
+        : input.kind === 'pliego-flyers'
+          ? `farmafacil-pliego-flyers${fmt}-${id}`
+          : `farmafacil-cartel-${input.kind}${fmt}-${id}`;
   return input.staging
     ? `${base}-${STAGING_POSTER_FILENAME_TAG}.pdf`
     : `${base}.pdf`;
@@ -56,9 +65,13 @@ export function posterPdfTitle(input: {
   const label =
     input.kind === 'acceso'
       ? 'Cartel de acceso'
-      : input.kind === 'publicitario'
-        ? 'Cartel publicitario'
-        : 'Pack de bienvenida';
+      : input.kind === 'flyer'
+        ? 'Flyer de acceso'
+        : input.kind === 'pliego-flyers'
+          ? 'Pliego de flyers'
+          : input.kind === 'publicitario'
+            ? 'Cartel publicitario'
+            : 'Pack de bienvenida';
   const name = input.pharmacyName.trim();
   const core = name ? `FarmaFácil · ${label} · ${name}` : `FarmaFácil · ${label}`;
   return input.staging ? `${core} · ${STAGING_POSTER_FILENAME_TAG}` : core;
